@@ -4,6 +4,7 @@
 #include <linux/fs.h>
 #include <asm/uaccess.h>
 #include "ioctls.h"
+#include "muwine.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Mark Harmstone");
@@ -16,6 +17,10 @@ static int muwine_open(struct inode* inode, struct file* file);
 static int muwine_release(struct inode* inode, struct file* file);
 static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg);
 
+static struct muwine_func funcs[] = {
+    { muwine_init_registry, 1 },
+};
+
 static struct file_operations file_ops = {
     .open = muwine_open,
     .release = muwine_release,
@@ -23,6 +28,14 @@ static struct file_operations file_ops = {
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
+
+NTSTATUS muwine_init_registry(const char* system_hive) {
+    printk(KERN_INFO "muwine_init_registry(%p)\n", system_hive);
+
+    // FIXME
+
+    return STATUS_INVALID_PARAMETER;
+}
 
 static int muwine_open(struct inode* inode, struct file* file) {
     // FIXME - add pid to process list
@@ -41,14 +54,38 @@ static int muwine_release(struct inode* inode, struct file* file) {
 }
 
 static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg) {
-    printk(KERN_INFO "muwine_ioctl(%p, %x, %lx)\n", file, cmd, arg);
+    uintptr_t* temp;
+    uintptr_t num_args;
 
     if (cmd > MUWINE_IOCTL_MAX)
-        return -EINVAL;
+        return STATUS_NOT_IMPLEMENTED;
 
-    // FIXME
+    temp = (uintptr_t*)arg;
 
-    return 0;
+    if (!temp)
+        return STATUS_INVALID_PARAMETER;
+
+    if (get_user(num_args, temp) < 0)
+        return STATUS_INVALID_PARAMETER;
+
+    temp++;
+
+    if (num_args != funcs[cmd].num_args) {
+        printk(KERN_INFO "muwine_ioctl: ioctl %u passed %u args, expected %u\n", cmd, (unsigned int)num_args, funcs[cmd].num_args);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (num_args == 1) {
+        uintptr_t arg1;
+
+        if (get_user(arg1, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        return ((muwine_func1arg)funcs[cmd].func)(arg1);
+    } else {
+        printk(KERN_ALERT "muwine_ioctl: unexpected number of arguments %u\n", (unsigned int)num_args);
+        return STATUS_INVALID_PARAMETER;
+    }
 }
 
 
@@ -67,7 +104,7 @@ static int __init muwine_init(void) {
 static void __exit muwine_exit(void) {
     unregister_chrdev(major_num, "muwine");
 
-    printk(KERN_INFO "Multi-user Wine unloaded.\n");
+    printk(KERN_INFO "muwine unloaded\n");
 }
 
 module_init(muwine_init);
