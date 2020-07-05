@@ -1,3 +1,4 @@
+#include <linux/vmalloc.h>
 #include "muwine.h"
 
 static char* system_hive = NULL;
@@ -43,7 +44,7 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    system_hive = kmalloc(system_hive_size, GFP_KERNEL);
+    system_hive = vmalloc(system_hive_size);
     if (!system_hive) {
         filp_close(f, NULL);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -72,5 +73,5 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
 
 void muwine_free_reg(void) {
     if (system_hive)
-        kfree(system_hive);
+        vfree(system_hive);
 }
