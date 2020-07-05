@@ -12,6 +12,7 @@ struct muwine_func {
     unsigned int num_args;
 };
 
+#define STATUS_SUCCESS                      0x00000000
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
 #define STATUS_INVALID_PARAMETER            0xc000000d
 #define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
@@ -20,6 +21,7 @@ struct muwine_func {
 #define STATUS_REGISTRY_CORRUPT             0xc000014c
 
 typedef uintptr_t NTSTATUS;
+typedef uint16_t WCHAR;
 
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 
