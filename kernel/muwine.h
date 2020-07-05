@@ -5,8 +5,12 @@ struct muwine_func {
     unsigned int num_args;
 };
 
-#define STATUS_NOT_IMPLEMENTED      0xc0000002
-#define STATUS_INVALID_PARAMETER    0xc000000d
+#define STATUS_NOT_IMPLEMENTED              0xc0000002
+#define STATUS_INVALID_PARAMETER            0xc000000d
+#define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
+#define STATUS_INSUFFICIENT_RESOURCES       0xc000009a
+#define STATUS_INTERNAL_ERROR               0xc00000e5
+#define STATUS_REGISTRY_CORRUPT             0xc000014c
 
 typedef uintptr_t NTSTATUS;
 

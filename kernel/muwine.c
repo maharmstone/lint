@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
 #include <asm/uaccess.h>
 #include "ioctls.h"
 #include "muwine.h"
@@ -12,6 +13,8 @@ MODULE_DESCRIPTION("Multi-user Wine");
 MODULE_VERSION("0.01");
 
 static int major_num;
+static char* system_hive = NULL;
+static size_t system_hive_size;
 
 static int muwine_open(struct inode* inode, struct file* file);
 static int muwine_release(struct inode* inode, struct file* file);
@@ -21,18 +24,107 @@ static struct muwine_func funcs[] = {
     { muwine_init_registry, 1 },
 };
 
+// FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
+
 static struct file_operations file_ops = {
     .open = muwine_open,
     .release = muwine_release,
     .unlocked_ioctl = muwine_ioctl
 };
 
-// FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
+static bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen) {
+    while (maxlen > 0) {
+        char c;
 
-NTSTATUS muwine_init_registry(const char* system_hive) {
-    printk(KERN_INFO "muwine_init_registry(%p)\n", system_hive);
+        if (get_user(c, str_us) < 0)
+            return false;
 
-    // FIXME
+        *str_ks = c;
+        str_ks++;
+        str_us++;
+        maxlen--;
+
+        if (c == 0)
+            return true;
+    }
+
+    return false;
+}
+
+static NTSTATUS linux_error_to_ntstatus(int err) {
+    switch (err) {
+        case -ENOENT:
+            return STATUS_OBJECT_NAME_NOT_FOUND;
+
+        default:
+            printk(KERN_INFO "muwine: Unable to translate error %d to NTSTATUS.\n", err);
+            return STATUS_INTERNAL_ERROR;
+    }
+}
+
+NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
+    char system_hive_path[255];
+    struct file* f;
+    loff_t pos;
+
+    // FIXME - make sure uid is root
+    // FIXME - make sure not already called
+
+    printk(KERN_INFO "muwine_init_registry(%p)\n", user_system_hive_path);
+
+    if (!user_system_hive_path)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!read_user_string(user_system_hive_path, system_hive_path, sizeof(system_hive_path)))
+        return STATUS_INVALID_PARAMETER;
+
+    if (system_hive_path[0] == 0)
+        return STATUS_INVALID_PARAMETER;
+
+    printk(KERN_INFO "opening file %s\n", system_hive_path);
+
+    f = filp_open(system_hive_path, O_RDONLY, 0);
+    if (IS_ERR(f)) {
+        printk(KERN_INFO "muwine_init_registry: could not open %s\n", system_hive_path);
+        return linux_error_to_ntstatus((int)(uintptr_t)f);
+    }
+
+    if (!f->f_inode) {
+        printk(KERN_INFO "muwine_init_registry: file did not have an inode\n");
+        filp_close(f, NULL);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    system_hive_size = f->f_inode->i_size;
+
+    if (system_hive_size == 0) {
+        filp_close(f, NULL);
+        return STATUS_REGISTRY_CORRUPT;
+    }
+
+    system_hive = kmalloc(system_hive_size, GFP_KERNEL);
+    if (!system_hive) {
+        filp_close(f, NULL);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    pos = 0;
+
+    while (pos < system_hive_size) {
+        ssize_t read = kernel_read(f, (uint8_t*)system_hive + pos, system_hive_size - pos, &pos);
+
+        if (read < 0) {
+            printk(KERN_INFO "muwine_init_registry: read returned %ld\n", read);
+            filp_close(f, NULL);
+            return linux_error_to_ntstatus(read);
+        }
+    }
+
+    printk(KERN_INFO "muwine_init_registry: Loaded %lu bytes of system hive into memory.\n", system_hive_size);
+
+    // FIXME - check valid
+
+    filp_close(f, NULL);
 
     return STATUS_INVALID_PARAMETER;
 }
@@ -103,6 +195,9 @@ static int __init muwine_init(void) {
 
 static void __exit muwine_exit(void) {
     unregister_chrdev(major_num, "muwine");
+
+    if (system_hive)
+        kfree(system_hive);
 
     printk(KERN_INFO "muwine unloaded\n");
 }
