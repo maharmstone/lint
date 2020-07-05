@@ -3,6 +3,7 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <asm/uaccess.h>
+#include "ioctls.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Mark Harmstone");
@@ -11,15 +12,19 @@ MODULE_VERSION("0.01");
 
 static int major_num;
 
-static int device_open(struct inode* inode, struct file* file);
-static int device_release(struct inode* inode, struct file* file);
+static int muwine_open(struct inode* inode, struct file* file);
+static int muwine_release(struct inode* inode, struct file* file);
+static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg);
 
 static struct file_operations file_ops = {
-    .open = device_open,
-    .release = device_release
+    .open = muwine_open,
+    .release = muwine_release,
+    .unlocked_ioctl = muwine_ioctl
 };
 
-static int device_open(struct inode* inode, struct file* file) {
+// FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
+
+static int muwine_open(struct inode* inode, struct file* file) {
     // FIXME - add pid to process list
 
     try_module_get(THIS_MODULE);
@@ -27,13 +32,25 @@ static int device_open(struct inode* inode, struct file* file) {
     return 0;
 }
 
-static int device_release(struct inode* inode, struct file* file) {
+static int muwine_release(struct inode* inode, struct file* file) {
     // FIXME - remove pid from process list
 
     module_put(THIS_MODULE);
 
     return 0;
 }
+
+static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg) {
+    printk(KERN_INFO "muwine_ioctl(%p, %x, %lx)\n", file, cmd, arg);
+
+    if (cmd > MUWINE_IOCTL_MAX)
+        return -EINVAL;
+
+    // FIXME
+
+    return 0;
+}
+
 
 static int __init muwine_init(void) {
     major_num = register_chrdev(0, "muwine", &file_ops);
