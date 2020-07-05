@@ -3,6 +3,11 @@
 
 #define HV_HBLOCK_SIGNATURE 0x66676572  // "regf"
 
+#define CM_KEY_HASH_LEAF        0x686c  // "lh"
+#define CM_KEY_INDEX_ROOT       0x6972  // "ri"
+#define CM_KEY_NODE_SIGNATURE   0x6b6e  // "nk"
+#define CM_KEY_VALUE_SIGNATURE  0x6b76  // "vk"
+
 #define HSYS_MAJOR 1
 #define HSYS_MINOR 3
 #define HFILE_TYPE_PRIMARY 0
@@ -31,6 +36,58 @@ typedef struct {
     uint32_t BootType;
     uint32_t BootRecover;
 } HBASE_BLOCK;
+
+typedef struct {
+    uint16_t Signature;
+    uint16_t Flags;
+    uint64_t LastWriteTime;
+    uint32_t Spare;
+    uint32_t Parent;
+    uint32_t SubKeyCount;
+    uint32_t VolatileSubKeyCount;
+    uint32_t SubKeyList;
+    uint32_t VolatileSubKeyList;
+    uint32_t ValuesCount;
+    uint32_t Values;
+    uint32_t Security;
+    uint32_t Class;
+    uint32_t MaxNameLen;
+    uint32_t MaxClassLen;
+    uint32_t MaxValueNameLen;
+    uint32_t MaxValueDataLen;
+    uint32_t WorkVar;
+    uint16_t NameLength;
+    uint16_t ClassLength;
+    WCHAR Name[1];
+} CM_KEY_NODE;
+
+typedef struct {
+    uint32_t Cell;
+    uint32_t HashKey;
+} CM_INDEX;
+
+typedef struct {
+    uint16_t Signature;
+    uint16_t Count;
+    CM_INDEX List[1];
+} CM_KEY_FAST_INDEX;
+
+typedef struct {
+    uint16_t Signature;
+    uint16_t NameLength;
+    uint32_t DataLength;
+    uint32_t Data;
+    uint32_t Type;
+    uint16_t Flags;
+    uint16_t Spare;
+    WCHAR Name[1];
+} CM_KEY_VALUE;
+
+typedef struct {
+    uint16_t Signature;
+    uint16_t Count;
+    uint32_t List[1];
+} CM_KEY_INDEX;
 
 static void* system_hive = NULL;
 static size_t system_hive_size;
@@ -99,6 +156,53 @@ static bool hive_is_valid(void* hive, size_t hive_size) {
     }
 
     return true;
+}
+
+static void clear_volatile(void* hive, uint32_t key) {
+    int32_t size;
+    CM_KEY_NODE* nk;
+    uint16_t sig;
+    unsigned int i;
+
+    // FIXME - make sure we don't exceed the bounds of the allocation
+
+    size = -*(int32_t*)((uint8_t*)hive + key);
+
+    if (size < 0)
+        return;
+
+    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+        return;
+
+    nk = (CM_KEY_NODE*)((uint8_t*)hive + key + sizeof(int32_t));
+
+    if (nk->Signature != CM_KEY_NODE_SIGNATURE)
+        return;
+
+    nk->VolatileSubKeyList = 0xbaadf00d;
+    nk->VolatileSubKeyCount = 0;
+
+    if (nk->SubKeyCount == 0 || nk->SubKeyList == 0xffffffff)
+        return;
+
+    size = -*(int32_t*)((uint8_t*)hive + 0x1000 + nk->SubKeyList);
+
+    sig = *(uint16_t*)((uint8_t*)hive + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+
+    if (sig == CM_KEY_HASH_LEAF) {
+        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)hive + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+
+        for (i = 0; i < lh->Count; i++) {
+            clear_volatile(hive, 0x1000 + lh->List[i].Cell);
+        }
+    } else if (sig == CM_KEY_INDEX_ROOT) {
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)hive + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+
+        for (i = 0; i < ri->Count; i++) {
+            clear_volatile(hive, 0x1000 + ri->List[i]);
+        }
+    } else
+        printk(KERN_INFO "muwine: unhandled registry signature %x\n", sig);
 }
 
 NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
@@ -170,6 +274,8 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
     }
 
     printk(KERN_INFO "muwine_init_registry: loaded system hive at %s.\n", system_hive_path);
+
+    clear_volatile(system_hive, 0x1000 + ((HBASE_BLOCK*)system_hive)->RootCell);
 
     return STATUS_SUCCESS;
 }
