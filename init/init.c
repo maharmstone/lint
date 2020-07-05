@@ -25,7 +25,7 @@ int main() {
         return 1;
     }
 
-    ret = muwine_init_registry(fd, "SYSTEM");
+    ret = muwine_init_registry(fd, "/root/temp/init/SYSTEM");
     if (ret < 0) {
         fprintf(stderr, "muwine_init_registry: error %08x\n", ret);
         close(fd);
