@@ -1,5 +1,12 @@
 #pragma once
 
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/fs.h>
+#include <linux/slab.h>
+#include <asm/uaccess.h>
+
 struct muwine_func {
     void* func;
     unsigned int num_args;
@@ -16,4 +23,10 @@ typedef uintptr_t NTSTATUS;
 
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 
+// muwine.c
+NTSTATUS muwine_error_to_ntstatus(int err);
+bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
+
+// reg.c
 NTSTATUS muwine_init_registry(const char* system_hive);
+void muwine_free_reg(void);
