@@ -1,8 +1,11 @@
 #pragma once
 
-// FIXME - should be using _IOR macros etc. (but need to know major number in advance?)
+#include <linux/ioctl.h>
 
-#define MUWINE_IOCTL_INIT_REGISTRY        0
-#define MUWINE_IOCTL_NTOPENKEY            1
-#define MUWINE_IOCTL_NTCLOSE              2
+#define MUWINE_IOCTL(num) _IOWR(0, num, 0) // FIXME - should be using proper major number
+
+#define MUWINE_IOCTL_INIT_REGISTRY        MUWINE_IOCTL(0)
+#define MUWINE_IOCTL_NTOPENKEY            MUWINE_IOCTL(1)
+#define MUWINE_IOCTL_NTCLOSE              MUWINE_IOCTL(2)
+
 #define MUWINE_IOCTL_MAX                  2

@@ -18,6 +18,7 @@ struct muwine_func {
 
 #define STATUS_SUCCESS                      0x00000000
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
+#define STATUS_INVALID_HANDLE               0xc0000008
 #define STATUS_INVALID_PARAMETER            0xc000000d
 #define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
 #define STATUS_OBJECT_PATH_INVALID          0xc0000039
@@ -62,9 +63,14 @@ typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
 typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
 
-typedef struct {
+struct _object_header;
+
+typedef void (*muwine_close_object)(struct _object_header* obj);
+
+typedef struct _object_header {
     int refcount;
     struct list_head list;
+    muwine_close_object close;
 } object_header;
 
 // muwine.c

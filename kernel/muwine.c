@@ -128,14 +128,10 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
     return true;
 }
 
-NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
+static process* get_current_process(void) {
     unsigned long flags;
     struct list_head* le;
     pid_t pid = task_tgid_vnr(current);
-    process* p = NULL;
-    handle* hand;
-
-    // find entry in pid list
 
     spin_lock_irqsave(&pid_list_lock, flags);
 
@@ -145,14 +141,23 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
         process* p2 = list_entry(le, process, list);
 
         if (p2->pid == pid) {
-            p = p2;
-            break;
+            spin_unlock_irqrestore(&pid_list_lock, flags);
+
+            return p2;
         }
 
         le = le->next;
     }
 
     spin_unlock_irqrestore(&pid_list_lock, flags);
+
+    return NULL;
+}
+
+NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
+    unsigned long flags;
+    process* p = get_current_process();
+    handle* hand;
 
     if (!p)
         return STATUS_INTERNAL_ERROR;
@@ -175,6 +180,45 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
     spin_unlock_irqrestore(&p->handle_list_lock, flags);
 
     *h = (HANDLE)hand->number;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS NtClose(HANDLE Handle) {
+    unsigned long flags;
+    struct list_head* le;
+    process* p = get_current_process();
+    handle* h = NULL;
+
+    if (!p)
+        return STATUS_INTERNAL_ERROR;
+
+    // get handle from list
+
+    spin_lock_irqsave(&p->handle_list_lock, flags);
+
+    le = p->handle_list.next;
+
+    while (le != &p->handle_list) {
+        handle* h2 = list_entry(le, handle, list);
+
+        if (h2->number == (uintptr_t)Handle) {
+            list_del(&h2->list);
+            h = h2;
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock_irqrestore(&p->handle_list_lock, flags);
+
+    if (!h)
+        return STATUS_INVALID_HANDLE;
+
+    h->object->close(h->object);
+
+    kfree(h);
 
     return STATUS_SUCCESS;
 }
@@ -263,6 +307,7 @@ static int muwine_release(struct inode* inode, struct file* file) {
     unsigned long flags;
     pid_t pid = task_tgid_vnr(current);
     struct list_head* le;
+    process* p = NULL;
 
     // remove pid from process list
 
@@ -271,14 +316,14 @@ static int muwine_release(struct inode* inode, struct file* file) {
     le = pid_list.next;
 
     while (le != &pid_list) {
-        process* p = list_entry(le, process, list);
+        process* p2 = list_entry(le, process, list);
 
-        if (p->pid == pid) {
-            p->refcount--;
+        if (p2->pid == pid) {
+            p2->refcount--;
 
-            if (p->refcount == 0) {
-                list_del(&p->list);
-                kfree(p);
+            if (p2->refcount == 0) {
+                list_del(&p2->list);
+                p = p2;
             }
 
             break;
@@ -287,9 +332,27 @@ static int muwine_release(struct inode* inode, struct file* file) {
         le = le->next;
     }
 
-    // FIXME - force close of all open handles
-
     spin_unlock_irqrestore(&pid_list_lock, flags);
+
+    if (p) {
+        // force close of all open handles
+
+        spin_lock_irqsave(&p->handle_list_lock, flags);
+
+        while (!list_empty(&p->handle_list)) {
+            handle* hand = list_entry(p->handle_list.next, handle, list);
+
+            list_del(&hand->list);
+
+            hand->object->close(hand->object);
+
+            kfree(hand);
+        }
+
+        spin_unlock_irqrestore(&p->handle_list_lock, flags);
+
+        kfree(p);
+    }
 
     module_put(THIS_MODULE);
 
@@ -299,6 +362,8 @@ static int muwine_release(struct inode* inode, struct file* file) {
 static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg) {
     uintptr_t* temp;
     uintptr_t num_args;
+
+    cmd = _IOC_NR(cmd);
 
     if (cmd > MUWINE_IOCTL_MAX)
         return STATUS_NOT_IMPLEMENTED;
@@ -359,7 +424,6 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
         return STATUS_INVALID_PARAMETER;
     }
 }
-
 
 static int __init muwine_init(void) {
     major_num = register_chrdev(0, "muwine", &file_ops);

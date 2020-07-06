@@ -100,6 +100,8 @@ typedef struct {
     size_t offset;
 } key_object;
 
+static void key_object_close(object_header* obj);
+
 static hive system_hive;
 
 static bool hive_is_valid(hive* h) {
@@ -318,6 +320,7 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
         return STATUS_INSUFFICIENT_RESOURCES;
 
     k->header.refcount = 1;
+    k->header.close = key_object_close;
     k->h = h; // FIXME - increase hive refcount
     k->offset = offset;
 
@@ -408,8 +411,8 @@ NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_AT
     return Status;
 }
 
-NTSTATUS NtClose(HANDLE Handle) {
-    printk(KERN_INFO "NtClose(%p): stub\n", Handle);
+static void key_object_close(object_header* obj) {
+    printk(KERN_ALERT "FIXME - key_object_close\n"); // FIXME
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME
 }
