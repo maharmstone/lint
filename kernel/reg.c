@@ -89,15 +89,19 @@ typedef struct {
     uint32_t List[1];
 } CM_KEY_INDEX;
 
-static void* system_hive = NULL;
-static size_t system_hive_size;
+typedef struct {
+    void* data;
+    size_t size;
+} hive;
 
-static bool hive_is_valid(void* hive, size_t hive_size) {
-    HBASE_BLOCK* base_block = (HBASE_BLOCK*)hive;
+static hive system_hive;
+
+static bool hive_is_valid(hive* h) {
+    HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
     unsigned int i;
     uint32_t csum;
 
-    if (hive_size < sizeof(HBASE_BLOCK)) {
+    if (h->size < sizeof(HBASE_BLOCK)) {
         printk(KERN_ALERT "muwine: hive was too short\n");
         return false;
     }
@@ -142,7 +146,7 @@ static bool hive_is_valid(void* hive, size_t hive_size) {
     csum = 0;
 
     for (i = 0; i < 127; i++) {
-        csum ^= ((uint32_t*)hive)[i];
+        csum ^= ((uint32_t*)h->data)[i];
     }
 
     if (csum == 0xffffffff)
@@ -158,7 +162,7 @@ static bool hive_is_valid(void* hive, size_t hive_size) {
     return true;
 }
 
-static void clear_volatile(void* hive, uint32_t key) {
+static void clear_volatile(hive* h, uint32_t key) {
     int32_t size;
     CM_KEY_NODE* nk;
     uint16_t sig;
@@ -166,7 +170,7 @@ static void clear_volatile(void* hive, uint32_t key) {
 
     // FIXME - make sure we don't exceed the bounds of the allocation
 
-    size = -*(int32_t*)((uint8_t*)hive + key);
+    size = -*(int32_t*)((uint8_t*)h->data + key);
 
     if (size < 0)
         return;
@@ -174,7 +178,7 @@ static void clear_volatile(void* hive, uint32_t key) {
     if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return;
 
-    nk = (CM_KEY_NODE*)((uint8_t*)hive + key + sizeof(int32_t));
+    nk = (CM_KEY_NODE*)((uint8_t*)h->data + key + sizeof(int32_t));
 
     if (nk->Signature != CM_KEY_NODE_SIGNATURE)
         return;
@@ -185,21 +189,21 @@ static void clear_volatile(void* hive, uint32_t key) {
     if (nk->SubKeyCount == 0 || nk->SubKeyList == 0xffffffff)
         return;
 
-    size = -*(int32_t*)((uint8_t*)hive + 0x1000 + nk->SubKeyList);
+    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList);
 
-    sig = *(uint16_t*)((uint8_t*)hive + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+    sig = *(uint16_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
 
     if (sig == CM_KEY_HASH_LEAF) {
-        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)hive + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
 
         for (i = 0; i < lh->Count; i++) {
-            clear_volatile(hive, 0x1000 + lh->List[i].Cell);
+            clear_volatile(h, 0x1000 + lh->List[i].Cell);
         }
     } else if (sig == CM_KEY_INDEX_ROOT) {
-        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)hive + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
 
         for (i = 0; i < ri->Count; i++) {
-            clear_volatile(hive, 0x1000 + ri->List[i]);
+            clear_volatile(h, 0x1000 + ri->List[i]);
         }
     } else
         printk(KERN_INFO "muwine: unhandled registry signature %x\n", sig);
@@ -212,7 +216,7 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
 
     // FIXME - make sure uid is root
 
-    if (system_hive) // make sure not already loaded
+    if (system_hive.data) // make sure not already loaded
         return STATUS_INVALID_PARAMETER;
 
     if (!user_system_hive_path)
@@ -238,54 +242,54 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
         return STATUS_INTERNAL_ERROR;
     }
 
-    system_hive_size = f->f_inode->i_size;
+    system_hive.size = f->f_inode->i_size;
 
-    if (system_hive_size == 0) {
+    if (system_hive.size == 0) {
         filp_close(f, NULL);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    system_hive = vmalloc(system_hive_size);
-    if (!system_hive) {
+    system_hive.data = vmalloc(system_hive.size);
+    if (!system_hive.data) {
         filp_close(f, NULL);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     pos = 0;
 
-    while (pos < system_hive_size) {
-        ssize_t read = kernel_read(f, (uint8_t*)system_hive + pos, system_hive_size - pos, &pos);
+    while (pos < system_hive.size) {
+        ssize_t read = kernel_read(f, (uint8_t*)system_hive.data + pos, system_hive.size - pos, &pos);
 
         if (read < 0) {
             printk(KERN_INFO "muwine_init_registry: read returned %ld\n", read);
             filp_close(f, NULL);
-            vfree(system_hive);
-            system_hive = NULL;
+            vfree(system_hive.data);
+            system_hive.data = NULL;
             return muwine_error_to_ntstatus(read);
         }
     }
 
     filp_close(f, NULL);
 
-    if (!hive_is_valid(system_hive, system_hive_size)) {
-        vfree(system_hive);
-        system_hive = NULL;
+    if (!hive_is_valid(&system_hive)) {
+        vfree(system_hive.data);
+        system_hive.data = NULL;
         return STATUS_REGISTRY_CORRUPT;
     }
 
     printk(KERN_INFO "muwine_init_registry: loaded system hive at %s.\n", system_hive_path);
 
-    clear_volatile(system_hive, 0x1000 + ((HBASE_BLOCK*)system_hive)->RootCell);
+    clear_volatile(&system_hive, 0x1000 + ((HBASE_BLOCK*)system_hive.data)->RootCell);
 
     return STATUS_SUCCESS;
 }
 
 void muwine_free_reg(void) {
-    if (system_hive)
-        vfree(system_hive);
+    if (system_hive.data)
+        vfree(system_hive.data);
 }
 
-static NTSTATUS open_key_in_hive(void* system_hive, PHANDLE KeyHandle, ACCESS_MASK DesiredAccess) {
+static NTSTATUS open_key_in_hive(hive* h, PHANDLE KeyHandle, ACCESS_MASK DesiredAccess) {
     // FIXME
 
     return STATUS_INTERNAL_ERROR;
@@ -330,7 +334,7 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
         if (us.Length >= sizeof(WCHAR) && us.Buffer[0] != '\\')
             return STATUS_OBJECT_PATH_INVALID;
 
-        return open_key_in_hive(system_hive, KeyHandle, DesiredAccess);
+        return open_key_in_hive(&system_hive, KeyHandle, DesiredAccess);
     } else
         return STATUS_OBJECT_PATH_INVALID;
 
