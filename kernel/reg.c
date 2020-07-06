@@ -94,6 +94,11 @@ typedef struct {
     size_t size;
 } hive;
 
+typedef struct {
+    hive* h;
+    size_t offset;
+} key_object;
+
 static hive system_hive;
 
 static bool hive_is_valid(hive* h) {
@@ -289,10 +294,37 @@ void muwine_free_reg(void) {
         vfree(system_hive.data);
 }
 
-static NTSTATUS open_key_in_hive(hive* h, PHANDLE KeyHandle, ACCESS_MASK DesiredAccess) {
-    // FIXME
+static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ACCESS_MASK DesiredAccess) {
+    NTSTATUS Status;
+    size_t offset;
+    key_object* k;
 
-    return STATUS_INTERNAL_ERROR;
+    // FIXME - get hive mutex
+
+    // FIXME - loop through parts and locate
+
+//     while (us->Length >= sizeof(WCHAR) && *us->Buffer == '\\') {
+//         us->Length += sizeof(WCHAR);
+//         us->Buffer++;
+//     }
+
+    // FIXME - create key object and return handle
+
+    offset = 0x1000 + ((HBASE_BLOCK*)h->data)->RootCell; // FIXME
+
+    k = kmalloc(sizeof(key_object), GFP_KERNEL);
+    if (!k)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    k->h = h; // FIXME - increase hive refcount
+    k->offset = offset;
+
+    Status = muwine_add_handle(k, KeyHandle);
+
+    if (!NT_SUCCESS(Status))
+        kfree(k);
+
+    return Status;
 }
 
 static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
@@ -327,14 +359,17 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
     us.Length -= sizeof(prefix) - sizeof(WCHAR);
 
-    if (us.Length >= sizeof(machine) - sizeof(WCHAR) && !wcsnicmp(us.Buffer, machine, sizeof(machine) - sizeof(WCHAR))) {
+    if (us.Length >= sizeof(machine) - sizeof(WCHAR) && !wcsnicmp(us.Buffer, machine, (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR))) {
         us.Buffer += (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR);
         us.Length -= sizeof(machine) - sizeof(WCHAR);
 
         if (us.Length >= sizeof(WCHAR) && us.Buffer[0] != '\\')
             return STATUS_OBJECT_PATH_INVALID;
 
-        return open_key_in_hive(&system_hive, KeyHandle, DesiredAccess);
+        if (!system_hive.data) // HKLM not loaded
+            return STATUS_OBJECT_PATH_INVALID;
+
+        return open_key_in_hive(&system_hive, &us, KeyHandle, DesiredAccess);
     } else
         return STATUS_OBJECT_PATH_INVALID;
 

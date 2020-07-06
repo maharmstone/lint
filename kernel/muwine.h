@@ -68,6 +68,7 @@ bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
 bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us);
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us);
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
+NTSTATUS muwine_add_handle(void* object, PHANDLE h);
 
 // reg.c
 NTSTATUS muwine_init_registry(const char* system_hive);

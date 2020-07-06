@@ -110,6 +110,12 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
     return true;
 }
 
+NTSTATUS muwine_add_handle(void* object, PHANDLE h) {
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count) {
     size_t i;
 
