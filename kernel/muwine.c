@@ -45,6 +45,71 @@ bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen) {
     return false;
 }
 
+bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us) {
+    WCHAR* srcbuf;
+
+    if (get_user(ks->Length, &us->Length) < 0)
+        return false;
+
+    if (get_user(ks->MaximumLength, &us->MaximumLength) < 0)
+        return false;
+
+    if (ks->Length == 0) {
+        ks->Buffer = NULL;
+        return true;
+    }
+
+    if (get_user(srcbuf, &us->Buffer) < 0)
+        return false;
+
+    ks->Buffer = kmalloc(ks->Length, GFP_KERNEL);
+    if (!ks->Buffer)
+        return false;
+
+    if (copy_from_user(ks->Buffer, srcbuf, ks->Length) != 0) {
+        kfree(ks->Buffer);
+        return false;
+    }
+
+    return true;
+}
+
+bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us) {
+    UNICODE_STRING* usus;
+
+    if (get_user(ks->Length, &us->Length) < 0)
+        return false;
+
+    if (get_user(ks->RootDirectory, &us->RootDirectory) < 0)
+        return false;
+
+    if (get_user(ks->Attributes, &us->Attributes) < 0)
+        return false;
+
+    if (get_user(ks->SecurityDescriptor, &us->SecurityDescriptor) < 0) // FIXME - copy buffer to user space
+        return false;
+
+    if (get_user(ks->SecurityQualityOfService, &us->SecurityQualityOfService) < 0) // FIXME - copy buffer to user space
+        return false;
+
+    if (get_user(usus, &us->ObjectName) < 0)
+        return false;
+
+    if (usus) {
+        ks->ObjectName = kmalloc(sizeof(UNICODE_STRING), GFP_KERNEL);
+        if (!ks->ObjectName)
+            return false;
+
+        if (!get_user_unicode_string(ks->ObjectName, usus)) {
+            kfree(ks->ObjectName);
+            return false;
+        }
+    } else
+        ks->ObjectName = NULL;
+
+    return true;
+}
+
 NTSTATUS muwine_error_to_ntstatus(int err) {
     switch (err) {
         case -ENOENT:
