@@ -284,3 +284,15 @@ void muwine_free_reg(void) {
     if (system_hive)
         vfree(system_hive);
 }
+
+NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    printk(KERN_INFO "NtOpenKey(%p, %x, %p): stub\n", KeyHandle, DesiredAccess, ObjectAttributes);
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtClose(HANDLE Handle) {
+    printk(KERN_INFO "NtClose(%p): stub\n", Handle);
+
+    return STATUS_NOT_IMPLEMENTED;
+}

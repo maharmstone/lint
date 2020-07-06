@@ -14,6 +14,8 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 
 static struct muwine_func funcs[] = {
     { muwine_init_registry, 1 },
+    { NtOpenKey, 3},
+    { NtClose, 1}
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
@@ -99,6 +101,35 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
             return STATUS_INVALID_PARAMETER;
 
         return ((muwine_func1arg)funcs[cmd].func)(arg1);
+    } else if (num_args == 2) {
+        uintptr_t arg1, arg2;
+
+        if (get_user(arg1, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg2, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        return ((muwine_func2arg)funcs[cmd].func)(arg1, arg2);
+    } else if (num_args == 3) {
+        uintptr_t arg1, arg2, arg3;
+
+        if (get_user(arg1, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg2, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg3, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        return ((muwine_func3arg)funcs[cmd].func)(arg1, arg2, arg3);
     } else {
         printk(KERN_ALERT "muwine_ioctl: unexpected number of arguments %u\n", (unsigned int)num_args);
         return STATUS_INVALID_PARAMETER;

@@ -7,6 +7,10 @@
 #include <linux/slab.h>
 #include <asm/uaccess.h>
 
+#ifdef CONFIG_X86_64
+#define _WIN64
+#endif
+
 struct muwine_func {
     void* func;
     unsigned int num_args;
@@ -21,9 +25,39 @@ struct muwine_func {
 #define STATUS_REGISTRY_CORRUPT             0xc000014c
 
 typedef uintptr_t NTSTATUS;
-typedef uint16_t WCHAR;
+typedef uint16_t WCHAR, *PWSTR;
+typedef void* HANDLE;
+typedef HANDLE* PHANDLE;
+typedef uint32_t ULONG;
+typedef ULONG DWORD;
+typedef DWORD ACCESS_MASK;
+typedef void* PVOID;
+typedef uint16_t USHORT;
+
+typedef struct _UNICODE_STRING {
+    USHORT Length;
+    USHORT MaximumLength;
+    PWSTR Buffer;
+} UNICODE_STRING, *PUNICODE_STRING;
+
+typedef struct _OBJECT_ATTRIBUTES {
+    ULONG Length;
+#ifdef _WIN64
+    ULONG pad1;
+#endif
+    HANDLE RootDirectory;
+    PUNICODE_STRING ObjectName;
+    ULONG Attributes;
+#ifdef _WIN64
+    ULONG pad2;
+#endif
+    PVOID SecurityDescriptor;
+    PVOID SecurityQualityOfService;
+} OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
 
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
+typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
+typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
 
 // muwine.c
 NTSTATUS muwine_error_to_ntstatus(int err);
@@ -32,3 +66,5 @@ bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
 // reg.c
 NTSTATUS muwine_init_registry(const char* system_hive);
 void muwine_free_reg(void);
+NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS NtClose(HANDLE Handle);
