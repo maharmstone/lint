@@ -20,6 +20,15 @@ static struct muwine_func funcs[] = {
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
 
+typedef struct {
+    struct list_head list;
+    pid_t pid;
+    int refcount;
+} process;
+
+LIST_HEAD(pid_list);
+DEFINE_SPINLOCK(pid_list_lock);
+
 static struct file_operations file_ops = {
     .open = muwine_open,
     .release = muwine_release,
@@ -153,7 +162,40 @@ NTSTATUS muwine_error_to_ntstatus(int err) {
 }
 
 static int muwine_open(struct inode* inode, struct file* file) {
-    // FIXME - add pid to process list
+    unsigned long flags;
+    process* p;
+    struct list_head* le;
+    bool found = false;
+
+    // add pid to process list
+
+    p = kmalloc(sizeof(process), GFP_KERNEL);
+
+    p->pid = task_tgid_vnr(current);
+    p->refcount = 1;
+
+    spin_lock_irqsave(&pid_list_lock, flags);
+
+    le = pid_list.next;
+
+    while (le != &pid_list) {
+        process* p2 = list_entry(le, process, list);
+
+        if (p2->pid == p->pid) {
+            p2->refcount++;
+            found = true;
+            break;
+        }
+
+        le = le->next;
+    }
+
+    if (!found)
+        list_add_tail(&p->list, &pid_list);
+    else
+        kfree(p);
+
+    spin_unlock_irqrestore(&pid_list_lock, flags);
 
     try_module_get(THIS_MODULE);
 
@@ -161,7 +203,34 @@ static int muwine_open(struct inode* inode, struct file* file) {
 }
 
 static int muwine_release(struct inode* inode, struct file* file) {
-    // FIXME - remove pid from process list
+    unsigned long flags;
+    pid_t pid = task_tgid_vnr(current);
+    struct list_head* le;
+
+    // remove pid from process list
+
+    spin_lock_irqsave(&pid_list_lock, flags);
+
+    le = pid_list.next;
+
+    while (le != &pid_list) {
+        process* p = list_entry(le, process, list);
+
+        if (p->pid == pid) {
+            p->refcount--;
+
+            if (p->refcount == 0) {
+                list_del(&p->list);
+                kfree(p);
+            }
+
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock_irqrestore(&pid_list_lock, flags);
 
     module_put(THIS_MODULE);
 
@@ -239,10 +308,10 @@ static int __init muwine_init(void) {
     if (major_num < 0) {
         printk(KERN_ALERT "Could not register device: %d\n", major_num);
         return major_num;
-    } else {
-        printk(KERN_INFO "muwine module loaded with device major number %d\n", major_num);
-        return 0;
     }
+
+    printk(KERN_INFO "muwine module loaded with device major number %d\n", major_num);
+    return 0;
 }
 
 static void __exit muwine_exit(void) {
