@@ -285,10 +285,56 @@ void muwine_free_reg(void) {
         vfree(system_hive);
 }
 
+static NTSTATUS open_key_in_hive(void* system_hive, PHANDLE KeyHandle, ACCESS_MASK DesiredAccess) {
+    // FIXME
+
+    return STATUS_INTERNAL_ERROR;
+}
+
 static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    UNICODE_STRING us;
+
+    static const WCHAR prefix[] = L"\\Registry\\";
+    static const WCHAR machine[] = L"Machine";
+
     printk(KERN_INFO "NtOpenKey(%p, %x, %p): stub\n", KeyHandle, DesiredAccess, ObjectAttributes);
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES))
+        return STATUS_INVALID_PARAMETER;
+
+    if (ObjectAttributes->RootDirectory) {
+        printk(KERN_ALERT "NtOpenKey: FIXME - support RootDirectory\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (!ObjectAttributes->ObjectName)
+        return STATUS_INVALID_PARAMETER;
+
+    // fail if ObjectAttributes->ObjectName doesn't begin with "\\Registry\\";
+
+    us.Length = ObjectAttributes->ObjectName->Length;
+    us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+    if (us.Length < sizeof(prefix) - sizeof(WCHAR) ||
+        wcsnicmp(us.Buffer, prefix, (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR))) {
+        return STATUS_OBJECT_PATH_INVALID;
+    }
+
+    us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
+    us.Length -= sizeof(prefix) - sizeof(WCHAR);
+
+    if (us.Length >= sizeof(machine) - sizeof(WCHAR) && !wcsnicmp(us.Buffer, machine, sizeof(machine) - sizeof(WCHAR))) {
+        us.Buffer += (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR);
+        us.Length -= sizeof(machine) - sizeof(WCHAR);
+
+        if (us.Length >= sizeof(WCHAR) && us.Buffer[0] != '\\')
+            return STATUS_OBJECT_PATH_INVALID;
+
+        return open_key_in_hive(system_hive, KeyHandle, DesiredAccess);
+    } else
+        return STATUS_OBJECT_PATH_INVALID;
+
+    // FIXME - also look in \\Registry\\User
 }
 
 NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {

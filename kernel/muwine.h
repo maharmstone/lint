@@ -20,6 +20,7 @@ struct muwine_func {
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
 #define STATUS_INVALID_PARAMETER            0xc000000d
 #define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
+#define STATUS_OBJECT_PATH_INVALID          0xc0000039
 #define STATUS_INSUFFICIENT_RESOURCES       0xc000009a
 #define STATUS_INTERNAL_ERROR               0xc00000e5
 #define STATUS_REGISTRY_CORRUPT             0xc000014c
@@ -66,6 +67,7 @@ NTSTATUS muwine_error_to_ntstatus(int err);
 bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
 bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us);
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us);
+int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
 
 // reg.c
 NTSTATUS muwine_init_registry(const char* system_hive);

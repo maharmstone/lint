@@ -110,6 +110,31 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
     return true;
 }
 
+int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count) {
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        WCHAR c1 = *string1;
+        WCHAR c2 = *string2;
+
+        if (c1 >= 'A' && c1 <= 'Z')
+            c1 -= 'A' + 'a';
+
+        if (c2 >= 'A' && c2 <= 'Z')
+            c2 -= 'A' + 'a';
+
+        if (c1 < c2)
+            return -1;
+        else if (c1 > c2)
+            return 1;
+
+        string1++;
+        string2++;
+    }
+
+    return 0;
+}
+
 NTSTATUS muwine_error_to_ntstatus(int err) {
     switch (err) {
         case -ENOENT:
