@@ -14,7 +14,7 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 
 static struct muwine_func funcs[] = {
     { muwine_init_registry, 1 },
-    { NtOpenKey, 3},
+    { user_NtOpenKey, 3},
     { NtClose, 1}
 };
 

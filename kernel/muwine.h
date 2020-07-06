@@ -24,6 +24,8 @@ struct muwine_func {
 #define STATUS_INTERNAL_ERROR               0xc00000e5
 #define STATUS_REGISTRY_CORRUPT             0xc000014c
 
+#define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
+
 typedef uintptr_t NTSTATUS;
 typedef uint16_t WCHAR, *PWSTR;
 typedef void* HANDLE;
@@ -66,5 +68,5 @@ bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
 // reg.c
 NTSTATUS muwine_init_registry(const char* system_hive);
 void muwine_free_reg(void);
-NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtClose(HANDLE Handle);
