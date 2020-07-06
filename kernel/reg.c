@@ -95,6 +95,7 @@ typedef struct {
 } hive;
 
 typedef struct {
+    object_header header;
     hive* h;
     size_t offset;
 } key_object;
@@ -316,10 +317,11 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
     if (!k)
         return STATUS_INSUFFICIENT_RESOURCES;
 
+    k->header.refcount = 1;
     k->h = h; // FIXME - increase hive refcount
     k->offset = offset;
 
-    Status = muwine_add_handle(k, KeyHandle);
+    Status = muwine_add_handle(&k->header, KeyHandle);
 
     if (!NT_SUCCESS(Status))
         kfree(k);

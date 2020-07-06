@@ -24,7 +24,16 @@ typedef struct {
     struct list_head list;
     pid_t pid;
     int refcount;
+    struct list_head handle_list;
+    spinlock_t handle_list_lock;
+    uintptr_t next_handle_no;
 } process;
+
+typedef struct {
+    struct list_head list;
+    object_header* object;
+    uintptr_t number;
+} handle;
 
 LIST_HEAD(pid_list);
 DEFINE_SPINLOCK(pid_list_lock);
@@ -119,10 +128,55 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
     return true;
 }
 
-NTSTATUS muwine_add_handle(void* object, PHANDLE h) {
-    // FIXME
+NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
+    unsigned long flags;
+    struct list_head* le;
+    pid_t pid = task_tgid_vnr(current);
+    process* p = NULL;
+    handle* hand;
 
-    return STATUS_NOT_IMPLEMENTED;
+    // find entry in pid list
+
+    spin_lock_irqsave(&pid_list_lock, flags);
+
+    le = pid_list.next;
+
+    while (le != &pid_list) {
+        process* p2 = list_entry(le, process, list);
+
+        if (p2->pid == pid) {
+            p = p2;
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock_irqrestore(&pid_list_lock, flags);
+
+    if (!p)
+        return STATUS_INTERNAL_ERROR;
+
+    // add entry to handle list for pid
+
+    hand = kmalloc(sizeof(handle), GFP_KERNEL);
+    if (!hand)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    hand->object = obj;
+
+    spin_lock_irqsave(&p->handle_list_lock, flags);
+
+    hand->number = p->next_handle_no;
+    p->next_handle_no += 4;
+
+    list_add_tail(&hand->list, &p->handle_list);
+
+    spin_unlock_irqrestore(&p->handle_list_lock, flags);
+
+    *h = (HANDLE)hand->number;
+
+    return STATUS_SUCCESS;
 }
 
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count) {
@@ -173,6 +227,9 @@ static int muwine_open(struct inode* inode, struct file* file) {
 
     p->pid = task_tgid_vnr(current);
     p->refcount = 1;
+    INIT_LIST_HEAD(&p->handle_list);
+    spin_lock_init(&p->handle_list_lock);
+    p->next_handle_no = 4;
 
     spin_lock_irqsave(&pid_list_lock, flags);
 
@@ -229,6 +286,8 @@ static int muwine_release(struct inode* inode, struct file* file) {
 
         le = le->next;
     }
+
+    // FIXME - force close of all open handles
 
     spin_unlock_irqrestore(&pid_list_lock, flags);
 
