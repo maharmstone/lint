@@ -60,7 +60,7 @@ typedef struct _OBJECT_ATTRIBUTES {
 int muwine_fd = 0;
 
 #define init_muwine() if (muwine_fd == 0) { \
-    int fd = open("/dev/muwine", 0); \
+    int fd = open("/dev/muwine", O_RDWR); \
     if (fd < 0) return STATUS_NOT_IMPLEMENTED; \
     muwine_fd = fd; \
 }
