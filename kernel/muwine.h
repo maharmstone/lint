@@ -32,7 +32,7 @@ typedef uintptr_t NTSTATUS;
 typedef uint16_t WCHAR, *PWSTR;
 typedef void* HANDLE;
 typedef HANDLE* PHANDLE;
-typedef uint32_t ULONG;
+typedef uint32_t ULONG, *PULONG;
 typedef ULONG DWORD;
 typedef DWORD ACCESS_MASK;
 typedef void* PVOID;
@@ -59,9 +59,24 @@ typedef struct _OBJECT_ATTRIBUTES {
     PVOID SecurityQualityOfService;
 } OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
 
+typedef enum _KEY_INFORMATION_CLASS {
+    KeyBasicInformation,
+    KeyNodeInformation,
+    KeyFullInformation,
+    KeyNameInformation,
+    KeyCachedInformation,
+    KeyFlagsInformation,
+    KeyVirtualizationInformation,
+    KeyHandleTagsInformation,
+    MaxKeyInfoClass
+} KEY_INFORMATION_CLASS;
+
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
 typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
+typedef NTSTATUS (*muwine_func4arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4);
+typedef NTSTATUS (*muwine_func5arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5);
+typedef NTSTATUS (*muwine_func6arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6);
 
 struct _object_header;
 
@@ -86,3 +101,5 @@ NTSTATUS muwine_init_registry(const char* system_hive);
 void muwine_free_reg(void);
 NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtClose(HANDLE Handle);
+NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                        PVOID KeyInformation, ULONG Length, PULONG ResultLength);

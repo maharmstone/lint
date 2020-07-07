@@ -14,8 +14,9 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 
 static struct muwine_func funcs[] = {
     { muwine_init_registry, 1 },
-    { user_NtOpenKey, 3},
-    { NtClose, 1}
+    { user_NtOpenKey, 3 },
+    { NtClose, 1 },
+    { NtEnumerateKey, 6 }
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
@@ -419,6 +420,87 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
             return STATUS_INVALID_PARAMETER;
 
         return ((muwine_func3arg)funcs[cmd].func)(arg1, arg2, arg3);
+    } else if (num_args == 4) {
+        uintptr_t arg1, arg2, arg3, arg4;
+
+        if (get_user(arg1, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg2, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg3, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg4, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        return ((muwine_func4arg)funcs[cmd].func)(arg1, arg2, arg3, arg4);
+    } else if (num_args == 5) {
+        uintptr_t arg1, arg2, arg3, arg4, arg5;
+
+        if (get_user(arg1, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg2, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg3, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg4, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg5, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        return ((muwine_func5arg)funcs[cmd].func)(arg1, arg2, arg3, arg4, arg5);
+    } else if (num_args == 6) {
+        uintptr_t arg1, arg2, arg3, arg4, arg5, arg6;
+
+        if (get_user(arg1, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg2, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg3, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg4, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg5, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg6, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        return ((muwine_func6arg)funcs[cmd].func)(arg1, arg2, arg3, arg4, arg5, arg6);
     } else {
         printk(KERN_ALERT "muwine_ioctl: unexpected number of arguments %u\n", (unsigned int)num_args);
         return STATUS_INVALID_PARAMETER;

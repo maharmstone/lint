@@ -7,5 +7,6 @@
 #define MUWINE_IOCTL_INIT_REGISTRY        MUWINE_IOCTL(0)
 #define MUWINE_IOCTL_NTOPENKEY            MUWINE_IOCTL(1)
 #define MUWINE_IOCTL_NTCLOSE              MUWINE_IOCTL(2)
+#define MUWINE_IOCTL_NTENUMERATEKEY       MUWINE_IOCTL(3)
 
-#define MUWINE_IOCTL_MAX                  2
+#define MUWINE_IOCTL_MAX                  3

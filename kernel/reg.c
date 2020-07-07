@@ -416,3 +416,11 @@ static void key_object_close(object_header* obj) {
 
     // FIXME
 }
+
+NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                        PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
+    printk(KERN_INFO "NtEnumerateKey(%lx, %x, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, Index,
+           KeyInformationClass, KeyInformation, Length, ResultLength);
+
+    return STATUS_NOT_IMPLEMENTED;
+}
