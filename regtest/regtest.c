@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <inttypes.h>
 #include <fcntl.h>
 #include "../kernel/ioctls.h"
 
@@ -15,9 +16,7 @@
 #include <sys/ioctl.h>
 #endif
 
-#ifdef _WIN32
-NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
-#else
+#ifndef _WIN32
 typedef int32_t NTSTATUS;
 typedef void* HANDLE, *PHANDLE;
 typedef uint32_t ULONG, *PULONG;
@@ -25,7 +24,6 @@ typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef ULONG DWORD;
 typedef DWORD ACCESS_MASK;
-
 typedef wchar_t WCHAR;
 typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
 
@@ -48,9 +46,38 @@ typedef struct _OBJECT_ATTRIBUTES {
     PVOID SecurityQualityOfService;
 } OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
 
+typedef struct _LARGE_INTEGER {
+    int64_t QuadPart;
+} LARGE_INTEGER;
+
 #define KEY_ENUMERATE_SUB_KEYS (0x0008)
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
+#endif
+
+typedef enum _KEY_INFORMATION_CLASS {
+    KeyBasicInformation,
+    KeyNodeInformation,
+    KeyFullInformation,
+    KeyNameInformation,
+    KeyCachedInformation,
+    KeyFlagsInformation,
+    KeyVirtualizationInformation,
+    KeyHandleTagsInformation,
+    MaxKeyInfoClass
+} KEY_INFORMATION_CLASS;
+
+typedef struct _KEY_BASIC_INFORMATION {
+    LARGE_INTEGER LastWriteTime;
+    ULONG TitleIndex;
+    ULONG NameLength;
+    WCHAR Name[1];
+} KEY_BASIC_INFORMATION, *PKEY_BASIC_INFORMATION;
+
+#ifdef _WIN32
+NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                                  PVOID KeyInformation, ULONG Length, PULONG ResultLength);
 #endif
 
 #ifndef _WIN32
@@ -89,6 +116,23 @@ NTSTATUS NtClose(HANDLE Handle) {
     return ioctl(muwine_fd, MUWINE_IOCTL_NTCLOSE, args);
 }
 
+NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                        PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)Index,
+        (uintptr_t)KeyInformationClass,
+        (uintptr_t)KeyInformation,
+        (uintptr_t)Length,
+        (uintptr_t)ResultLength
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEKEY, args);
+}
+
 #endif
 
 static const char16_t regpath[] = u"\\Registry\\Machine";
@@ -98,6 +142,8 @@ int main() {
     HANDLE h;
     OBJECT_ATTRIBUTES oa;
     UNICODE_STRING us;
+    ULONG index, len;
+    char buf[255];
 
     us.Length = us.MaximumLength = sizeof(regpath) - sizeof(char16_t);
     us.Buffer = (char16_t*)regpath;
@@ -114,6 +160,24 @@ int main() {
 
     if (!NT_SUCCESS(Status))
         return 1;
+
+    index = 0;
+
+    printf("h = %p\n", h);
+
+    do {
+        Status = NtEnumerateKey(h, index, KeyBasicInformation, buf, sizeof(buf), &len);
+        printf("NtEnumerateKey returned %08x\n", (int32_t)Status);
+
+        if (NT_SUCCESS(Status)) {
+            KEY_BASIC_INFORMATION* kbi = (KEY_BASIC_INFORMATION*)buf;
+
+            printf("kbi: LastWriteTime = %" PRIx64 ", TitleIndex = %x, NameLength = %x, Name = %.*S\n",
+                (int64_t)kbi->LastWriteTime.QuadPart, (uint32_t)kbi->TitleIndex, (uint32_t)kbi->NameLength, (int)(kbi->NameLength / sizeof(WCHAR)), kbi->Name);
+        }
+
+        index++;
+    } while (NT_SUCCESS(Status));
 
     Status = NtClose(h);
     printf("NtClose returned %08x\n", (int32_t)Status);
