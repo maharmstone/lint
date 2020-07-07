@@ -306,6 +306,149 @@ void muwine_free_reg(void) {
         vfree(system_hive.data);
 }
 
+static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
+    uint32_t h = 0;
+    unsigned int i;
+
+    for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
+        WCHAR c;
+
+        if (us->Buffer[i] == 0 || us->Buffer[i] == '\\')
+            break;
+
+        if (us->Buffer[i] >= 'a' && us->Buffer[i] <= 'z')
+            c = us->Buffer[i] - 'a' + 'A';
+        else
+            c = us->Buffer[i];
+
+        h *= 37;
+        h += c;
+    }
+
+    return h;
+}
+
+static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* offset_out) {
+    uint32_t hash = calc_subkey_hash(us);
+    int32_t size;
+    unsigned int i, uslen;
+    CM_KEY_NODE* kn;
+    CM_KEY_FAST_INDEX* lh;
+
+    size = -*(int32_t*)((uint8_t*)h->data + offset);
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+        return STATUS_REGISTRY_CORRUPT;
+
+    kn = (CM_KEY_NODE*)((uint8_t*)h->data + offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
+        return STATUS_REGISTRY_CORRUPT;
+
+    // FIXME - work with volatile keys
+
+    if (kn->SubKeyCount == 0)
+        return STATUS_OBJECT_PATH_INVALID;
+
+    // FIXME - check not out of bounds
+
+    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList);
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]))
+        return STATUS_REGISTRY_CORRUPT;
+
+    lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
+
+    if (lh->Signature != CM_KEY_HASH_LEAF || size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+        return STATUS_REGISTRY_CORRUPT;
+
+    uslen = 0;
+
+    for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
+        if (us->Buffer[i] == 0 || us->Buffer[i] == '\\')
+            break;
+
+        uslen++;
+    }
+
+    for (i = 0; i < lh->Count; i++) {
+        if (lh->List[i].HashKey == hash) {
+            CM_KEY_NODE* kn2;
+            bool found = false;
+
+            // FIXME - check not out of bounds
+
+            size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + lh->List[i].Cell);
+
+            if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+                return STATUS_REGISTRY_CORRUPT;
+
+            kn2 = (CM_KEY_NODE*)((uint8_t*)h->data + 0x1000 + lh->List[i].Cell + sizeof(int32_t));
+
+            if (kn2->Signature != CM_KEY_NODE_SIGNATURE)
+                return STATUS_REGISTRY_CORRUPT;
+
+            if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn2->NameLength)
+                return STATUS_REGISTRY_CORRUPT;
+
+            if (kn2->Flags & KEY_COMP_NAME) {
+                if (kn2->NameLength == uslen) {
+                    unsigned int j;
+
+                    found = true;
+
+                    for (j = 0; j < uslen; j++) {
+                        WCHAR c1 = ((char*)kn2->Name)[j];
+                        WCHAR c2 = us->Buffer[j];
+
+                        if (c1 >= 'a' && c1 <= 'z')
+                            c1 = c1 - 'a' + 'A';
+
+                        if (c2 >= 'a' && c2 <= 'z')
+                            c2 = c2 - 'a' + 'A';
+
+                        if (c1 != c2) {
+                            found = false;
+                            break;
+                        }
+                    }
+
+
+                }
+            } else {
+                if (kn2->NameLength == uslen * sizeof(WCHAR)) {
+                    unsigned int j;
+
+                    found = true;
+
+                    for (j = 0; j < uslen; j++) {
+                        WCHAR c1 = kn2->Name[j];
+                        WCHAR c2 = us->Buffer[j];
+
+                        if (c1 >= 'a' && c1 <= 'z')
+                            c1 = c1 - 'a' + 'A';
+
+                        if (c2 >= 'a' && c2 <= 'z')
+                            c2 = c2 - 'a' + 'A';
+
+                        if (c1 != c2) {
+                            found = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (found) {
+                *offset_out = 0x1000 + lh->List[i].Cell;
+                return STATUS_SUCCESS;
+            }
+        }
+    }
+
+    return STATUS_OBJECT_PATH_INVALID;
+}
+
 static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ACCESS_MASK DesiredAccess) {
     NTSTATUS Status;
     size_t offset;
@@ -313,19 +456,37 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
 
     // FIXME - get hive mutex
 
-    // FIXME - loop through parts and locate
+    // loop through parts and locate
 
-//     while (us->Length >= sizeof(WCHAR) && *us->Buffer == '\\') {
-//         us->Length += sizeof(WCHAR);
-//         us->Buffer++;
-//     }
+    offset = 0x1000 + ((HBASE_BLOCK*)h->data)->RootCell;
+
+    do {
+        while (us->Length >= sizeof(WCHAR) && *us->Buffer == '\\') {
+            us->Length -= sizeof(WCHAR);
+            us->Buffer++;
+        }
+
+        if (us->Length == 0)
+            break;
+
+        // FIXME - should this be checking for KEY_ENUMERATE_SUB_KEYS against all keys in path?
+
+        Status = find_subkey(h, offset, us, &offset);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        while (us->Length >= sizeof(WCHAR) && *us->Buffer != '\\') {
+            us->Length -= sizeof(WCHAR);
+            us->Buffer++;
+        }
+    } while (true);
+
+    printk(KERN_INFO "offset = %lx\n", offset);
 
     // FIXME - do SeAccessCheck
     // FIXME - store access mask in handle
 
     // create key object and return handle
-
-    offset = 0x1000 + ((HBASE_BLOCK*)h->data)->RootCell; // FIXME
 
     k = kmalloc(sizeof(key_object), GFP_KERNEL);
     if (!k)
@@ -446,7 +607,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
 
     size = -*(int32_t*)((uint8_t*)key->h->data + key->offset);
 
-    if (size < offsetof(CM_KEY_NODE, Name[0]))
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return STATUS_REGISTRY_CORRUPT;
 
     kn = (CM_KEY_NODE*)((uint8_t*)key->h->data + key->offset + sizeof(int32_t));
@@ -463,12 +624,12 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
 
     size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + kn->SubKeyList);
 
-    if (size < offsetof(CM_KEY_FAST_INDEX, List[0]))
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]))
         return STATUS_REGISTRY_CORRUPT;
 
     lh = (CM_KEY_FAST_INDEX*)((uint8_t*)key->h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
 
-    if (lh->Signature != CM_KEY_HASH_LEAF || size < offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+    if (lh->Signature != CM_KEY_HASH_LEAF || size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
         return STATUS_REGISTRY_CORRUPT;
 
     if (Index >= lh->Count)
@@ -478,7 +639,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
 
     size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + lh->List[Index].Cell);
 
-    if (size < offsetof(CM_KEY_NODE, Name[0]))
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return STATUS_REGISTRY_CORRUPT;
 
     kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->data + 0x1000 + lh->List[Index].Cell + sizeof(int32_t));
@@ -486,7 +647,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     if (kn2->Signature != CM_KEY_NODE_SIGNATURE)
         return STATUS_REGISTRY_CORRUPT;
 
-    if (size < offsetof(CM_KEY_NODE, Name[0]) + kn2->NameLength)
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn2->NameLength)
         return STATUS_REGISTRY_CORRUPT;
 
     switch (KeyInformationClass) {
