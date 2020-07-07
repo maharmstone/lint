@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <uchar.h>
 #include <wchar.h>
 #include <assert.h>
@@ -156,31 +157,42 @@ int main() {
     oa.SecurityQualityOfService = NULL;
 
     Status = NtOpenKey(&h, KEY_ENUMERATE_SUB_KEYS, &oa);
-    printf("NtOpenKey returned %08x\n", (int32_t)Status);
 
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
+        printf("NtOpenKey returned %08x\n", (int32_t)Status);
         return 1;
+    }
 
     index = 0;
 
-    printf("h = %p\n", h);
-
     do {
         Status = NtEnumerateKey(h, index, KeyBasicInformation, buf, sizeof(buf), &len);
-        printf("NtEnumerateKey returned %08x\n", (int32_t)Status);
+
+        if (!NT_SUCCESS(Status))
+            printf("NtEnumerateKey returned %08x\n", (int32_t)Status);
 
         if (NT_SUCCESS(Status)) {
+            char name[255], *s;
+
             KEY_BASIC_INFORMATION* kbi = (KEY_BASIC_INFORMATION*)buf;
 
-            printf("kbi: LastWriteTime = %" PRIx64 ", TitleIndex = %x, NameLength = %x, Name = %.*S\n",
-                (int64_t)kbi->LastWriteTime.QuadPart, (uint32_t)kbi->TitleIndex, (uint32_t)kbi->NameLength, (int)(kbi->NameLength / sizeof(WCHAR)), kbi->Name);
+            s = name;
+            for (unsigned int i = 0; i < kbi->NameLength / sizeof(WCHAR); i++) {
+                *s = (char)kbi->Name[i];
+                s++;
+            }
+            *s = 0;
+
+            printf("kbi: LastWriteTime = %" PRIx64 ", TitleIndex = %x, NameLength = %x, Name = %s\n",
+                (int64_t)kbi->LastWriteTime.QuadPart, (uint32_t)kbi->TitleIndex, (uint32_t)kbi->NameLength, name);
         }
 
         index++;
     } while (NT_SUCCESS(Status));
 
     Status = NtClose(h);
-    printf("NtClose returned %08x\n", (int32_t)Status);
+    if (!NT_SUCCESS(Status))
+        printf("NtClose returned %08x\n", (int32_t)Status);
 
     return 0;
 }
