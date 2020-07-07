@@ -417,10 +417,43 @@ static void key_object_close(object_header* obj) {
     // FIXME
 }
 
-NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
-                        PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
+static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                               PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
     printk(KERN_INFO "NtEnumerateKey(%lx, %x, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, Index,
            KeyInformationClass, KeyInformation, Length, ResultLength);
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                             PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
+    NTSTATUS Status;
+    ULONG reslen = 0;
+    void* buf;
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        buf = NULL;
+
+    Status = NtEnumerateKey(KeyHandle, Index, KeyInformationClass, buf, Length, &reslen);
+
+    if (NT_SUCCESS(Status)) {
+        if (buf) {
+            if (copy_to_user(KeyInformation, buf, reslen) != 0)
+                Status = STATUS_INVALID_PARAMETER;
+        }
+
+        if (ResultLength) {
+            if (put_user(reslen, ResultLength) < 0)
+                Status = STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    if (buf)
+        kfree(buf);
+
+    return Status;
 }

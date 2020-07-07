@@ -28,7 +28,7 @@ struct muwine_func {
 
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
-typedef uintptr_t NTSTATUS;
+typedef int32_t NTSTATUS;
 typedef uint16_t WCHAR, *PWSTR;
 typedef void* HANDLE;
 typedef HANDLE* PHANDLE;
@@ -101,5 +101,5 @@ NTSTATUS muwine_init_registry(const char* system_hive);
 void muwine_free_reg(void);
 NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtClose(HANDLE Handle);
-NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
-                        PVOID KeyInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                             PVOID KeyInformation, ULONG Length, PULONG ResultLength);
