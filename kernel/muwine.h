@@ -17,9 +17,11 @@ struct muwine_func {
 };
 
 #define STATUS_SUCCESS                      0x00000000
+#define STATUS_NO_MORE_ENTRIES              0x8000001a
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
 #define STATUS_INVALID_HANDLE               0xc0000008
 #define STATUS_INVALID_PARAMETER            0xc000000d
+#define STATUS_BUFFER_TOO_SMALL             0xc0000023
 #define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
 #define STATUS_OBJECT_PATH_INVALID          0xc0000039
 #define STATUS_INSUFFICIENT_RESOURCES       0xc000009a
@@ -37,6 +39,10 @@ typedef ULONG DWORD;
 typedef DWORD ACCESS_MASK;
 typedef void* PVOID;
 typedef uint16_t USHORT;
+
+typedef struct {
+    int64_t QuadPart;
+} LARGE_INTEGER;
 
 typedef struct _UNICODE_STRING {
     USHORT Length;
@@ -82,9 +88,14 @@ struct _object_header;
 
 typedef void (*muwine_close_object)(struct _object_header* obj);
 
+typedef enum {
+    muwine_object_key
+} object_type;
+
 typedef struct _object_header {
     int refcount;
     struct list_head list;
+    object_type type;
     muwine_close_object close;
 } object_header;
 
@@ -95,6 +106,7 @@ bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us);
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
 NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h);
+object_header* get_object_from_handle(HANDLE h);
 
 // reg.c
 NTSTATUS muwine_init_registry(const char* system_hive);

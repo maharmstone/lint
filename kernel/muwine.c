@@ -185,6 +185,39 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
     return STATUS_SUCCESS;
 }
 
+object_header* get_object_from_handle(HANDLE h) {
+    unsigned long flags;
+    struct list_head* le;
+    process* p = get_current_process();
+
+    if (!p)
+        return NULL;
+
+    // get handle from list
+
+    spin_lock_irqsave(&p->handle_list_lock, flags);
+
+    le = p->handle_list.next;
+
+    while (le != &p->handle_list) {
+        handle* h2 = list_entry(le, handle, list);
+
+        if (h2->number == (uintptr_t)h) {
+            object_header* obj = h2->object;
+
+            spin_unlock_irqrestore(&p->handle_list_lock, flags);
+
+            return obj;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock_irqrestore(&p->handle_list_lock, flags);
+
+    return NULL;
+}
+
 NTSTATUS NtClose(HANDLE Handle) {
     unsigned long flags;
     struct list_head* le;

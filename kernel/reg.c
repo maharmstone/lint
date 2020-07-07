@@ -15,6 +15,8 @@
 
 #define HIVE_FILENAME_MAXLEN 31
 
+#define KEY_COMP_NAME       0x0020
+
 #pragma pack(push,1)
 
 typedef struct {
@@ -88,6 +90,13 @@ typedef struct {
     uint16_t Count;
     uint32_t List[1];
 } CM_KEY_INDEX;
+
+typedef struct _KEY_BASIC_INFORMATION {
+    LARGE_INTEGER LastWriteTime;
+    ULONG TitleIndex;
+    ULONG NameLength;
+    WCHAR Name[1];
+} KEY_BASIC_INFORMATION, *PKEY_BASIC_INFORMATION;
 
 typedef struct {
     void* data;
@@ -311,7 +320,10 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
 //         us->Buffer++;
 //     }
 
-    // FIXME - create key object and return handle
+    // FIXME - do SeAccessCheck
+    // FIXME - store access mask in handle
+
+    // create key object and return handle
 
     offset = 0x1000 + ((HBASE_BLOCK*)h->data)->RootCell; // FIXME
 
@@ -320,6 +332,7 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
         return STATUS_INSUFFICIENT_RESOURCES;
 
     k->header.refcount = 1;
+    k->header.type = muwine_object_key;
     k->header.close = key_object_close;
     k->h = h; // FIXME - increase hive refcount
     k->offset = offset;
@@ -419,10 +432,107 @@ static void key_object_close(object_header* obj) {
 
 static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                                PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
-    printk(KERN_INFO "NtEnumerateKey(%lx, %x, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, Index,
-           KeyInformationClass, KeyInformation, Length, ResultLength);
+    key_object* key;
+    int32_t size;
+    CM_KEY_NODE* kn;
+    CM_KEY_NODE* kn2;
+    CM_KEY_FAST_INDEX* lh;
 
-    return STATUS_NOT_IMPLEMENTED;
+    key = (key_object*)get_object_from_handle(KeyHandle);
+    if (!key || key->header.type != muwine_object_key)
+        return STATUS_INVALID_HANDLE;
+
+    // FIXME - check access mask of handle for KEY_ENUMERATE_SUB_KEYS
+
+    size = -*(int32_t*)((uint8_t*)key->h->data + key->offset);
+
+    if (size < offsetof(CM_KEY_NODE, Name[0]))
+        return STATUS_REGISTRY_CORRUPT;
+
+    kn = (CM_KEY_NODE*)((uint8_t*)key->h->data + key->offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
+        return STATUS_REGISTRY_CORRUPT;
+
+    // FIXME - work with volatile keys
+
+    if (Index >= kn->SubKeyCount)
+        return STATUS_NO_MORE_ENTRIES;
+
+    // FIXME - check not out of bounds
+
+    size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + kn->SubKeyList);
+
+    if (size < offsetof(CM_KEY_FAST_INDEX, List[0]))
+        return STATUS_REGISTRY_CORRUPT;
+
+    lh = (CM_KEY_FAST_INDEX*)((uint8_t*)key->h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
+
+    if (lh->Signature != CM_KEY_HASH_LEAF || size < offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+        return STATUS_REGISTRY_CORRUPT;
+
+    if (Index >= lh->Count)
+        return STATUS_REGISTRY_CORRUPT;
+
+    // FIXME - check not out of bounds
+
+    size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + lh->List[Index].Cell);
+
+    if (size < offsetof(CM_KEY_NODE, Name[0]))
+        return STATUS_REGISTRY_CORRUPT;
+
+    kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->data + 0x1000 + lh->List[Index].Cell + sizeof(int32_t));
+
+    if (kn2->Signature != CM_KEY_NODE_SIGNATURE)
+        return STATUS_REGISTRY_CORRUPT;
+
+    if (size < offsetof(CM_KEY_NODE, Name[0]) + kn2->NameLength)
+        return STATUS_REGISTRY_CORRUPT;
+
+    switch (KeyInformationClass) {
+        case KeyBasicInformation: {
+            KEY_BASIC_INFORMATION* kbi = KeyInformation;
+            ULONG reqlen = offsetof(KEY_BASIC_INFORMATION, Name[0]);
+
+            if (kn2->Flags & KEY_COMP_NAME)
+                reqlen += kn2->NameLength * sizeof(WCHAR);
+            else
+                reqlen += kn2->NameLength;
+
+            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
+                *ResultLength = reqlen;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+
+            kbi->LastWriteTime.QuadPart = kn2->LastWriteTime;
+            kbi->TitleIndex = 0;
+
+            if (kn2->Flags & KEY_COMP_NAME) {
+                unsigned int i;
+
+                kbi->NameLength = kn2->NameLength * sizeof(WCHAR);
+
+                for (i = 0; i < kn2->NameLength; i++) {
+                    kbi->Name[i] = *((char*)kn2->Name + i);
+                }
+            } else {
+                kbi->NameLength = kn2->NameLength;
+                memcpy(kbi->Name, kn2->Name, kn2->NameLength);
+            }
+
+            *ResultLength = reqlen;
+
+            break;
+        }
+
+        // FIXME - KeyFullInformation
+        // FIXME - KeyNodeInformation
+
+        default:
+            return STATUS_INVALID_PARAMETER;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
