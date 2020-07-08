@@ -98,6 +98,8 @@ NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION
                                   PVOID KeyInformation, ULONG Length, PULONG ResultLength);
 NTSTATUS __stdcall NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                        PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                   PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
 #endif
 
 #ifndef _WIN32
@@ -170,6 +172,23 @@ NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATIO
     return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEVALUEKEY, args);
 }
 
+NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                         PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)ValueName,
+        (uintptr_t)KeyValueInformationClass,
+        (uintptr_t)KeyValueInformation,
+        (uintptr_t)Length,
+        (uintptr_t)ResultLength
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYVALUEKEY, args);
+}
+
 #endif
 
 #ifdef _WIN32
@@ -177,6 +196,8 @@ static const char16_t regpath[] = u"\\Registry\\Machine\\System\\CurrentControlS
 #else
 static const char16_t regpath[] = u"\\Registry\\Machine\\ControlSet001\\Services\\btrfs"; // FIXME
 #endif
+
+static const char16_t key_name[] = u"ImagePath";
 
 int main() {
     NTSTATUS Status;
@@ -256,6 +277,29 @@ int main() {
 
         index++;
     } while (NT_SUCCESS(Status));
+
+    us.Length = us.MaximumLength = sizeof(key_name) - sizeof(char16_t);
+    us.Buffer = (WCHAR*)key_name;
+
+    Status = NtQueryValueKey(h, &us, KeyValueBasicInformation, buf, sizeof(buf), &len);
+
+    if (!NT_SUCCESS(Status))
+        printf("NtQueryValueKey returned %08x\n", (int32_t)Status);
+    else {
+        char name[255], *s;
+
+        KEY_VALUE_BASIC_INFORMATION* kvbi = (KEY_VALUE_BASIC_INFORMATION*)buf;
+
+        s = name;
+        for (unsigned int i = 0; i < kvbi->NameLength / sizeof(WCHAR); i++) {
+            *s = (char)kvbi->Name[i];
+            s++;
+        }
+        *s = 0;
+
+        printf("kvbi: TitleIndex = %x, Type = %x, NameLength = %x, Name = %s\n",
+               (uint32_t)kvbi->TitleIndex, (uint32_t)kvbi->Type, (uint32_t)kvbi->NameLength, name);
+    }
 
     Status = NtClose(h);
     if (!NT_SUCCESS(Status))
