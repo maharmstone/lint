@@ -16,6 +16,7 @@
 #define HIVE_FILENAME_MAXLEN 31
 
 #define KEY_COMP_NAME       0x0020
+#define VALUE_COMP_NAME     0x0001
 
 #pragma pack(push,1)
 
@@ -91,12 +92,19 @@ typedef struct {
     uint32_t List[1];
 } CM_KEY_INDEX;
 
-typedef struct _KEY_BASIC_INFORMATION {
+typedef struct {
     LARGE_INTEGER LastWriteTime;
     ULONG TitleIndex;
     ULONG NameLength;
     WCHAR Name[1];
-} KEY_BASIC_INFORMATION, *PKEY_BASIC_INFORMATION;
+} KEY_BASIC_INFORMATION;
+
+typedef struct {
+    ULONG TitleIndex;
+    ULONG Type;
+    ULONG NameLength;
+    WCHAR Name[1];
+} KEY_VALUE_BASIC_INFORMATION;
 
 typedef struct {
     void* data;
@@ -798,10 +806,97 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
 
 static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                     PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
-    printk(KERN_INFO "NtEnumerateValueKey(%lx, %x, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, Index, KeyValueInformationClass,
-           KeyValueInformation, Length, ResultLength);
+    key_object* key;
+    int32_t size;
+    CM_KEY_NODE* kn;
+    uint32_t* values_list;
+    CM_KEY_VALUE* vk;
 
-    return STATUS_NOT_IMPLEMENTED;
+    key = (key_object*)get_object_from_handle(KeyHandle);
+    if (!key || key->header.type != muwine_object_key)
+        return STATUS_INVALID_HANDLE;
+
+    // FIXME - check access mask of handle for KEY_QUERY_VALUE
+
+    size = -*(int32_t*)((uint8_t*)key->h->data + key->offset);
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+        return STATUS_REGISTRY_CORRUPT;
+
+    kn = (CM_KEY_NODE*)((uint8_t*)key->h->data + key->offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
+        return STATUS_REGISTRY_CORRUPT;
+
+    // FIXME - work with volatile keys
+
+    if (Index >= kn->ValuesCount)
+        return STATUS_NO_MORE_ENTRIES;
+
+    // FIXME - check not out of bounds
+
+    size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + kn->Values);
+
+    if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t)))
+        return STATUS_REGISTRY_CORRUPT;
+
+    values_list = (uint32_t*)((uint8_t*)key->h->data + 0x1000 + kn->Values + sizeof(int32_t));
+
+    // FIXME - check not out of bounds
+
+    size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + values_list[Index]);
+    vk = (CM_KEY_VALUE*)((uint8_t*)key->h->data + 0x1000 + values_list[Index] + sizeof(int32_t));
+
+    if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
+        return STATUS_REGISTRY_CORRUPT;
+
+    switch (KeyValueInformationClass) {
+        case KeyValueBasicInformation: {
+            KEY_VALUE_BASIC_INFORMATION* kvbi = KeyValueInformation;
+            ULONG reqlen = offsetof(KEY_VALUE_BASIC_INFORMATION, Name[0]);
+
+            if (vk->Flags & VALUE_COMP_NAME)
+                reqlen += vk->NameLength * sizeof(WCHAR);
+            else
+                reqlen += vk->NameLength;
+
+            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
+                *ResultLength = reqlen;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+
+            kvbi->TitleIndex = 0;
+            kvbi->Type = vk->Type;
+
+            if (vk->Flags & VALUE_COMP_NAME) {
+                unsigned int i;
+
+                kvbi->NameLength = vk->NameLength * sizeof(WCHAR);
+
+                for (i = 0; i < vk->NameLength; i++) {
+                    kvbi->Name[i] = *((char*)vk->Name + i);
+                }
+            } else {
+                kvbi->NameLength = vk->NameLength;
+                memcpy(kvbi->Name, vk->Name, vk->NameLength);
+            }
+
+            *ResultLength = reqlen;
+
+            break;
+        }
+
+        // FIXME - KeyValueFullInformation
+        // FIXME - KeyValuePartialInformation
+        // FIXME - KeyValueFullInformationAlign64
+        // FIXME - KeyValuePartialInformationAlign64
+        // FIXME - KeyValueLayerInformation
+
+        default:
+            return STATUS_INVALID_PARAMETER;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
