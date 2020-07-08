@@ -728,7 +728,63 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
             return STATUS_SUCCESS;
         }
 
-        // FIXME - KeyValueFullInformation
+        case KeyValueFullInformation: {
+            KEY_VALUE_FULL_INFORMATION* kvfi = KeyValueInformation;
+            ULONG datalen = vk->DataLength & 0x7fffffff;
+            ULONG reqlen = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + datalen;
+            uint8_t* data;
+
+            if (vk->Flags & VALUE_COMP_NAME)
+                reqlen += vk->NameLength * sizeof(WCHAR);
+            else
+                reqlen += vk->NameLength;
+
+            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
+                *ResultLength = reqlen;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+
+            kvfi->TitleIndex = 0;
+            kvfi->Type = vk->Type;
+
+            if (vk->Flags & VALUE_COMP_NAME)
+                kvfi->NameLength = vk->NameLength * sizeof(WCHAR);
+            else
+                kvfi->NameLength = vk->NameLength;
+
+            kvfi->DataOffset = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + kvfi->NameLength;
+            kvfi->DataLength = datalen;
+
+            if (vk->Flags & VALUE_COMP_NAME) {
+                unsigned int i;
+
+                for (i = 0; i < vk->NameLength; i++) {
+                    kvfi->Name[i] = *((char*)vk->Name + i);
+                }
+            } else
+                memcpy(kvfi->Name, vk->Name, vk->NameLength);
+
+            data = (uint8_t*)kvfi + kvfi->DataOffset;
+
+            if (vk->DataLength & 0x80000000) // stored in cell
+                // FIXME - make sure not more than 4 bytes
+
+                memcpy(data, &vk->Data, datalen);
+            else {
+                // FIXME - check not out of bounds
+
+                int32_t size = -*(int32_t*)((uint8_t*)h->bins + vk->Data);
+
+                if (size < datalen + sizeof(int32_t))
+                    return STATUS_REGISTRY_CORRUPT;
+
+                memcpy(data, h->bins + vk->Data + sizeof(int32_t), datalen);
+            }
+
+            *ResultLength = reqlen;
+
+            return STATUS_SUCCESS;
+        }
 
         case KeyValuePartialInformation: {
             KEY_VALUE_PARTIAL_INFORMATION* kvpi = KeyValueInformation;
