@@ -481,8 +481,6 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
         }
     } while (true);
 
-    printk(KERN_INFO "offset = %lx\n", offset);
-
     // FIXME - do SeAccessCheck
     // FIXME - store access mask in handle
 
@@ -591,13 +589,63 @@ static void key_object_close(object_header* obj) {
     // FIXME
 }
 
+static NTSTATUS get_key_item_by_index(hive* h, size_t offset, unsigned int index, size_t* cell_offset) {
+    int32_t size;
+    uint16_t sig;
+
+    // FIXME - check not out of bounds
+
+    size = -*(int32_t*)((uint8_t*)h->data + offset);
+    sig = *(uint16_t*)((uint8_t*)h->data + offset + sizeof(int32_t));
+
+    if (sig == CM_KEY_HASH_LEAF) {
+        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + offset + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+            return STATUS_REGISTRY_CORRUPT;
+
+        if (index >= lh->Count)
+            return STATUS_REGISTRY_CORRUPT;
+
+        *cell_offset = lh->List[index].Cell + 0x1000;
+
+        return STATUS_SUCCESS;
+    } else if (sig == CM_KEY_INDEX_ROOT) {
+        unsigned int i;
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->data + offset + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_INDEX, List[0]) + (ri->Count * sizeof(uint32_t)))
+            return STATUS_REGISTRY_CORRUPT;
+
+        for (i = 0; i < ri->Count; i++) {
+            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + ri->List[i] + sizeof(int32_t));
+
+            size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + ri->List[i]);
+
+            if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+                return STATUS_REGISTRY_CORRUPT;
+
+            if (index < lh->Count) {
+                *cell_offset = lh->List[index].Cell + 0x1000;
+
+                return STATUS_SUCCESS;
+            } else
+                index -= lh->Count;
+        }
+
+        return STATUS_REGISTRY_CORRUPT;
+    } else
+        return STATUS_REGISTRY_CORRUPT;
+}
+
 static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                                PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
+    NTSTATUS Status;
     key_object* key;
     int32_t size;
     CM_KEY_NODE* kn;
     CM_KEY_NODE* kn2;
-    CM_KEY_FAST_INDEX* lh;
+    size_t cell_offset;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
     if (!key || key->header.type != muwine_object_key)
@@ -620,29 +668,18 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     if (Index >= kn->SubKeyCount)
         return STATUS_NO_MORE_ENTRIES;
 
-    // FIXME - check not out of bounds
-
-    size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + kn->SubKeyList);
-
-    if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]))
-        return STATUS_REGISTRY_CORRUPT;
-
-    lh = (CM_KEY_FAST_INDEX*)((uint8_t*)key->h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
-
-    if (lh->Signature != CM_KEY_HASH_LEAF || size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
-        return STATUS_REGISTRY_CORRUPT;
-
-    if (Index >= lh->Count)
-        return STATUS_REGISTRY_CORRUPT;
+    Status = get_key_item_by_index(key->h, 0x1000 + kn->SubKeyList, Index, &cell_offset);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + lh->List[Index].Cell);
+    size = -*(int32_t*)((uint8_t*)key->h->data + cell_offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return STATUS_REGISTRY_CORRUPT;
 
-    kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->data + 0x1000 + lh->List[Index].Cell + sizeof(int32_t));
+    kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->data + cell_offset + sizeof(int32_t));
 
     if (kn2->Signature != CM_KEY_NODE_SIGNATURE)
         return STATUS_REGISTRY_CORRUPT;
