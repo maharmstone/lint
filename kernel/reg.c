@@ -101,6 +101,7 @@ typedef struct _KEY_BASIC_INFORMATION {
 typedef struct {
     void* data;
     size_t size;
+    unsigned int refcount;
 } hive;
 
 typedef struct {
@@ -295,6 +296,8 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
     printk(KERN_INFO "muwine_init_registry: loaded system hive at %s.\n", system_hive_path);
 
     clear_volatile(&system_hive, 0x1000 + ((HBASE_BLOCK*)system_hive.data)->RootCell);
+
+    system_hive.refcount = 0;
 
     return STATUS_SUCCESS;
 }
@@ -519,7 +522,8 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
     k->header.close = key_object_close;
-    k->h = h; // FIXME - increase hive refcount
+    k->h = h;
+    __sync_add_and_fetch(&h->refcount, 1);
     k->offset = offset;
 
     Status = muwine_add_handle(&k->header, KeyHandle);
@@ -608,9 +612,11 @@ NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_AT
 }
 
 static void key_object_close(object_header* obj) {
-    printk(KERN_ALERT "FIXME - key_object_close\n"); // FIXME
+    key_object* key = (key_object*)obj;
 
-    // FIXME
+    __sync_sub_and_fetch(&key->h->refcount, 1);
+
+    kfree(key);
 }
 
 static NTSTATUS get_key_item_by_index(hive* h, size_t offset, unsigned int index, size_t* cell_offset) {
