@@ -2,6 +2,8 @@
 #include "muwine.h"
 #include "reg.h"
 
+#define BIN_SIZE 0x1000
+
 static void key_object_close(object_header* obj);
 
 static hive system_hive;
@@ -119,7 +121,63 @@ static void clear_volatile(hive* h, uint32_t key) {
         printk(KERN_INFO "muwine: unhandled registry signature %x\n", sig);
 }
 
+static NTSTATUS find_bin_holes(hive* h, void** off) {
+    HBIN* bin = *(HBIN**)off;
+    int32_t* len;
+
+    if (bin->Signature != HV_HBIN_SIGNATURE) {
+        printk(KERN_ALERT "hbin signature not found\n");
+        return STATUS_REGISTRY_CORRUPT;
+    }
+
+    if (bin->Size < sizeof(HBIN)) {
+        printk(KERN_ALERT "hbin size was %x, expected at least %lx\n", bin->Size, sizeof(HBIN));
+        return STATUS_REGISTRY_CORRUPT;
+    }
+
+    len = (int32_t*)((uint8_t*)bin + sizeof(HBIN));
+
+    while (len < (int32_t*)((uint8_t*)bin + bin->Size)) {
+        if (*len > 0) { // free
+            hive_hole* hh = kmalloc(sizeof(hive_hole), GFP_KERNEL);;
+
+            hh->offset = (uint8_t*)len - (uint8_t*)h->bins;
+            hh->size = *len;
+
+            list_add_tail(&hh->list, &h->holes);
+            len = (int32_t*)((uint8_t*)len + *len);
+        } else // filled
+            len = (int32_t*)((uint8_t*)len + -*len);
+    }
+
+    *off = (uint8_t*)bin + bin->Size;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS init_hive(hive* h) {
+    NTSTATUS Status;
+    void* off;
+
+    h->bins = (uint8_t*)h->data + BIN_SIZE;
+    h->refcount = 0;
+
+    clear_volatile(h, ((HBASE_BLOCK*)h->data)->RootCell);
+
+    INIT_LIST_HEAD(&h->holes);
+
+    off = h->bins;
+    while (off < h->bins + ((HBASE_BLOCK*)h->data)->Length) {
+        Status = find_bin_holes(h, &off);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
+    NTSTATUS Status;
     char system_hive_path[255];
     struct file* f;
     loff_t pos;
@@ -185,19 +243,30 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
         return STATUS_REGISTRY_CORRUPT;
     }
 
+    Status = init_hive(&system_hive);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
     printk(KERN_INFO "muwine_init_registry: loaded system hive at %s.\n", system_hive_path);
-
-    system_hive.bins = (uint8_t*)system_hive.data + 0x1000; // FIXME
-    system_hive.refcount = 0;
-
-    clear_volatile(&system_hive, ((HBASE_BLOCK*)system_hive.data)->RootCell);
 
     return STATUS_SUCCESS;
 }
 
+static void free_hive(hive* h) {
+    while (!list_empty(&h->holes)) {
+        hive_hole* hh = list_entry(h->holes.next, hive_hole, list);
+
+        list_del(&hh->list);
+
+        kfree(hh);
+    }
+}
+
 void muwine_free_reg(void) {
+    // FIXME - iterate through hive list
+
     if (system_hive.data)
-        vfree(system_hive.data);
+        free_hive(&system_hive);
 }
 
 static uint32_t calc_subkey_hash(UNICODE_STRING* us) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #define HV_HBLOCK_SIGNATURE 0x66676572  // "regf"
+#define HV_HBIN_SIGNATURE   0x6e696268  // "hbin"
 
 #define CM_KEY_HASH_LEAF        0x686c  // "lh"
 #define CM_KEY_INDEX_ROOT       0x6972  // "ri"
@@ -38,6 +39,15 @@ typedef struct {
     uint32_t BootType;
     uint32_t BootRecover;
 } HBASE_BLOCK;
+
+typedef struct {
+    ULONG Signature;
+    uint32_t FileOffset;
+    ULONG Size;
+    ULONG Reserved[2];
+    LARGE_INTEGER TimeStamp;
+    ULONG Spare;
+} HBIN;
 
 typedef struct {
     uint16_t Signature;
@@ -124,10 +134,17 @@ typedef struct {
 #pragma pack(pop)
 
 typedef struct {
+    struct list_head list;
+    uint32_t offset;
+    uint32_t size;
+} hive_hole;
+
+typedef struct {
     void* data;
     void* bins;
     size_t size;
     unsigned int refcount;
+    struct list_head holes;
 } hive;
 
 typedef struct {
