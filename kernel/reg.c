@@ -817,10 +817,59 @@ NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFOR
     return Status;
 }
 
-NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                         PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
     printk(KERN_INFO "NtQueryValueKey(%lx, %p, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, ValueName,
            KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                              PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    NTSTATUS Status;
+    UNICODE_STRING us;
+    ULONG reslen = 0;
+    void* buf;
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        buf = NULL;
+
+    if (ValueName) {
+        if (!get_user_unicode_string(&us, ValueName)) {
+            if (buf)
+                kfree(buf);
+
+            return STATUS_INVALID_PARAMETER;
+        }
+    } else {
+        us.Length = us.MaximumLength = 0;
+        us.Buffer = NULL;
+    }
+
+    Status = NtQueryValueKey(KeyHandle, &us, KeyValueInformationClass, buf, Length, &reslen);
+
+    if (NT_SUCCESS(Status)) {
+        if (buf) {
+            if (copy_to_user(KeyValueInformation, buf, reslen) != 0)
+                Status = STATUS_INVALID_PARAMETER;
+        }
+
+        if (ResultLength) {
+            if (put_user(reslen, ResultLength) < 0)
+                Status = STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    if (buf)
+        kfree(buf);
+
+    if (us.Buffer)
+        kfree(us.Buffer);
+
+    return Status;
 }
