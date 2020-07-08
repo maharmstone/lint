@@ -796,10 +796,43 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
     return Status;
 }
 
-NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                             PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                    PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
     printk(KERN_INFO "NtEnumerateValueKey(%lx, %x, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, Index, KeyValueInformationClass,
            KeyValueInformation, Length, ResultLength);
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                  PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    NTSTATUS Status;
+    ULONG reslen = 0;
+    void* buf;
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        buf = NULL;
+
+    Status = NtEnumerateValueKey(KeyHandle, Index, KeyValueInformationClass, buf, Length, &reslen);
+
+    if (NT_SUCCESS(Status)) {
+        if (buf) {
+            if (copy_to_user(KeyValueInformation, buf, reslen) != 0)
+                Status = STATUS_INVALID_PARAMETER;
+        }
+
+        if (ResultLength) {
+            if (put_user(reslen, ResultLength) < 0)
+                Status = STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    if (buf)
+        kfree(buf);
+
+    return Status;
 }

@@ -124,5 +124,5 @@ NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_AT
 NTSTATUS NtClose(HANDLE Handle);
 NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                              PVOID KeyInformation, ULONG Length, PULONG ResultLength);
-NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                             PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                  PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
