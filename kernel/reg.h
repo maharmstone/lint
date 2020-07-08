@@ -109,6 +109,7 @@ typedef struct {
 
 typedef struct {
     void* data;
+    void* bins;
     size_t size;
     unsigned int refcount;
 } hive;

@@ -80,7 +80,7 @@ static void clear_volatile(hive* h, uint32_t key) {
 
     // FIXME - make sure we don't exceed the bounds of the allocation
 
-    size = -*(int32_t*)((uint8_t*)h->data + key);
+    size = -*(int32_t*)((uint8_t*)h->bins + key);
 
     if (size < 0)
         return;
@@ -88,7 +88,7 @@ static void clear_volatile(hive* h, uint32_t key) {
     if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return;
 
-    nk = (CM_KEY_NODE*)((uint8_t*)h->data + key + sizeof(int32_t));
+    nk = (CM_KEY_NODE*)((uint8_t*)h->bins + key + sizeof(int32_t));
 
     if (nk->Signature != CM_KEY_NODE_SIGNATURE)
         return;
@@ -99,21 +99,21 @@ static void clear_volatile(hive* h, uint32_t key) {
     if (nk->SubKeyCount == 0 || nk->SubKeyList == 0xffffffff)
         return;
 
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList);
+    size = -*(int32_t*)((uint8_t*)h->bins + nk->SubKeyList);
 
-    sig = *(uint16_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+    sig = *(uint16_t*)((uint8_t*)h->bins + nk->SubKeyList + sizeof(int32_t));
 
     if (sig == CM_KEY_HASH_LEAF) {
-        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + nk->SubKeyList + sizeof(int32_t));
 
         for (i = 0; i < lh->Count; i++) {
-            clear_volatile(h, 0x1000 + lh->List[i].Cell);
+            clear_volatile(h, lh->List[i].Cell);
         }
     } else if (sig == CM_KEY_INDEX_ROOT) {
-        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->bins + nk->SubKeyList + sizeof(int32_t));
 
         for (i = 0; i < ri->Count; i++) {
-            clear_volatile(h, 0x1000 + ri->List[i]);
+            clear_volatile(h, ri->List[i]);
         }
     } else
         printk(KERN_INFO "muwine: unhandled registry signature %x\n", sig);
@@ -187,9 +187,10 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
 
     printk(KERN_INFO "muwine_init_registry: loaded system hive at %s.\n", system_hive_path);
 
-    clear_volatile(&system_hive, 0x1000 + ((HBASE_BLOCK*)system_hive.data)->RootCell);
-
+    system_hive.bins = (uint8_t*)system_hive.data + 0x1000; // FIXME
     system_hive.refcount = 0;
+
+    clear_volatile(&system_hive, ((HBASE_BLOCK*)system_hive.data)->RootCell);
 
     return STATUS_SUCCESS;
 }
@@ -240,12 +241,12 @@ static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE
 
             // FIXME - check not out of bounds
 
-            size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + lh->List[i].Cell);
+            size = -*(int32_t*)((uint8_t*)h->bins + lh->List[i].Cell);
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
                 return STATUS_REGISTRY_CORRUPT;
 
-            kn2 = (CM_KEY_NODE*)((uint8_t*)h->data + 0x1000 + lh->List[i].Cell + sizeof(int32_t));
+            kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + lh->List[i].Cell + sizeof(int32_t));
 
             if (kn2->Signature != CM_KEY_NODE_SIGNATURE)
                 return STATUS_REGISTRY_CORRUPT;
@@ -302,7 +303,7 @@ static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE
             }
 
             if (found) {
-                *offset_out = 0x1000 + lh->List[i].Cell;
+                *offset_out = lh->List[i].Cell;
                 return STATUS_SUCCESS;
             }
         }
@@ -317,12 +318,12 @@ static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* 
     uint16_t sig;
     CM_KEY_NODE* kn;
 
-    size = -*(int32_t*)((uint8_t*)h->data + offset);
+    size = -*(int32_t*)((uint8_t*)h->bins + offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return STATUS_REGISTRY_CORRUPT;
 
-    kn = (CM_KEY_NODE*)((uint8_t*)h->data + offset + sizeof(int32_t));
+    kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE)
         return STATUS_REGISTRY_CORRUPT;
@@ -334,11 +335,11 @@ static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* 
 
     // FIXME - check not out of bounds
 
-    sig = *(uint16_t*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList);
+    sig = *(uint16_t*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
+    size = -*(int32_t*)((uint8_t*)h->bins + kn->SubKeyList);
 
     if (sig == CM_KEY_HASH_LEAF) {
-        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
+        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
 
         if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
             return STATUS_REGISTRY_CORRUPT;
@@ -346,16 +347,16 @@ static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* 
         return search_lh(h, lh, hash, us, offset_out);
     } else if (sig == CM_KEY_INDEX_ROOT) {
         unsigned int i;
-        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
 
         if (size < sizeof(int32_t) + offsetof(CM_KEY_INDEX, List[0]) + (ri->Count * sizeof(uint32_t)))
             return STATUS_REGISTRY_CORRUPT;
 
         for (i = 0; i < ri->Count; i++) {
             NTSTATUS Status;
-            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + ri->List[i] + sizeof(int32_t));
+            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + ri->List[i] + sizeof(int32_t));
 
-            size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + ri->List[i]);
+            size = -*(int32_t*)((uint8_t*)h->bins + ri->List[i]);
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
                 return STATUS_REGISTRY_CORRUPT;
@@ -379,7 +380,7 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
 
     // loop through parts and locate
 
-    offset = 0x1000 + ((HBASE_BLOCK*)h->data)->RootCell;
+    offset = ((HBASE_BLOCK*)h->data)->RootCell;
 
     do {
         while (us->Length >= sizeof(WCHAR) && *us->Buffer == '\\') {
@@ -517,11 +518,11 @@ static NTSTATUS get_key_item_by_index(hive* h, size_t offset, unsigned int index
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)h->data + offset);
-    sig = *(uint16_t*)((uint8_t*)h->data + offset + sizeof(int32_t));
+    size = -*(int32_t*)((uint8_t*)h->bins + offset);
+    sig = *(uint16_t*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
     if (sig == CM_KEY_HASH_LEAF) {
-        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + offset + sizeof(int32_t));
+        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
         if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
             return STATUS_REGISTRY_CORRUPT;
@@ -529,26 +530,26 @@ static NTSTATUS get_key_item_by_index(hive* h, size_t offset, unsigned int index
         if (index >= lh->Count)
             return STATUS_REGISTRY_CORRUPT;
 
-        *cell_offset = lh->List[index].Cell + 0x1000;
+        *cell_offset = lh->List[index].Cell;
 
         return STATUS_SUCCESS;
     } else if (sig == CM_KEY_INDEX_ROOT) {
         unsigned int i;
-        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->data + offset + sizeof(int32_t));
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
         if (size < sizeof(int32_t) + offsetof(CM_KEY_INDEX, List[0]) + (ri->Count * sizeof(uint32_t)))
             return STATUS_REGISTRY_CORRUPT;
 
         for (i = 0; i < ri->Count; i++) {
-            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + ri->List[i] + sizeof(int32_t));
+            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + ri->List[i] + sizeof(int32_t));
 
-            size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + ri->List[i]);
+            size = -*(int32_t*)((uint8_t*)h->bins + ri->List[i]);
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
                 return STATUS_REGISTRY_CORRUPT;
 
             if (index < lh->Count) {
-                *cell_offset = lh->List[index].Cell + 0x1000;
+                *cell_offset = lh->List[index].Cell;
 
                 return STATUS_SUCCESS;
             } else
@@ -575,12 +576,12 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
 
     // FIXME - check access mask of handle for KEY_ENUMERATE_SUB_KEYS
 
-    size = -*(int32_t*)((uint8_t*)key->h->data + key->offset);
+    size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return STATUS_REGISTRY_CORRUPT;
 
-    kn = (CM_KEY_NODE*)((uint8_t*)key->h->data + key->offset + sizeof(int32_t));
+    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE)
         return STATUS_REGISTRY_CORRUPT;
@@ -590,18 +591,18 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     if (Index >= kn->SubKeyCount)
         return STATUS_NO_MORE_ENTRIES;
 
-    Status = get_key_item_by_index(key->h, 0x1000 + kn->SubKeyList, Index, &cell_offset);
+    Status = get_key_item_by_index(key->h, kn->SubKeyList, Index, &cell_offset);
     if (!NT_SUCCESS(Status))
         return Status;
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)key->h->data + cell_offset);
+    size = -*(int32_t*)((uint8_t*)key->h->bins + cell_offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return STATUS_REGISTRY_CORRUPT;
 
-    kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->data + cell_offset + sizeof(int32_t));
+    kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->bins + cell_offset + sizeof(int32_t));
 
     if (kn2->Signature != CM_KEY_NODE_SIGNATURE)
         return STATUS_REGISTRY_CORRUPT;
@@ -702,12 +703,12 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
 
-    size = -*(int32_t*)((uint8_t*)key->h->data + key->offset);
+    size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return STATUS_REGISTRY_CORRUPT;
 
-    kn = (CM_KEY_NODE*)((uint8_t*)key->h->data + key->offset + sizeof(int32_t));
+    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE)
         return STATUS_REGISTRY_CORRUPT;
@@ -719,17 +720,17 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + kn->Values);
+    size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
 
     if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t)))
         return STATUS_REGISTRY_CORRUPT;
 
-    values_list = (uint32_t*)((uint8_t*)key->h->data + 0x1000 + kn->Values + sizeof(int32_t));
+    values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)key->h->data + 0x1000 + values_list[Index]);
-    vk = (CM_KEY_VALUE*)((uint8_t*)key->h->data + 0x1000 + values_list[Index] + sizeof(int32_t));
+    size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[Index]);
+    vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[Index] + sizeof(int32_t));
 
     if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
         return STATUS_REGISTRY_CORRUPT;
