@@ -27,6 +27,7 @@ typedef ULONG DWORD;
 typedef DWORD ACCESS_MASK;
 typedef wchar_t WCHAR;
 typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
+typedef uint8_t UCHAR;
 
 typedef struct _UNICODE_STRING {
     USHORT Length;
@@ -91,6 +92,13 @@ typedef struct {
     ULONG NameLength;
     WCHAR Name[1];
 } KEY_VALUE_BASIC_INFORMATION;
+
+typedef struct {
+    ULONG TitleIndex;
+    ULONG Type;
+    ULONG DataLength;
+    UCHAR Data[1];
+} KEY_VALUE_PARTIAL_INFORMATION;
 
 #ifdef _WIN32
 NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
@@ -254,25 +262,21 @@ int main() {
     index = 0;
 
     do {
-        Status = NtEnumerateValueKey(h, index, KeyValueBasicInformation, buf, sizeof(buf), &len);
+        Status = NtEnumerateValueKey(h, index, KeyValuePartialInformation, buf, sizeof(buf), &len);
 
         if (!NT_SUCCESS(Status))
             printf("NtEnumerateValueKey returned %08x\n", (int32_t)Status);
 
         if (NT_SUCCESS(Status)) {
-            char name[255], *s;
+            KEY_VALUE_PARTIAL_INFORMATION* kvpi = (KEY_VALUE_PARTIAL_INFORMATION*)buf;
 
-            KEY_VALUE_BASIC_INFORMATION* kvbi = (KEY_VALUE_BASIC_INFORMATION*)buf;
+            printf("kvpi: TitleIndex = %x, Type = %x, DataLength = %x, Data:",
+                   (uint32_t)kvpi->TitleIndex, (uint32_t)kvpi->Type, (uint32_t)kvpi->DataLength);
 
-            s = name;
-            for (unsigned int i = 0; i < kvbi->NameLength / sizeof(WCHAR); i++) {
-                *s = (char)kvbi->Name[i];
-                s++;
+            for (unsigned int i = 0; i < kvpi->DataLength; i++) {
+                printf(" %02x", kvpi->Data[i]);
             }
-            *s = 0;
-
-            printf("kvbi: TitleIndex = %x, Type = %x, NameLength = %x, Name = %s\n",
-                   (uint32_t)kvbi->TitleIndex, (uint32_t)kvbi->Type, (uint32_t)kvbi->NameLength, name);
+            printf("\n");
         }
 
         index++;
@@ -281,24 +285,20 @@ int main() {
     us.Length = us.MaximumLength = sizeof(key_name) - sizeof(char16_t);
     us.Buffer = (WCHAR*)key_name;
 
-    Status = NtQueryValueKey(h, &us, KeyValueBasicInformation, buf, sizeof(buf), &len);
+    Status = NtQueryValueKey(h, &us, KeyValuePartialInformation, buf, sizeof(buf), &len);
 
     if (!NT_SUCCESS(Status))
         printf("NtQueryValueKey returned %08x\n", (int32_t)Status);
     else {
-        char name[255], *s;
+        KEY_VALUE_PARTIAL_INFORMATION* kvpi = (KEY_VALUE_PARTIAL_INFORMATION*)buf;
 
-        KEY_VALUE_BASIC_INFORMATION* kvbi = (KEY_VALUE_BASIC_INFORMATION*)buf;
+        printf("kvpi: TitleIndex = %x, Type = %x, DataLength = %x, Data:",
+               (uint32_t)kvpi->TitleIndex, (uint32_t)kvpi->Type, (uint32_t)kvpi->DataLength);
 
-        s = name;
-        for (unsigned int i = 0; i < kvbi->NameLength / sizeof(WCHAR); i++) {
-            *s = (char)kvbi->Name[i];
-            s++;
+        for (unsigned int i = 0; i < kvpi->DataLength; i++) {
+            printf(" %02x", kvpi->Data[i]);
         }
-        *s = 0;
-
-        printf("kvbi: TitleIndex = %x, Type = %x, NameLength = %x, Name = %s\n",
-               (uint32_t)kvbi->TitleIndex, (uint32_t)kvbi->Type, (uint32_t)kvbi->NameLength, name);
+        printf("\n");
     }
 
     Status = NtClose(h);
