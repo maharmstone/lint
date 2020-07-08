@@ -96,6 +96,15 @@ typedef struct {
 typedef struct {
     ULONG TitleIndex;
     ULONG Type;
+    ULONG DataOffset;
+    ULONG DataLength;
+    ULONG NameLength;
+    WCHAR Name[1];
+} KEY_VALUE_FULL_INFORMATION;
+
+typedef struct {
+    ULONG TitleIndex;
+    ULONG Type;
     ULONG DataLength;
     UCHAR Data[1];
 } KEY_VALUE_PARTIAL_INFORMATION;
@@ -262,19 +271,29 @@ int main() {
     index = 0;
 
     do {
-        Status = NtEnumerateValueKey(h, index, KeyValuePartialInformation, buf, sizeof(buf), &len);
+        Status = NtEnumerateValueKey(h, index, KeyValueFullInformation, buf, sizeof(buf), &len);
 
         if (!NT_SUCCESS(Status))
             printf("NtEnumerateValueKey returned %08x\n", (int32_t)Status);
 
         if (NT_SUCCESS(Status)) {
-            KEY_VALUE_PARTIAL_INFORMATION* kvpi = (KEY_VALUE_PARTIAL_INFORMATION*)buf;
+            char name[255], *s;
+            KEY_VALUE_FULL_INFORMATION* kvfi = (KEY_VALUE_FULL_INFORMATION*)buf;
 
-            printf("kvpi: TitleIndex = %x, Type = %x, DataLength = %x, Data:",
-                   (uint32_t)kvpi->TitleIndex, (uint32_t)kvpi->Type, (uint32_t)kvpi->DataLength);
+            s = name;
+            for (unsigned int i = 0; i < kvfi->NameLength / sizeof(WCHAR); i++) {
+                *s = (char)kvfi->Name[i];
+                s++;
+            }
+            *s = 0;
 
-            for (unsigned int i = 0; i < kvpi->DataLength; i++) {
-                printf(" %02x", kvpi->Data[i]);
+            printf("kvfi: TitleIndex = %x, Type = %x, NameLength = %x, Name = %s, DataLength = %x, Data:",
+                   (uint32_t)kvfi->TitleIndex, (uint32_t)kvfi->Type, (uint32_t)kvfi->NameLength,
+                   name, (uint32_t)kvfi->DataLength);
+
+            uint8_t* data = (uint8_t*)kvfi + kvfi->DataOffset;
+            for (unsigned int i = 0; i < kvfi->DataLength; i++) {
+                printf(" %02x", data[i]);
             }
             printf("\n");
         }
@@ -285,18 +304,28 @@ int main() {
     us.Length = us.MaximumLength = sizeof(key_name) - sizeof(char16_t);
     us.Buffer = (WCHAR*)key_name;
 
-    Status = NtQueryValueKey(h, &us, KeyValuePartialInformation, buf, sizeof(buf), &len);
+    Status = NtQueryValueKey(h, &us, KeyValueFullInformation, buf, sizeof(buf), &len);
 
     if (!NT_SUCCESS(Status))
         printf("NtQueryValueKey returned %08x\n", (int32_t)Status);
     else {
-        KEY_VALUE_PARTIAL_INFORMATION* kvpi = (KEY_VALUE_PARTIAL_INFORMATION*)buf;
+        char name[255], *s;
+        KEY_VALUE_FULL_INFORMATION* kvfi = (KEY_VALUE_FULL_INFORMATION*)buf;
 
-        printf("kvpi: TitleIndex = %x, Type = %x, DataLength = %x, Data:",
-               (uint32_t)kvpi->TitleIndex, (uint32_t)kvpi->Type, (uint32_t)kvpi->DataLength);
+        s = name;
+        for (unsigned int i = 0; i < kvfi->NameLength / sizeof(WCHAR); i++) {
+            *s = (char)kvfi->Name[i];
+            s++;
+        }
+        *s = 0;
 
-        for (unsigned int i = 0; i < kvpi->DataLength; i++) {
-            printf(" %02x", kvpi->Data[i]);
+        printf("kvfi: TitleIndex = %x, Type = %x, NameLength = %x, Name = %s, DataLength = %x, Data:",
+               (uint32_t)kvfi->TitleIndex, (uint32_t)kvfi->Type, (uint32_t)kvfi->NameLength,
+               name, (uint32_t)kvfi->DataLength);
+
+        uint8_t* data = (uint8_t*)kvfi + kvfi->DataOffset;
+        for (unsigned int i = 0; i < kvfi->DataLength; i++) {
+            printf(" %02x", data[i]);
         }
         printf("\n");
     }
