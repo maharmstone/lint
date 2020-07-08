@@ -689,6 +689,56 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
     return Status;
 }
 
+static NTSTATUS query_key_value(CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+
+    switch (KeyValueInformationClass) {
+        case KeyValueBasicInformation: {
+            KEY_VALUE_BASIC_INFORMATION* kvbi = KeyValueInformation;
+            ULONG reqlen = offsetof(KEY_VALUE_BASIC_INFORMATION, Name[0]);
+
+            if (vk->Flags & VALUE_COMP_NAME)
+                reqlen += vk->NameLength * sizeof(WCHAR);
+            else
+                reqlen += vk->NameLength;
+
+            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
+                *ResultLength = reqlen;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+
+            kvbi->TitleIndex = 0;
+            kvbi->Type = vk->Type;
+
+            if (vk->Flags & VALUE_COMP_NAME) {
+                unsigned int i;
+
+                kvbi->NameLength = vk->NameLength * sizeof(WCHAR);
+
+                for (i = 0; i < vk->NameLength; i++) {
+                    kvbi->Name[i] = *((char*)vk->Name + i);
+                }
+            } else {
+                kvbi->NameLength = vk->NameLength;
+                memcpy(kvbi->Name, vk->Name, vk->NameLength);
+            }
+
+            *ResultLength = reqlen;
+
+            return STATUS_SUCCESS;
+        }
+
+        // FIXME - KeyValueFullInformation
+        // FIXME - KeyValuePartialInformation
+        // FIXME - KeyValueFullInformationAlign64
+        // FIXME - KeyValuePartialInformationAlign64
+        // FIXME - KeyValueLayerInformation
+
+        default:
+            return STATUS_INVALID_PARAMETER;
+    }
+}
+
 static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                     PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
     key_object* key;
@@ -735,53 +785,7 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
         return STATUS_REGISTRY_CORRUPT;
 
-    switch (KeyValueInformationClass) {
-        case KeyValueBasicInformation: {
-            KEY_VALUE_BASIC_INFORMATION* kvbi = KeyValueInformation;
-            ULONG reqlen = offsetof(KEY_VALUE_BASIC_INFORMATION, Name[0]);
-
-            if (vk->Flags & VALUE_COMP_NAME)
-                reqlen += vk->NameLength * sizeof(WCHAR);
-            else
-                reqlen += vk->NameLength;
-
-            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
-                *ResultLength = reqlen;
-                return STATUS_BUFFER_TOO_SMALL;
-            }
-
-            kvbi->TitleIndex = 0;
-            kvbi->Type = vk->Type;
-
-            if (vk->Flags & VALUE_COMP_NAME) {
-                unsigned int i;
-
-                kvbi->NameLength = vk->NameLength * sizeof(WCHAR);
-
-                for (i = 0; i < vk->NameLength; i++) {
-                    kvbi->Name[i] = *((char*)vk->Name + i);
-                }
-            } else {
-                kvbi->NameLength = vk->NameLength;
-                memcpy(kvbi->Name, vk->Name, vk->NameLength);
-            }
-
-            *ResultLength = reqlen;
-
-            break;
-        }
-
-        // FIXME - KeyValueFullInformation
-        // FIXME - KeyValuePartialInformation
-        // FIXME - KeyValueFullInformationAlign64
-        // FIXME - KeyValuePartialInformationAlign64
-        // FIXME - KeyValueLayerInformation
-
-        default:
-            return STATUS_INVALID_PARAMETER;
-    }
-
-    return STATUS_SUCCESS;
+    return query_key_value(vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
 }
 
 NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
@@ -819,10 +823,105 @@ NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFOR
 
 static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                 PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
-    printk(KERN_INFO "NtQueryValueKey(%lx, %p, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, ValueName,
-           KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+    key_object* key;
+    int32_t size;
+    CM_KEY_NODE* kn;
+    uint32_t* values_list;
+    unsigned int i;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (!ValueName)
+        return STATUS_INVALID_PARAMETER;
+
+    key = (key_object*)get_object_from_handle(KeyHandle);
+    if (!key || key->header.type != muwine_object_key)
+        return STATUS_INVALID_HANDLE;
+
+    // FIXME - check access mask of handle for KEY_QUERY_VALUE
+
+    size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+        return STATUS_REGISTRY_CORRUPT;
+
+    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
+        return STATUS_REGISTRY_CORRUPT;
+
+    // FIXME - work with volatile keys
+
+    // FIXME - check not out of bounds
+
+    size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+
+    if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t)))
+        return STATUS_REGISTRY_CORRUPT;
+
+    values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+
+    for (i = 0; i < kn->ValuesCount; i++) {
+        CM_KEY_VALUE* vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
+
+        // FIXME - check not out of bounds
+
+        size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[i]);
+
+        if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
+            return STATUS_REGISTRY_CORRUPT;
+
+        if (vk->Flags & VALUE_COMP_NAME) {
+            if (vk->NameLength == ValueName->Length / sizeof(WCHAR)) {
+                unsigned int j;
+                char* s = (char*)vk->Name;
+                bool found = true;
+
+                for (j = 0; j < vk->NameLength; j++) {
+                    WCHAR c1 = s[j];
+                    WCHAR c2 = ValueName->Buffer[j];
+
+                    if (c1 >= 'a' && c1 <= 'z')
+                        c1 = c1 - 'a' + 'A';
+
+                    if (c2 >= 'a' && c2 <= 'z')
+                        c2 = c2 - 'a' + 'A';
+
+                    if (c1 != c2) {
+                        found = false;
+                        break;
+                    }
+                }
+
+                if (found)
+                    return query_key_value(vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+            }
+        } else {
+            if (vk->NameLength == ValueName->Length) {
+                unsigned int j;
+                bool found = true;
+
+                for (j = 0; j < vk->NameLength / sizeof(WCHAR); j++) {
+                    WCHAR c1 = vk->Name[j];
+                    WCHAR c2 = ValueName->Buffer[j];
+
+                    if (c1 >= 'a' && c1 <= 'z')
+                        c1 = c1 - 'a' + 'A';
+
+                    if (c2 >= 'a' && c2 <= 'z')
+                        c2 = c2 - 'a' + 'A';
+
+                    if (c1 != c2) {
+                        found = false;
+                        break;
+                    }
+                }
+
+                if (found)
+                    return query_key_value(vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+            }
+        }
+    }
+
+    return STATUS_OBJECT_NAME_NOT_FOUND;
 }
 
 NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
