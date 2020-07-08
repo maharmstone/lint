@@ -242,8 +242,6 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
     if (!read_user_string(user_system_hive_path, system_hive_path, sizeof(system_hive_path)))
         return STATUS_INVALID_PARAMETER;
 
-    printk(KERN_INFO "muwine_init_registry(%s)\n", system_hive_path);
-
     if (system_hive_path[0] == 0)
         return STATUS_INVALID_PARAMETER;
 
@@ -328,42 +326,10 @@ static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
     return h;
 }
 
-static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* offset_out) {
-    uint32_t hash = calc_subkey_hash(us);
-    int32_t size;
+static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE_STRING* us, size_t* offset_out) {
     unsigned int i, uslen;
-    CM_KEY_NODE* kn;
-    CM_KEY_FAST_INDEX* lh;
-
-    size = -*(int32_t*)((uint8_t*)h->data + offset);
-
-    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
-        return STATUS_REGISTRY_CORRUPT;
-
-    kn = (CM_KEY_NODE*)((uint8_t*)h->data + offset + sizeof(int32_t));
-
-    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
-        return STATUS_REGISTRY_CORRUPT;
-
-    // FIXME - work with volatile keys
-
-    if (kn->SubKeyCount == 0)
-        return STATUS_OBJECT_PATH_INVALID;
-
-    // FIXME - check not out of bounds
-
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList);
-
-    if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]))
-        return STATUS_REGISTRY_CORRUPT;
-
-    lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
-
-    if (lh->Signature != CM_KEY_HASH_LEAF || size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
-        return STATUS_REGISTRY_CORRUPT;
 
     uslen = 0;
-
     for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
         if (us->Buffer[i] == 0 || us->Buffer[i] == '\\')
             break;
@@ -374,6 +340,7 @@ static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* 
     for (i = 0; i < lh->Count; i++) {
         if (lh->List[i].HashKey == hash) {
             CM_KEY_NODE* kn2;
+            int32_t size;
             bool found = false;
 
             // FIXME - check not out of bounds
@@ -446,7 +413,66 @@ static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* 
         }
     }
 
-    return STATUS_OBJECT_PATH_INVALID;
+    return STATUS_OBJECT_PATH_NOT_FOUND;
+}
+
+static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* offset_out) {
+    uint32_t hash = calc_subkey_hash(us);
+    int32_t size;
+    uint16_t sig;
+    CM_KEY_NODE* kn;
+
+    size = -*(int32_t*)((uint8_t*)h->data + offset);
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+        return STATUS_REGISTRY_CORRUPT;
+
+    kn = (CM_KEY_NODE*)((uint8_t*)h->data + offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
+        return STATUS_REGISTRY_CORRUPT;
+
+    // FIXME - work with volatile keys
+
+    if (kn->SubKeyCount == 0)
+        return STATUS_OBJECT_PATH_INVALID;
+
+    // FIXME - check not out of bounds
+
+    sig = *(uint16_t*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
+    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList);
+
+    if (sig == CM_KEY_HASH_LEAF) {
+        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+            return STATUS_REGISTRY_CORRUPT;
+
+        return search_lh(h, lh, hash, us, offset_out);
+    } else if (sig == CM_KEY_INDEX_ROOT) {
+        unsigned int i;
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->data + 0x1000 + kn->SubKeyList + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_INDEX, List[0]) + (ri->Count * sizeof(uint32_t)))
+            return STATUS_REGISTRY_CORRUPT;
+
+        for (i = 0; i < ri->Count; i++) {
+            NTSTATUS Status;
+            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + ri->List[i] + sizeof(int32_t));
+
+            size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + ri->List[i]);
+
+            if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+                return STATUS_REGISTRY_CORRUPT;
+
+            Status = search_lh(h, lh, hash, us, offset_out);
+            if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
+                return Status;
+        }
+
+        return STATUS_OBJECT_PATH_NOT_FOUND;
+    } else
+        return STATUS_REGISTRY_CORRUPT;
 }
 
 static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ACCESS_MASK DesiredAccess) {
@@ -509,8 +535,6 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 
     static const WCHAR prefix[] = L"\\Registry\\";
     static const WCHAR machine[] = L"Machine";
-
-    printk(KERN_INFO "NtOpenKey(%p, %x, %p): stub\n", KeyHandle, DesiredAccess, ObjectAttributes);
 
     if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES))
         return STATUS_INVALID_PARAMETER;
