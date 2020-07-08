@@ -795,3 +795,11 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
 
     return Status;
 }
+
+NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                             PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    printk(KERN_INFO "NtEnumerateValueKey(%lx, %x, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, Index, KeyValueInformationClass,
+           KeyValueInformation, Length, ResultLength);
+
+    return STATUS_NOT_IMPLEMENTED;
+}

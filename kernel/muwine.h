@@ -78,6 +78,14 @@ typedef enum _KEY_INFORMATION_CLASS {
     MaxKeyInfoClass
 } KEY_INFORMATION_CLASS;
 
+typedef enum _KEY_VALUE_INFORMATION_CLASS {
+    KeyValueBasicInformation,
+    KeyValueFullInformation,
+    KeyValuePartialInformation,
+    KeyValueFullInformationAlign64,
+    KeyValuePartialInformationAlign64
+} KEY_VALUE_INFORMATION_CLASS;
+
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
 typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
@@ -116,3 +124,5 @@ NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_AT
 NTSTATUS NtClose(HANDLE Handle);
 NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                              PVOID KeyInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                             PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
