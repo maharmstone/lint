@@ -689,7 +689,7 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
     return Status;
 }
 
-static NTSTATUS query_key_value(CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                 PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
 
     switch (KeyValueInformationClass) {
@@ -729,7 +729,41 @@ static NTSTATUS query_key_value(CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION_CLASS Ke
         }
 
         // FIXME - KeyValueFullInformation
-        // FIXME - KeyValuePartialInformation
+
+        case KeyValuePartialInformation: {
+            KEY_VALUE_PARTIAL_INFORMATION* kvpi = KeyValueInformation;
+            ULONG len = vk->DataLength & 0x7fffffff;
+            ULONG reqlen = offsetof(KEY_VALUE_PARTIAL_INFORMATION, Data[0]) + len;
+
+            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
+                *ResultLength = reqlen;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+
+            kvpi->TitleIndex = 0;
+            kvpi->Type = vk->Type;
+            kvpi->DataLength = len;
+
+            if (vk->DataLength & 0x80000000) // stored in cell
+                // FIXME - make sure not more than 4 bytes
+
+                memcpy(kvpi->Data, &vk->Data, len);
+            else {
+                // FIXME - check not out of bounds
+
+                int32_t size = -*(int32_t*)((uint8_t*)h->bins + vk->Data);
+
+                if (size < len + sizeof(int32_t))
+                    return STATUS_REGISTRY_CORRUPT;
+
+                memcpy(kvpi->Data, h->bins + vk->Data + sizeof(int32_t), len);
+            }
+
+            *ResultLength = reqlen;
+
+            return STATUS_SUCCESS;
+        }
+
         // FIXME - KeyValueFullInformationAlign64
         // FIXME - KeyValuePartialInformationAlign64
         // FIXME - KeyValueLayerInformation
@@ -785,7 +819,7 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
         return STATUS_REGISTRY_CORRUPT;
 
-    return query_key_value(vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+    return query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
 }
 
 NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
@@ -892,7 +926,7 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
                 }
 
                 if (found)
-                    return query_key_value(vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+                    return query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
             }
         } else {
             if (vk->NameLength == ValueName->Length) {
@@ -916,7 +950,7 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
                 }
 
                 if (found)
-                    return query_key_value(vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+                    return query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
             }
         }
     }

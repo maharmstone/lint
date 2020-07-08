@@ -101,6 +101,13 @@ typedef struct {
 typedef struct {
     ULONG TitleIndex;
     ULONG Type;
+    ULONG DataLength;
+    UCHAR Data[1];
+} KEY_VALUE_PARTIAL_INFORMATION;
+
+typedef struct {
+    ULONG TitleIndex;
+    ULONG Type;
     ULONG NameLength;
     WCHAR Name[1];
 } KEY_VALUE_BASIC_INFORMATION;

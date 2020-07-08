@@ -40,6 +40,7 @@ typedef ULONG DWORD;
 typedef DWORD ACCESS_MASK;
 typedef void* PVOID;
 typedef uint16_t USHORT;
+typedef uint8_t UCHAR;
 
 typedef struct {
     int64_t QuadPart;
