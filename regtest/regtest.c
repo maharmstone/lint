@@ -51,7 +51,9 @@ typedef struct _LARGE_INTEGER {
     int64_t QuadPart;
 } LARGE_INTEGER;
 
+#define KEY_QUERY_VALUE        (0x0001)
 #define KEY_ENUMERATE_SUB_KEYS (0x0008)
+
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
 #endif
@@ -75,10 +77,27 @@ typedef struct _KEY_BASIC_INFORMATION {
     WCHAR Name[1];
 } KEY_BASIC_INFORMATION, *PKEY_BASIC_INFORMATION;
 
+typedef enum _KEY_VALUE_INFORMATION_CLASS {
+    KeyValueBasicInformation,
+    KeyValueFullInformation,
+    KeyValuePartialInformation,
+    KeyValueFullInformationAlign64,
+    KeyValuePartialInformationAlign64
+} KEY_VALUE_INFORMATION_CLASS;
+
+typedef struct {
+    ULONG TitleIndex;
+    ULONG Type;
+    ULONG NameLength;
+    WCHAR Name[1];
+} KEY_VALUE_BASIC_INFORMATION;
+
 #ifdef _WIN32
 NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                                   PVOID KeyInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS __stdcall NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                       PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
 #endif
 
 #ifndef _WIN32
@@ -134,9 +153,30 @@ NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS Key
     return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEKEY, args);
 }
 
+NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                             PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)Index,
+        (uintptr_t)KeyValueInformationClass,
+        (uintptr_t)KeyValueInformation,
+        (uintptr_t)Length,
+        (uintptr_t)ResultLength
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEVALUEKEY, args);
+}
+
 #endif
 
-static const char16_t regpath[] = u"\\Registry\\Machine";
+#ifdef _WIN32
+static const char16_t regpath[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs";
+#else
+static const char16_t regpath[] = u"\\Registry\\Machine\\ControlSet001\\Services\\btrfs"; // FIXME
+#endif
 
 int main() {
     NTSTATUS Status;
@@ -156,7 +196,7 @@ int main() {
     oa.SecurityDescriptor = NULL;
     oa.SecurityQualityOfService = NULL;
 
-    Status = NtOpenKey(&h, KEY_ENUMERATE_SUB_KEYS, &oa);
+    Status = NtOpenKey(&h, KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE, &oa);
 
     if (!NT_SUCCESS(Status)) {
         printf("NtOpenKey returned %08x\n", (int32_t)Status);
@@ -185,6 +225,33 @@ int main() {
 
             printf("kbi: LastWriteTime = %" PRIx64 ", TitleIndex = %x, NameLength = %x, Name = %s\n",
                 (int64_t)kbi->LastWriteTime.QuadPart, (uint32_t)kbi->TitleIndex, (uint32_t)kbi->NameLength, name);
+        }
+
+        index++;
+    } while (NT_SUCCESS(Status));
+
+    index = 0;
+
+    do {
+        Status = NtEnumerateValueKey(h, index, KeyValueBasicInformation, buf, sizeof(buf), &len);
+
+        if (!NT_SUCCESS(Status))
+            printf("NtEnumerateValueKey returned %08x\n", (int32_t)Status);
+
+        if (NT_SUCCESS(Status)) {
+            char name[255], *s;
+
+            KEY_VALUE_BASIC_INFORMATION* kvbi = (KEY_VALUE_BASIC_INFORMATION*)buf;
+
+            s = name;
+            for (unsigned int i = 0; i < kvbi->NameLength / sizeof(WCHAR); i++) {
+                *s = (char)kvbi->Name[i];
+                s++;
+            }
+            *s = 0;
+
+            printf("kvbi: TitleIndex = %x, Type = %x, NameLength = %x, Name = %s\n",
+                   (uint32_t)kvbi->TitleIndex, (uint32_t)kvbi->Type, (uint32_t)kvbi->NameLength, name);
         }
 
         index++;
