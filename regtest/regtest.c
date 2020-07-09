@@ -239,6 +239,7 @@ static const char16_t regpath[] = u"\\Registry\\Machine\\ControlSet001\\Services
 #endif
 
 static const char16_t key_name[] = u"Start";
+static const char16_t key_name2[] = u"NewName";
 static const char16_t key_value[] = u"hello, world";
 
 int main() {
@@ -357,6 +358,9 @@ int main() {
 
         type = kvfi->Type;
     }
+
+    us.Length = us.MaximumLength = sizeof(key_name2) - sizeof(char16_t);
+    us.Buffer = (WCHAR*)key_name2;
 
     if (type == REG_DWORD) {
         Status = NtSetValueKey(h, &us, 0, REG_SZ, (PVOID)key_value, sizeof(key_value));
