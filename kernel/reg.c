@@ -1423,10 +1423,10 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
             }
 
             if (found) {
-                if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) {
+                if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE || vk->DataLength == 0) {
                     if (DataSize <= sizeof(uint32_t)) { // if was resident and still would be resident, write into vk
                         memcpy(&vk->Data, Data, DataSize);
-                        vk->DataLength = CM_KEY_VALUE_SPECIAL_SIZE | DataSize;
+                        vk->DataLength = DataSize == 0 ? 0 : (CM_KEY_VALUE_SPECIAL_SIZE | DataSize);
                         vk->Type = Type;
                     } else { // if was resident and won't be, allocate cell for new data and write
                         uint32_t cell;
@@ -1446,7 +1446,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                         free_cell(key->h, vk->Data);
 
                         memcpy(&vk->Data, Data, DataSize);
-                        vk->DataLength = CM_KEY_VALUE_SPECIAL_SIZE | DataSize;
+                        vk->DataLength = DataSize == 0 ? 0 : (CM_KEY_VALUE_SPECIAL_SIZE | DataSize);
                         vk->Type = Type;
                     } else {
                         int32_t old_cell_size = -*(int32_t*)((uint8_t*)key->h->bins + vk->Data);
@@ -1514,7 +1514,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
         memcpy(key->h->bins + vk->Data + sizeof(int32_t), Data, DataSize);
     } else {
-        vk->DataLength = CM_KEY_VALUE_SPECIAL_SIZE | DataSize;
+        vk->DataLength = DataSize == 0 ? 0 : (CM_KEY_VALUE_SPECIAL_SIZE | DataSize);
         memcpy(&vk->Data, Data, DataSize);
     }
 
@@ -1539,7 +1539,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
     Status = allocate_cell(key->h, sizeof(uint32_t) * (kn->ValuesCount + 1), &values_list_offset);
     if (!NT_SUCCESS(Status)) {
-        if (!(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE))
+        if (!(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) && vk->DataLength != 0)
             free_cell(key->h, vk->Data);
 
         free_cell(key->h, vk_offset);
@@ -1618,11 +1618,161 @@ NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG T
 }
 
 static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
-    printk(KERN_INFO "NtDeleteValueKey(%lx, %p): stub\n", (uintptr_t)KeyHandle, ValueName);
+    NTSTATUS Status;
+    key_object* key;
+    CM_KEY_NODE* kn;
+    int32_t size;
+    unsigned int i;
+    uint32_t* values_list;
 
-    // FIXME
+    key = (key_object*)get_object_from_handle(KeyHandle);
+    if (!key || key->header.type != muwine_object_key)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME - check for KEY_SET_VALUE in access mask
+
+    write_lock(&key->h->lock);
+
+    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
+    }
+
+    if (kn->ValuesCount == 0) {
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        goto end;
+    }
+
+    size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+
+    if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
+    }
+
+    values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+
+    for (i = 0; i < kn->ValuesCount; i++) {
+        bool found = false;
+        CM_KEY_VALUE* vk;
+
+        vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
+
+        // FIXME - check not out of bounds
+
+        size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[i]);
+
+        if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
+            Status = STATUS_REGISTRY_CORRUPT;
+            goto end;
+        }
+
+        if (!ValueName || ValueName->Length == 0)
+            found = vk->NameLength == 0;
+        else {
+            if (vk->Flags & VALUE_COMP_NAME) {
+                if (vk->NameLength == ValueName->Length / sizeof(WCHAR)) {
+                    unsigned int j;
+                    char* s = (char*)vk->Name;
+
+                    found = true;
+
+                    for (j = 0; j < vk->NameLength; j++) {
+                        WCHAR c1 = s[j];
+                        WCHAR c2 = ValueName->Buffer[j];
+
+                        if (c1 >= 'a' && c1 <= 'z')
+                            c1 = c1 - 'a' + 'A';
+
+                        if (c2 >= 'a' && c2 <= 'z')
+                            c2 = c2 - 'a' + 'A';
+
+                        if (c1 != c2) {
+                            found = false;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                if (vk->NameLength == ValueName->Length) {
+                    unsigned int j;
+
+                    found = true;
+
+                    for (j = 0; j < vk->NameLength / sizeof(WCHAR); j++) {
+                        WCHAR c1 = vk->Name[j];
+                        WCHAR c2 = ValueName->Buffer[j];
+
+                        if (c1 >= 'a' && c1 <= 'z')
+                            c1 = c1 - 'a' + 'A';
+
+                        if (c2 >= 'a' && c2 <= 'z')
+                            c2 = c2 - 'a' + 'A';
+
+                        if (c1 != c2) {
+                            found = false;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (found) {
+            uint32_t vk_offset = values_list[i];
+
+            if (kn->ValuesCount == 1) {
+                free_cell(key->h, kn->Values);
+                kn->Values = 0;
+            } else {
+                int32_t old_size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+                int32_t new_size = ((kn->ValuesCount - 1) * sizeof(uint32_t)) + sizeof(int32_t);
+
+                if (new_size & 7)
+                    new_size += 8 - (new_size & 7);
+
+                if (old_size == new_size) // if values list right size, update
+                    memcpy(&values_list[i], &values_list[i+1], (kn->ValuesCount - i - 1) * sizeof(uint32_t));
+                else {
+                    uint32_t values_list_offset;
+                    uint32_t* new_values_list;
+
+                    Status = allocate_cell(key->h, sizeof(uint32_t) * (kn->ValuesCount - 1), &values_list_offset);
+                    if (!NT_SUCCESS(Status))
+                        goto end;
+
+                    new_values_list = (uint32_t*)((uint8_t*)key->h->bins + values_list_offset + sizeof(int32_t));
+
+                    memcpy(new_values_list, values_list, i * sizeof(uint32_t));
+                    memcpy(&new_values_list[i], &values_list[i+1], (kn->ValuesCount - i - 1) * sizeof(uint32_t));
+
+                    kn->Values = values_list_offset;
+                }
+            }
+
+            if (vk->DataLength != 0 && !(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE)) // free data cell, if not resident
+                free_cell(key->h, vk->Data);
+
+            free_cell(key->h, vk_offset);
+
+            kn->ValuesCount--;
+
+            Status = STATUS_SUCCESS;
+            goto end;
+        }
+    }
+
+    Status = STATUS_OBJECT_NAME_NOT_FOUND;
+
+end:
+    if (NT_SUCCESS(Status))
+        key->h->dirty = true;
+
+    write_unlock(&key->h->lock);
+
+    return Status;
 }
 
 NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
