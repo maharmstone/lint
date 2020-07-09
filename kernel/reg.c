@@ -1794,3 +1794,13 @@ NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
 
     return Status;
 }
+
+NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
+                     PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
+    printk(KERN_INFO "NtCreateKey(%lx, %x, %p, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, DesiredAccess,
+           ObjectAttributes, TitleIndex, Class, CreateOptions, Disposition);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

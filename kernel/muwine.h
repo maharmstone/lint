@@ -90,9 +90,15 @@ typedef enum _KEY_VALUE_INFORMATION_CLASS {
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
 typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
-typedef NTSTATUS (*muwine_func4arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4);
-typedef NTSTATUS (*muwine_func5arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5);
-typedef NTSTATUS (*muwine_func6arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6);
+typedef NTSTATUS (*muwine_func4arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                    uintptr_t arg4);
+typedef NTSTATUS (*muwine_func5arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                    uintptr_t arg4, uintptr_t arg5);
+typedef NTSTATUS (*muwine_func6arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                    uintptr_t arg4, uintptr_t arg5, uintptr_t arg6);
+typedef NTSTATUS (*muwine_func7arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                    uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
+                                    uintptr_t arg7);
 
 struct _object_header;
 
@@ -132,3 +138,5 @@ NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_V
 NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
                             ULONG Type, PVOID Data, ULONG DataSize);
 NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName);
+NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
+                     PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition);

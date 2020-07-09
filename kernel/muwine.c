@@ -20,7 +20,8 @@ static struct muwine_func funcs[] = {
     { user_NtEnumerateValueKey, 6 },
     { user_NtQueryValueKey, 6 },
     { user_NtSetValueKey, 6 },
-    { user_NtDeleteValueKey, 2 }
+    { user_NtDeleteValueKey, 2 },
+    { NtCreateKey, 7 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
@@ -538,6 +539,43 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
             return STATUS_INVALID_PARAMETER;
 
         return ((muwine_func6arg)funcs[cmd].func)(arg1, arg2, arg3, arg4, arg5, arg6);
+    } else if (num_args == 7) {
+        uintptr_t arg1, arg2, arg3, arg4, arg5, arg6, arg7;
+
+        if (get_user(arg1, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg2, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg3, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg4, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg5, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg6, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg7, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        return ((muwine_func7arg)funcs[cmd].func)(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
     } else {
         printk(KERN_ALERT "muwine_ioctl: unexpected number of arguments %u\n", (unsigned int)num_args);
         return STATUS_INVALID_PARAMETER;
