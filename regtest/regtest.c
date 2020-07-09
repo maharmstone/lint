@@ -1,69 +1,16 @@
 #include <stdio.h>
-#include <stdint.h>
-#include <stddef.h>
 #include <uchar.h>
-#include <wchar.h>
-#include <assert.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <inttypes.h>
-#include <fcntl.h>
 #include <time.h>
-#include "../kernel/ioctls.h"
 
 #ifdef _WIN32
 #include <windows.h>
 #include <winternl.h>
 #else
-#include <sys/ioctl.h>
+#include <muw.h>
 #endif
 
-#ifndef _WIN32
-typedef int32_t NTSTATUS;
-typedef void* HANDLE, *PHANDLE;
-typedef uint32_t ULONG, *PULONG;
-typedef void* PVOID;
-typedef uint16_t USHORT;
-typedef ULONG DWORD;
-typedef DWORD ACCESS_MASK;
-typedef wchar_t WCHAR;
-typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
-typedef uint8_t UCHAR;
-
-typedef struct _UNICODE_STRING {
-    USHORT Length;
-    USHORT MaximumLength;
-    PWSTR Buffer;
-} UNICODE_STRING;
-
-typedef UNICODE_STRING *PUNICODE_STRING;
-
-typedef struct _OBJECT_ATTRIBUTES {
-    ULONG Length;
-    ULONG pad1;
-    HANDLE RootDirectory;
-    PUNICODE_STRING ObjectName;
-    ULONG Attributes;
-    ULONG pad2;
-    PVOID SecurityDescriptor;
-    PVOID SecurityQualityOfService;
-} OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
-
-typedef struct _LARGE_INTEGER {
-    int64_t QuadPart;
-} LARGE_INTEGER;
-
-#define KEY_QUERY_VALUE        (0x0001)
-#define KEY_SET_VALUE          (0x0002)
-#define KEY_ENUMERATE_SUB_KEYS (0x0008)
-
-#define REG_SZ                 1
-#define REG_DWORD              4
-
-#define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
-
-#endif
-
+#ifdef _WIN32
 typedef enum _KEY_INFORMATION_CLASS {
     KeyBasicInformation,
     KeyNodeInformation,
@@ -114,7 +61,6 @@ typedef struct {
     UCHAR Data[1];
 } KEY_VALUE_PARTIAL_INFORMATION;
 
-#ifdef _WIN32
 NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                                   PVOID KeyInformation, ULONG Length, PULONG ResultLength);
@@ -125,124 +71,6 @@ NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, 
 NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
                                  ULONG Type, PVOID Data, ULONG DataSize);
 NTSTATUS __stdcall NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName);
-#endif
-
-#ifndef _WIN32
-
-#define STATUS_NOT_IMPLEMENTED              (NTSTATUS)0xc0000002
-
-int muwine_fd = 0;
-
-#define init_muwine() if (muwine_fd == 0) { \
-    int fd = open("/dev/muwine", O_RDWR); \
-    if (fd < 0) return STATUS_NOT_IMPLEMENTED; \
-    muwine_fd = fd; \
-}
-
-NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
-    uintptr_t args[] = {
-        3,
-        (uintptr_t)KeyHandle,
-        (uintptr_t)DesiredAccess,
-        (uintptr_t)ObjectAttributes
-    };
-
-    init_muwine();
-
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENKEY, args);
-}
-
-NTSTATUS NtClose(HANDLE Handle) {
-    uintptr_t args[] = {
-        1,
-        (uintptr_t)Handle
-    };
-
-    init_muwine();
-
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTCLOSE, args);
-}
-
-NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
-                        PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
-    uintptr_t args[] = {
-        6,
-        (uintptr_t)KeyHandle,
-        (uintptr_t)Index,
-        (uintptr_t)KeyInformationClass,
-        (uintptr_t)KeyInformation,
-        (uintptr_t)Length,
-        (uintptr_t)ResultLength
-    };
-
-    init_muwine();
-
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEKEY, args);
-}
-
-NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                             PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
-    uintptr_t args[] = {
-        6,
-        (uintptr_t)KeyHandle,
-        (uintptr_t)Index,
-        (uintptr_t)KeyValueInformationClass,
-        (uintptr_t)KeyValueInformation,
-        (uintptr_t)Length,
-        (uintptr_t)ResultLength
-    };
-
-    init_muwine();
-
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEVALUEKEY, args);
-}
-
-NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                         PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
-    uintptr_t args[] = {
-        6,
-        (uintptr_t)KeyHandle,
-        (uintptr_t)ValueName,
-        (uintptr_t)KeyValueInformationClass,
-        (uintptr_t)KeyValueInformation,
-        (uintptr_t)Length,
-        (uintptr_t)ResultLength
-    };
-
-    init_muwine();
-
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYVALUEKEY, args);
-}
-
-NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
-                       ULONG Type, PVOID Data, ULONG DataSize) {
-    uintptr_t args[] = {
-        6,
-        (uintptr_t)KeyHandle,
-        (uintptr_t)ValueName,
-        (uintptr_t)TitleIndex,
-        (uintptr_t)Type,
-        (uintptr_t)Data,
-        (uintptr_t)DataSize
-    };
-
-    init_muwine();
-
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTSETVALUEKEY, args);
-}
-
-NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
-    uintptr_t args[] = {
-        2,
-        (uintptr_t)KeyHandle,
-        (uintptr_t)ValueName
-    };
-
-    init_muwine();
-
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEVALUEKEY, args);
-}
-
 #endif
 
 #ifdef _WIN32

@@ -11,6 +11,8 @@ add_executable(regtest ${SRC_FILES})
 
 if(WIN32)
     target_link_libraries(regtest ntdll)
+else()
+    target_link_libraries(regtest muw)
 endif()
 
 if(NOT WIN32)
