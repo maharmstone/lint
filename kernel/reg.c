@@ -1132,12 +1132,57 @@ NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_V
     return Status;
 }
 
-NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
-                       ULONG Type, PVOID Data, ULONG DataSize) {
+static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
+                              ULONG Type, PVOID Data, ULONG DataSize) {
     printk(KERN_INFO "NtSetValueKey(%lx, %p, %x, %x, %p, %x): stub\n", (uintptr_t)KeyHandle, ValueName,
            TitleIndex, Type, Data, DataSize);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
+                            ULONG Type, PVOID Data, ULONG DataSize) {
+    NTSTATUS Status;
+    UNICODE_STRING us;
+    void* buf;
+
+    if (ValueName) {
+        if (!get_user_unicode_string(&us, ValueName))
+            return STATUS_INVALID_PARAMETER;
+    } else {
+        us.Length = us.MaximumLength = 0;
+        us.Buffer = NULL;
+    }
+
+    if (DataSize > 0) {
+        buf = kmalloc(DataSize, GFP_KERNEL);
+        if (!buf) {
+            if (us.Buffer)
+                kfree(us.Buffer);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        if (copy_from_user(buf, Data, DataSize) != 0) {
+            if (us.Buffer)
+                kfree(us.Buffer);
+
+            kfree(buf);
+
+            return STATUS_INVALID_PARAMETER;
+        }
+    } else
+        buf = NULL;
+
+    Status = NtSetValueKey(KeyHandle, &us, TitleIndex, Type, buf, DataSize);
+
+    if (us.Buffer)
+        kfree(us.Buffer);
+
+    if (buf)
+        kfree(buf);
+
+    return Status;
 }
