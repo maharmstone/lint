@@ -8,6 +8,10 @@
 #define CM_KEY_NODE_SIGNATURE   0x6b6e  // "nk"
 #define CM_KEY_VALUE_SIGNATURE  0x6b76  // "vk"
 
+#define BIN_SIZE 0x1000
+
+#define CM_KEY_VALUE_SPECIAL_SIZE       0x80000000
+
 #define HSYS_MAJOR 1
 #define HSYS_MINOR 3
 #define HFILE_TYPE_PRIMARY 0
@@ -146,6 +150,7 @@ typedef struct {
     unsigned int refcount;
     struct list_head holes;
     rwlock_t lock;
+    bool dirty;
 } hive;
 
 typedef struct {

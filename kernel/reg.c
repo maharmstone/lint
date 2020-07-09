@@ -2,8 +2,6 @@
 #include "muwine.h"
 #include "reg.h"
 
-#define BIN_SIZE 0x1000
-
 static void key_object_close(object_header* obj);
 
 static hive system_hive;
@@ -144,6 +142,8 @@ static NTSTATUS find_bin_holes(hive* h, void** off) {
             hh->offset = (uint8_t*)len - (uint8_t*)h->bins;
             hh->size = *len;
 
+            // FIXME - append to previous if follows on from it
+
             list_add_tail(&hh->list, &h->holes);
             len = (int32_t*)((uint8_t*)len + *len);
         } else // filled
@@ -166,6 +166,7 @@ static NTSTATUS init_hive(hive* h) {
 
     INIT_LIST_HEAD(&h->holes);
     rwlock_init(&h->lock);
+    h->dirty = false;
 
     off = h->bins;
     while (off < h->bins + ((HBASE_BLOCK*)h->data)->Length) {
@@ -254,6 +255,8 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
 }
 
 static void free_hive(hive* h) {
+    // FIXME - flush if dirty
+
     while (!list_empty(&h->holes)) {
         hive_hole* hh = list_entry(h->holes.next, hive_hole, list);
 
@@ -824,7 +827,7 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
 
         case KeyValueFullInformation: {
             KEY_VALUE_FULL_INFORMATION* kvfi = KeyValueInformation;
-            ULONG datalen = vk->DataLength & 0x7fffffff;
+            ULONG datalen = vk->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
             ULONG reqlen = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + datalen;
             uint8_t* data;
 
@@ -860,7 +863,7 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
 
             data = (uint8_t*)kvfi + kvfi->DataOffset;
 
-            if (vk->DataLength & 0x80000000) // stored in cell
+            if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) // stored in cell
                 // FIXME - make sure not more than 4 bytes
 
                 memcpy(data, &vk->Data, datalen);
@@ -894,7 +897,7 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
             kvpi->Type = vk->Type;
             kvpi->DataLength = len;
 
-            if (vk->DataLength & 0x80000000) // stored in cell
+            if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) // stored in cell
                 // FIXME - make sure not more than 4 bytes
 
                 memcpy(kvpi->Data, &vk->Data, len);
@@ -1193,14 +1196,266 @@ NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_V
     return Status;
 }
 
+static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset) {
+    struct list_head* le;
+    hive_hole* found_hh;
+
+    size += sizeof(int32_t);
+
+    if (size & 7)
+        size += 8 - (size & 7);
+
+    // FIXME - work with very large cells
+
+    if (size > BIN_SIZE - sizeof(HBIN))
+        return STATUS_INVALID_PARAMETER;
+
+    // search in hive holes for exact match
+
+    le = h->holes.next;
+
+    while (le != &h->holes) {
+        hive_hole* hh = list_entry(le, hive_hole, list);
+
+        if (hh->size == size) {
+            *(int32_t*)(h->bins + hh->offset) = -size;
+
+            list_del(&hh->list);
+
+            *offset = hh->offset;
+
+            kfree(hh);
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->next;
+    }
+
+    // if exact match not found, choose next largest
+
+    found_hh = NULL;
+    le = h->holes.next;
+
+    while (le != &h->holes) {
+        hive_hole* hh = list_entry(le, hive_hole, list);
+
+        if (hh->size > size && (!found_hh || hh->size < found_hh->size))
+            found_hh = hh;
+
+        le = le->next;
+    }
+
+    if (found_hh) {
+        *(int32_t*)(h->bins + found_hh->offset) = -size;
+
+        *offset = found_hh->offset;
+
+        found_hh->offset += size;
+        found_hh->size -= size;
+
+        return STATUS_SUCCESS;
+    }
+
+    // FIXME - if can't find anything, add new bin and extend file
+
+    return STATUS_INTERNAL_ERROR;
+}
+
+static void free_cell(hive* h, uint32_t offset) {
+    // FIXME - add entry to hive holes
+    // FIXME - if follows on from previous, merge entries
+    // FIXME - if follows on to next, merge entries
+
+    // FIXME - change sign of cell size
+}
+
 static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
                               ULONG Type, PVOID Data, ULONG DataSize) {
+    NTSTATUS Status;
+    key_object* key;
+    CM_KEY_NODE* kn;
+    int32_t size;
+
     printk(KERN_INFO "NtSetValueKey(%lx, %p, %x, %x, %p, %x): stub\n", (uintptr_t)KeyHandle, ValueName,
            TitleIndex, Type, Data, DataSize);
 
-    // FIXME
+    // FIXME - should we be rejecting short REG_DWORDs etc. here?
 
-    return STATUS_NOT_IMPLEMENTED;
+    key = (key_object*)get_object_from_handle(KeyHandle);
+    if (!key || key->header.type != muwine_object_key)
+        return STATUS_INVALID_HANDLE;
+
+    // FIXME - check for KEY_SET_VALUE in access mask
+
+    write_lock(&key->h->lock);
+
+    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
+    }
+
+    // FIXME - work with volatile keys
+
+    if (kn->ValuesCount > 0) {
+        uint32_t* values_list;
+        unsigned int i;
+
+        size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+
+        if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
+            Status = STATUS_REGISTRY_CORRUPT;
+            goto end;
+        }
+
+        values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+
+        for (i = 0; i < kn->ValuesCount; i++) {
+            CM_KEY_VALUE* vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
+            bool found = false;
+
+            // FIXME - check not out of bounds
+
+            size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[i]);
+
+            if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
+                Status = STATUS_REGISTRY_CORRUPT;
+                goto end;
+            }
+
+            if (!ValueName || ValueName->Length == 0)
+                found = vk->NameLength == 0;
+            else {
+                if (vk->Flags & VALUE_COMP_NAME) {
+                    if (vk->NameLength == ValueName->Length / sizeof(WCHAR)) {
+                        unsigned int j;
+                        char* s = (char*)vk->Name;
+
+                        found = true;
+
+                        for (j = 0; j < vk->NameLength; j++) {
+                            WCHAR c1 = s[j];
+                            WCHAR c2 = ValueName->Buffer[j];
+
+                            if (c1 >= 'a' && c1 <= 'z')
+                                c1 = c1 - 'a' + 'A';
+
+                            if (c2 >= 'a' && c2 <= 'z')
+                                c2 = c2 - 'a' + 'A';
+
+                            if (c1 != c2) {
+                                found = false;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    if (vk->NameLength == ValueName->Length) {
+                        unsigned int j;
+
+                        found = true;
+
+                        for (j = 0; j < vk->NameLength / sizeof(WCHAR); j++) {
+                            WCHAR c1 = vk->Name[j];
+                            WCHAR c2 = ValueName->Buffer[j];
+
+                            if (c1 >= 'a' && c1 <= 'z')
+                                c1 = c1 - 'a' + 'A';
+
+                            if (c2 >= 'a' && c2 <= 'z')
+                                c2 = c2 - 'a' + 'A';
+
+                            if (c1 != c2) {
+                                found = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (found) {
+                if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) {
+                    if (DataSize <= sizeof(uint32_t)) { // if was resident and still would be resident, write into vk
+                        memcpy(&vk->Data, Data, DataSize);
+                        vk->DataLength = CM_KEY_VALUE_SPECIAL_SIZE | DataSize;
+                        vk->Type = Type;
+                    } else { // if was resident and won't be, allocate cell for new data and write
+                        uint32_t cell;
+
+                        Status = allocate_cell(key->h, DataSize, &cell);
+                        if (!NT_SUCCESS(Status))
+                            goto end;
+
+                        memcpy(key->h->bins + cell + sizeof(int32_t), Data, DataSize);
+
+                        vk->Data = cell;
+                        vk->DataLength = DataSize;
+                        vk->Type = Type;
+                    }
+                } else {
+                    if (DataSize <= sizeof(uint32_t)) { // if wasn't resident but will be, free data cell and write into vk
+                        free_cell(key->h, vk->Data);
+
+                        memcpy(&vk->Data, Data, DataSize);
+                        vk->DataLength = CM_KEY_VALUE_SPECIAL_SIZE | DataSize;
+                        vk->Type = Type;
+                    } else {
+                        int32_t old_cell_size = -*(int32_t*)((uint8_t*)key->h->bins + vk->Data);
+                        int32_t new_cell_size;
+
+                        new_cell_size = sizeof(int32_t) + DataSize;
+
+                        if (new_cell_size & 7)
+                            new_cell_size += 8 - (new_cell_size & 7);
+
+                        if (old_cell_size == new_cell_size) { // if wasn't resident, still won't be, and cell similar size, write over existing data
+                            memcpy(key->h->bins + vk->Data + sizeof(int32_t), Data, DataSize);
+                            vk->DataLength = DataSize;
+                            vk->Type = Type;
+                        } else { // if wasn't resident, still won't be, and cell different size, free data cell and allocate new one
+                            uint32_t cell;
+
+                            Status = allocate_cell(key->h, DataSize, &cell);
+                            if (!NT_SUCCESS(Status))
+                                goto end;
+
+                            free_cell(key->h, vk->Data);
+
+                            vk->Data = cell;
+                            vk->DataLength = DataSize;
+                            vk->Type = Type;
+
+                            memcpy(key->h->bins + vk->Data + sizeof(int32_t), Data, DataSize);
+                        }
+                    }
+                }
+
+                Status = STATUS_SUCCESS;
+                goto end;
+            }
+        }
+    }
+
+    // new entry
+
+    // FIXME - allocate cell for data if necessary
+    // FIXME - allocate cell for vk
+    // FIXME - if enough space in values list, add to the end
+    // FIXME - otherwise, delete values list cell, allocate new one, and update Values in kn
+    // FIXME - increase ValuesCount in kn
+
+    Status = STATUS_NOT_IMPLEMENTED;
+
+end:
+    if (NT_SUCCESS(Status))
+        key->h->dirty = true;
+
+    write_unlock(&key->h->lock);
+
+    return Status;
 }
 
 NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
