@@ -1616,3 +1616,11 @@ NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG T
 
     return Status;
 }
+
+NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
+    printk(KERN_INFO "NtDeleteValueKey(%lx, %p): stub\n", (uintptr_t)KeyHandle, ValueName);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
