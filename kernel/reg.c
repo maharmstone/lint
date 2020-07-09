@@ -1617,10 +1617,30 @@ NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG T
     return Status;
 }
 
-NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
+static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     printk(KERN_INFO "NtDeleteValueKey(%lx, %p): stub\n", (uintptr_t)KeyHandle, ValueName);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
+    NTSTATUS Status;
+    UNICODE_STRING us;
+
+    if (ValueName) {
+        if (!get_user_unicode_string(&us, ValueName))
+            return STATUS_INVALID_PARAMETER;
+    } else {
+        us.Length = us.MaximumLength = 0;
+        us.Buffer = NULL;
+    }
+
+    Status = NtDeleteValueKey(KeyHandle, &us);
+
+    if (us.Buffer)
+        kfree(us.Buffer);
+
+    return Status;
 }
