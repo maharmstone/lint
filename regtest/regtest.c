@@ -124,6 +124,7 @@ NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, 
                                    PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
 NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
                                  ULONG Type, PVOID Data, ULONG DataSize);
+NTSTATUS __stdcall NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName);
 #endif
 
 #ifndef _WIN32
@@ -228,6 +229,18 @@ NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleI
     init_muwine();
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTSETVALUEKEY, args);
+}
+
+NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)ValueName
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEVALUEKEY, args);
 }
 
 #endif
@@ -373,6 +386,10 @@ int main() {
         if (!NT_SUCCESS(Status))
             printf("NtSetValueKey returned %08x\n", (int32_t)Status);
     }
+
+    Status = NtDeleteValueKey(h, &us);
+    if (!NT_SUCCESS(Status))
+        printf("NtDeleteValueKey returned %08x\n", (int32_t)Status);
 
     Status = NtClose(h);
     if (!NT_SUCCESS(Status))
