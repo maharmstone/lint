@@ -1322,9 +1322,9 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     key_object* key;
     CM_KEY_NODE* kn;
     int32_t size;
-
-    printk(KERN_INFO "NtSetValueKey(%lx, %p, %x, %x, %p, %x): stub\n", (uintptr_t)KeyHandle, ValueName,
-           TitleIndex, Type, Data, DataSize);
+    uint32_t vk_offset, values_list_offset;
+    CM_KEY_VALUE* vk;
+    uint32_t* values_list;
 
     // FIXME - should we be rejecting short REG_DWORDs etc. here?
 
@@ -1346,7 +1346,6 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     // FIXME - work with volatile keys
 
     if (kn->ValuesCount > 0) {
-        uint32_t* values_list;
         unsigned int i;
 
         size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
@@ -1359,8 +1358,9 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
         values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
 
         for (i = 0; i < kn->ValuesCount; i++) {
-            CM_KEY_VALUE* vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
             bool found = false;
+
+            vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
 
             // FIXME - check not out of bounds
 
@@ -1487,13 +1487,81 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
     // new entry
 
-    // FIXME - allocate cell for data if necessary
-    // FIXME - allocate cell for vk
-    // FIXME - if enough space in values list, add to the end
-    // FIXME - otherwise, delete values list cell, allocate new one, and update Values in kn
-    // FIXME - increase ValuesCount in kn
+    // allocate cell for vk
 
-    Status = STATUS_NOT_IMPLEMENTED;
+    Status = allocate_cell(key->h, offsetof(CM_KEY_VALUE, Name[0]) + (ValueName ? ValueName->Length : 0), &vk_offset);
+    if (!NT_SUCCESS(Status))
+        goto end;
+
+    vk = (CM_KEY_VALUE*)(key->h->bins + vk_offset + sizeof(int32_t));
+    vk->Signature = CM_KEY_VALUE_SIGNATURE;
+    vk->NameLength = ValueName ? ValueName->Length : 0;
+    vk->Type = Type;
+    vk->Flags = 0;
+    vk->Spare = 0;
+
+    if (vk->NameLength > 0)
+        memcpy(vk->Name, ValueName->Buffer, vk->NameLength);
+
+    if (DataSize > sizeof(uint32_t)) {
+        vk->DataLength = DataSize;
+
+        Status = allocate_cell(key->h, DataSize, &vk->Data);
+        if (!NT_SUCCESS(Status)) {
+            free_cell(key->h, vk_offset);
+            goto end;
+        }
+
+        memcpy(key->h->bins + vk->Data + sizeof(int32_t), Data, DataSize);
+    } else {
+        vk->DataLength = CM_KEY_VALUE_SPECIAL_SIZE | DataSize;
+        memcpy(&vk->Data, Data, DataSize);
+    }
+
+    if (kn->ValuesCount > 0) {
+        int32_t old_size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+        int32_t new_size = ((kn->ValuesCount + 1) * sizeof(uint32_t)) + sizeof(int32_t);
+
+        if (new_size & 7)
+            new_size += 8 - (new_size & 7);
+
+        if (old_size == new_size) { // if enough space in values list, add to the end
+            values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+
+            values_list[kn->ValuesCount] = vk_offset;
+            kn->ValuesCount++;
+
+            Status = STATUS_SUCCESS;
+
+            goto end;
+        }
+    }
+
+    Status = allocate_cell(key->h, sizeof(uint32_t) * (kn->ValuesCount + 1), &values_list_offset);
+    if (!NT_SUCCESS(Status)) {
+        if (!(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE))
+            free_cell(key->h, vk->Data);
+
+        free_cell(key->h, vk_offset);
+        goto end;
+    }
+
+    values_list = (uint32_t*)((uint8_t*)key->h->bins + values_list_offset + sizeof(int32_t));
+
+    if (kn->ValuesCount > 0) {
+        uint32_t* old_values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+
+        memcpy(values_list, old_values_list, kn->ValuesCount * sizeof(uint32_t));
+
+        free_cell(key->h, kn->Values);
+    }
+
+    values_list[kn->ValuesCount] = vk_offset;
+
+    kn->Values = values_list_offset;
+    kn->ValuesCount++;
+
+    Status = STATUS_SUCCESS;
 
 end:
     if (NT_SUCCESS(Status))
