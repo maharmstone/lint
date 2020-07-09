@@ -137,7 +137,9 @@ static NTSTATUS find_bin_holes(hive* h, void** off) {
 
     while (len < (int32_t*)((uint8_t*)bin + bin->Size)) {
         if (*len > 0) { // free
-            hive_hole* hh = kmalloc(sizeof(hive_hole), GFP_KERNEL);;
+            hive_hole* hh = kmalloc(sizeof(hive_hole), GFP_KERNEL);
+            if (!hh)
+                return STATUS_INSUFFICIENT_RESOURCES; // FIXME - free list entries already done
 
             hh->offset = (uint8_t*)len - (uint8_t*)h->bins;
             hh->size = *len;
@@ -246,8 +248,11 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
     }
 
     Status = init_hive(&system_hive);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
+        vfree(system_hive.data);
+        system_hive.data = NULL;
         return Status;
+    }
 
     printk(KERN_INFO "muwine_init_registry: loaded system hive at %s.\n", system_hive_path);
 
@@ -1263,11 +1268,52 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset) {
 }
 
 static void free_cell(hive* h, uint32_t offset) {
-    // FIXME - add entry to hive holes
-    // FIXME - if follows on from previous, merge entries
-    // FIXME - if follows on to next, merge entries
+    struct list_head* le;
+    bool added = false;
 
-    // FIXME - change sign of cell size
+    // add entry to hive holes
+
+    le = h->holes.next;
+
+    while (le != &h->holes) {
+        hive_hole* hh = list_entry(le, hive_hole, list);
+
+        // FIXME - if follows on from previous, merge entries
+        // FIXME - if follows on to next, merge entries
+
+        if (hh->offset > offset) {
+            hive_hole* hh2 = kmalloc(sizeof(hive_hole), GFP_KERNEL);
+
+            // FIXME - handle malloc failure
+
+            hh2->offset = offset;
+            hh2->size = -*(int32_t*)(h->bins + offset);
+
+            list_add(&hh2->list, hh->list.prev); // add before this one
+            added = true;
+
+            break;
+        }
+
+        le = le->next;
+    }
+
+    // add to end if not added already
+
+    if (!added) {
+        hive_hole* hh2 = kmalloc(sizeof(hive_hole), GFP_KERNEL);
+
+        // FIXME - handle malloc failure
+
+        hh2->offset = offset;
+        hh2->size = -*(int32_t*)(h->bins + offset);
+
+        list_add_tail(&hh2->list, &h->holes);
+    }
+
+    // change sign of cell size, to indicate now free
+
+    *(int32_t*)(h->bins + offset) = -*(int32_t*)(h->bins + offset);
 }
 
 static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
