@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <inttypes.h>
 #include <fcntl.h>
+#include <time.h>
 #include "../kernel/ioctls.h"
 
 #ifdef _WIN32
@@ -53,7 +54,11 @@ typedef struct _LARGE_INTEGER {
 } LARGE_INTEGER;
 
 #define KEY_QUERY_VALUE        (0x0001)
+#define KEY_SET_VALUE          (0x0002)
 #define KEY_ENUMERATE_SUB_KEYS (0x0008)
+
+#define REG_SZ                 1
+#define REG_DWORD              4
 
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
@@ -117,6 +122,8 @@ NTSTATUS __stdcall NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_
                                        PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
 NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                    PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
+                                 ULONG Type, PVOID Data, ULONG DataSize);
 #endif
 
 #ifndef _WIN32
@@ -206,6 +213,23 @@ NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_
     return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYVALUEKEY, args);
 }
 
+NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
+                       ULONG Type, PVOID Data, ULONG DataSize) {
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)ValueName,
+        (uintptr_t)TitleIndex,
+        (uintptr_t)Type,
+        (uintptr_t)Data,
+        (uintptr_t)DataSize
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTSETVALUEKEY, args);
+}
+
 #endif
 
 #ifdef _WIN32
@@ -214,7 +238,8 @@ static const char16_t regpath[] = u"\\Registry\\Machine\\System\\CurrentControlS
 static const char16_t regpath[] = u"\\Registry\\Machine\\ControlSet001\\Services\\btrfs"; // FIXME
 #endif
 
-static const char16_t key_name[] = u"ImagePath";
+static const char16_t key_name[] = u"Start";
+static const char16_t key_value[] = u"hello, world";
 
 int main() {
     NTSTATUS Status;
@@ -223,6 +248,7 @@ int main() {
     UNICODE_STRING us;
     ULONG index, len;
     char buf[255];
+    DWORD val, type;
 
     us.Length = us.MaximumLength = sizeof(regpath) - sizeof(char16_t);
     us.Buffer = (char16_t*)regpath;
@@ -234,7 +260,7 @@ int main() {
     oa.SecurityDescriptor = NULL;
     oa.SecurityQualityOfService = NULL;
 
-    Status = NtOpenKey(&h, KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE, &oa);
+    Status = NtOpenKey(&h, KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE | KEY_SET_VALUE, &oa);
 
     if (!NT_SUCCESS(Status)) {
         printf("NtOpenKey returned %08x\n", (int32_t)Status);
@@ -328,6 +354,20 @@ int main() {
             printf(" %02x", data[i]);
         }
         printf("\n");
+
+        type = kvfi->Type;
+    }
+
+    if (type == REG_DWORD) {
+        Status = NtSetValueKey(h, &us, 0, REG_SZ, (PVOID)key_value, sizeof(key_value));
+        if (!NT_SUCCESS(Status))
+            printf("NtSetValueKey returned %08x\n", (int32_t)Status);
+    } else {
+        val = (uint32_t)time(NULL);
+
+        Status = NtSetValueKey(h, &us, 0, REG_DWORD, &val, sizeof(val));
+        if (!NT_SUCCESS(Status))
+            printf("NtSetValueKey returned %08x\n", (int32_t)Status);
     }
 
     Status = NtClose(h);
