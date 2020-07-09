@@ -387,6 +387,9 @@ int main() {
             printf("NtSetValueKey returned %08x\n", (int32_t)Status);
     }
 
+    us.Length = us.MaximumLength = sizeof(key_name) - sizeof(char16_t);
+    us.Buffer = (WCHAR*)key_name;
+
     Status = NtDeleteValueKey(h, &us);
     if (!NT_SUCCESS(Status))
         printf("NtDeleteValueKey returned %08x\n", (int32_t)Status);
