@@ -118,3 +118,21 @@ NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEVALUEKEY, args);
 }
+
+NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
+                     PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
+    uintptr_t args[] = {
+        7,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)TitleIndex,
+        (uintptr_t)Class,
+        (uintptr_t)CreateOptions,
+        (uintptr_t)Disposition
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATEKEY, args);
+}
