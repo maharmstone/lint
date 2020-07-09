@@ -145,6 +145,7 @@ typedef struct {
     size_t size;
     unsigned int refcount;
     struct list_head holes;
+    rwlock_t lock;
 } hive;
 
 typedef struct {

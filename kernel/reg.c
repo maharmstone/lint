@@ -165,6 +165,7 @@ static NTSTATUS init_hive(hive* h) {
     clear_volatile(h, ((HBASE_BLOCK*)h->data)->RootCell);
 
     INIT_LIST_HEAD(&h->holes);
+    rwlock_init(&h->lock);
 
     off = h->bins;
     while (off < h->bins + ((HBASE_BLOCK*)h->data)->Length) {
@@ -445,7 +446,7 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
     size_t offset;
     key_object* k;
 
-    // FIXME - get hive mutex
+    read_lock(&h->lock);
 
     // loop through parts and locate
 
@@ -463,14 +464,18 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
         // FIXME - should this be checking for KEY_ENUMERATE_SUB_KEYS against all keys in path?
 
         Status = find_subkey(h, offset, us, &offset);
-        if (!NT_SUCCESS(Status))
+        if (!NT_SUCCESS(Status)) {
+            read_unlock(&h->lock);
             return Status;
+        }
 
         while (us->Length >= sizeof(WCHAR) && *us->Buffer != '\\') {
             us->Length -= sizeof(WCHAR);
             us->Buffer++;
         }
     } while (true);
+
+    read_unlock(&h->lock);
 
     // FIXME - do SeAccessCheck
     // FIXME - store access mask in handle
@@ -645,39 +650,55 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
 
     // FIXME - check access mask of handle for KEY_ENUMERATE_SUB_KEYS
 
+    read_lock(&key->h->lock);
+
     size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
 
-    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
 
-    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     // FIXME - work with volatile keys
 
-    if (Index >= kn->SubKeyCount)
+    if (Index >= kn->SubKeyCount) {
+        read_unlock(&key->h->lock);
         return STATUS_NO_MORE_ENTRIES;
+    }
 
     Status = get_key_item_by_index(key->h, kn->SubKeyList, Index, &cell_offset);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
+        read_unlock(&key->h->lock);
         return Status;
+    }
 
     // FIXME - check not out of bounds
 
     size = -*(int32_t*)((uint8_t*)key->h->bins + cell_offset);
 
-    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->bins + cell_offset + sizeof(int32_t));
 
-    if (kn2->Signature != CM_KEY_NODE_SIGNATURE)
+    if (kn2->Signature != CM_KEY_NODE_SIGNATURE) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
-    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn2->NameLength)
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn2->NameLength) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     switch (KeyInformationClass) {
         case KeyBasicInformation: {
@@ -691,6 +712,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
 
             if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
                 *ResultLength = reqlen;
+                read_unlock(&key->h->lock);
                 return STATUS_BUFFER_TOO_SMALL;
             }
 
@@ -719,8 +741,11 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
         // FIXME - KeyNodeInformation
 
         default:
+            read_unlock(&key->h->lock);
             return STATUS_INVALID_PARAMETER;
     }
+
+    read_unlock(&key->h->lock);
 
     return STATUS_SUCCESS;
 }
@@ -900,6 +925,7 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
 
 static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                     PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    NTSTATUS Status;
     key_object* key;
     int32_t size;
     CM_KEY_NODE* kn;
@@ -912,27 +938,37 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
 
+    read_lock(&key->h->lock);
+
     size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
 
-    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
 
-    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     // FIXME - work with volatile keys
 
-    if (Index >= kn->ValuesCount)
+    if (Index >= kn->ValuesCount) {
+        read_unlock(&key->h->lock);
         return STATUS_NO_MORE_ENTRIES;
+    }
 
     // FIXME - check not out of bounds
 
     size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
 
-    if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t)))
+    if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
 
@@ -941,10 +977,16 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[Index]);
     vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[Index] + sizeof(int32_t));
 
-    if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
+    if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
-    return query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+
+    read_unlock(&key->h->lock);
+
+    return Status;
 }
 
 NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
@@ -982,6 +1024,7 @@ NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFOR
 
 static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                 PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    NTSTATUS Status;
     key_object* key;
     int32_t size;
     CM_KEY_NODE* kn;
@@ -997,15 +1040,21 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
 
+    read_lock(&key->h->lock);
+
     size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
 
-    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
 
-    if (kn->Signature != CM_KEY_NODE_SIGNATURE)
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     // FIXME - work with volatile keys
 
@@ -1013,8 +1062,10 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
 
     size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
 
-    if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t)))
+    if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
+        read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
+    }
 
     values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
 
@@ -1025,8 +1076,10 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
 
         size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[i]);
 
-        if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
+        if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
+            read_unlock(&key->h->lock);
             return STATUS_REGISTRY_CORRUPT;
+        }
 
         if (vk->Flags & VALUE_COMP_NAME) {
             if (vk->NameLength == ValueName->Length / sizeof(WCHAR)) {
@@ -1050,8 +1103,11 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
                     }
                 }
 
-                if (found)
-                    return query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+                if (found) {
+                    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+                    read_unlock(&key->h->lock);
+                    return Status;
+                }
             }
         } else {
             if (vk->NameLength == ValueName->Length) {
@@ -1074,11 +1130,16 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
                     }
                 }
 
-                if (found)
-                    return query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+                if (found) {
+                    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+                    read_unlock(&key->h->lock);
+                    return Status;
+                }
             }
         }
     }
+
+    read_unlock(&key->h->lock);
 
     return STATUS_OBJECT_NAME_NOT_FOUND;
 }
