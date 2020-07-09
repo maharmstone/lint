@@ -129,3 +129,5 @@ NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFOR
                                   PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
 NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                               PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
+                       ULONG Type, PVOID Data, ULONG DataSize);

@@ -18,7 +18,8 @@ static struct muwine_func funcs[] = {
     { NtClose, 1 },
     { user_NtEnumerateKey, 6 },
     { user_NtEnumerateValueKey, 6 },
-    { user_NtQueryValueKey, 6 }
+    { user_NtQueryValueKey, 6 },
+    { NtSetValueKey, 6 }
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system

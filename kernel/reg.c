@@ -1131,3 +1131,13 @@ NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_V
 
     return Status;
 }
+
+NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
+                       ULONG Type, PVOID Data, ULONG DataSize) {
+    printk(KERN_INFO "NtSetValueKey(%lx, %p, %x, %x, %p, %x): stub\n", (uintptr_t)KeyHandle, ValueName,
+           TitleIndex, Type, Data, DataSize);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
