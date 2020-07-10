@@ -151,10 +151,14 @@ typedef struct {
     struct list_head holes;
     rwlock_t lock;
     bool dirty;
+    void* volatile_bins;
+    size_t volatile_size;
+    struct list_head volatile_holes;
 } hive;
 
 typedef struct {
     object_header header;
     hive* h;
     size_t offset;
+    bool is_volatile;
 } key_object;
