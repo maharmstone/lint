@@ -87,6 +87,9 @@ typedef enum _KEY_VALUE_INFORMATION_CLASS {
     KeyValuePartialInformationAlign64
 } KEY_VALUE_INFORMATION_CLASS;
 
+#define REG_CREATED_NEW_KEY         0x00000001
+#define REG_OPENED_EXISTING_KEY     0x00000002
+
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
 typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);

@@ -300,7 +300,7 @@ static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
     return h;
 }
 
-static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE_STRING* us, size_t* offset_out) {
+static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE_STRING* us, uint32_t* offset_out) {
     unsigned int i, uslen;
 
     uslen = 0;
@@ -390,7 +390,7 @@ static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
 
-static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* offset_out) {
+static NTSTATUS find_subkey(hive* h, uint32_t offset, UNICODE_STRING* us, uint32_t* offset_out) {
     uint32_t hash = calc_subkey_hash(us);
     int32_t size;
     uint16_t sig;
@@ -449,9 +449,9 @@ static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* 
         return STATUS_REGISTRY_CORRUPT;
 }
 
-static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offset) {
+static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offset, bool parent) {
     NTSTATUS Status;
-    size_t offset;
+    uint32_t offset;
 
     // loop through parts and locate
 
@@ -465,6 +465,21 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offs
 
         if (us->Length == 0)
             break;
+
+        if (parent) {
+            bool last_one = true;
+            unsigned int i;
+
+            for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
+                if (us->Buffer[i] == '\\') {
+                    last_one = false;
+                    break;
+                }
+            }
+
+            if (last_one)
+                break;
+        }
 
         // FIXME - should this be checking for KEY_ENUMERATE_SUB_KEYS against all keys in path?
 
@@ -529,7 +544,7 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 
         read_lock(&system_hive.lock);
 
-        Status = open_key_in_hive(&system_hive, &us, &offset);
+        Status = open_key_in_hive(&system_hive, &us, &offset, false);
         if (!NT_SUCCESS(Status)) {
             read_unlock(&system_hive.lock);
             return Status;
@@ -1806,12 +1821,113 @@ NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
 
 static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
                             PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
+    NTSTATUS Status;
+    UNICODE_STRING us;
+    uint32_t offset, subkey_offset;
+    key_object* k;
+
+    static const WCHAR prefix[] = L"\\Registry\\";
+    static const WCHAR machine[] = L"Machine";
+
     printk(KERN_INFO "NtCreateKey(%lx, %x, %p, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, DesiredAccess,
            ObjectAttributes, TitleIndex, Class, CreateOptions, Disposition);
 
-    // FIXME
+    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES))
+        return STATUS_INVALID_PARAMETER;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (ObjectAttributes->RootDirectory) {
+        printk(KERN_ALERT "NtOpenKey: FIXME - support RootDirectory\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (!ObjectAttributes->ObjectName)
+        return STATUS_INVALID_PARAMETER;
+
+    // fail if ObjectAttributes->ObjectName doesn't begin with "\\Registry\\";
+
+    us.Length = ObjectAttributes->ObjectName->Length;
+    us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+    if (us.Length < sizeof(prefix) - sizeof(WCHAR) ||
+        wcsnicmp(us.Buffer, prefix, (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR))) {
+        return STATUS_OBJECT_PATH_INVALID;
+    }
+
+    us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
+    us.Length -= sizeof(prefix) - sizeof(WCHAR);
+
+    if (us.Length < sizeof(machine) - sizeof(WCHAR) || wcsnicmp(us.Buffer, machine, (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR)))
+        return STATUS_OBJECT_PATH_INVALID;
+
+    us.Buffer += (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR);
+    us.Length -= sizeof(machine) - sizeof(WCHAR);
+
+    if (us.Length >= sizeof(WCHAR) && us.Buffer[0] != '\\')
+        return STATUS_OBJECT_PATH_INVALID;
+
+    if (!system_hive.data) // HKLM not loaded
+        return STATUS_OBJECT_PATH_INVALID;
+
+    write_lock(&system_hive.lock);
+
+    // get offset for kn of parent
+
+    Status = open_key_in_hive(&system_hive, &us, &offset, true);
+    if (!NT_SUCCESS(Status))
+        goto end;
+
+    // FIXME - make sure SD allows us to create subkeys
+
+    // if already exists, set Disposition to REG_OPENED_EXISTING_KEY, create handle, and return
+
+    Status = find_subkey(&system_hive, offset, &us, &subkey_offset);
+    if (NT_SUCCESS(Status)) {
+        k = kmalloc(sizeof(key_object), GFP_KERNEL);
+        if (!k) {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        k->header.refcount = 1;
+        k->header.type = muwine_object_key;
+        k->header.close = key_object_close;
+        k->h = &system_hive;
+        __sync_add_and_fetch(&system_hive.refcount, 1);
+        k->offset = offset;
+
+        Status = muwine_add_handle(&k->header, KeyHandle);
+
+        if (!NT_SUCCESS(Status))
+            kfree(k);
+
+        if (Disposition)
+            *Disposition = REG_OPENED_EXISTING_KEY;
+
+        goto end;
+    } else if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
+        goto end;
+
+    // FIXME - if non-volatile:
+    // FIXME - don't allow non-volatile keys to be created under volatile parent
+    // FIXME - open kn of parent
+    // FIXME - allocate space for new kn
+    // FIXME - get existing lh
+    // FIXME - add new entry in lh correct place
+    // FIXME - allocate cell for new lh and write
+    // FIXME - free old cell for lh
+    // FIXME - dealing with ri rather than lh
+    // FIXME - update kn->SubKeyCount and kn->SubKeyList
+    // FIXME - set disposition to REG_CREATED_NEW_KEY
+    // FIXME - create handle and return
+
+    // FIXME - creating volatile keys
+
+    Status = STATUS_NOT_IMPLEMENTED;
+
+end:
+    write_unlock(&system_hive.lock);
+
+    return Status;
 }
 
 NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
