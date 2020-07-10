@@ -1795,12 +1795,63 @@ NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     return Status;
 }
 
-NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
-                     PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
+static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
+                            PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
     printk(KERN_INFO "NtCreateKey(%lx, %x, %p, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, DesiredAccess,
            ObjectAttributes, TitleIndex, Class, CreateOptions, Disposition);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
+                          PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    ULONG dispos;
+    UNICODE_STRING us;
+
+    if (!ObjectAttributes || !KeyHandle)
+        return STATUS_INVALID_PARAMETER;
+
+    if (Class) {
+        if (!get_user_unicode_string(&us, Class))
+            return STATUS_INVALID_PARAMETER;
+    } else {
+        us.Length = us.MaximumLength = 0;
+        us.Buffer = NULL;
+    }
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes)) {
+        if (us.Buffer)
+            kfree(us.Buffer);
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtCreateKey(&h, DesiredAccess, &oa, TitleIndex, Class ? &us : NULL, CreateOptions, &dispos);
+
+    if (us.Buffer)
+        kfree(us.Buffer);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (NT_SUCCESS(Status)) {
+        if (put_user(h, KeyHandle) != 0)
+            return STATUS_INVALID_PARAMETER;
+
+        if (Disposition) {
+            if (put_user(dispos, Disposition) != 0)
+                return STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    return Status;
 }
