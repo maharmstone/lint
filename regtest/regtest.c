@@ -71,12 +71,17 @@ NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, 
 NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
                                  ULONG Type, PVOID Data, ULONG DataSize);
 NTSTATUS __stdcall NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName);
+NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                               ULONG TitleIndex, PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition);
+
 #endif
 
 #ifdef _WIN32
 static const char16_t regpath[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs";
+static const char16_t regpath2[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs\\NewSubKey";
 #else
 static const char16_t regpath[] = u"\\Registry\\Machine\\ControlSet001\\Services\\btrfs"; // FIXME
+static const char16_t regpath2[] = u"\\Registry\\Machine\\ControlSet001\\Services\\btrfs\\NewSubKey";
 #endif
 
 static const char16_t key_name[] = u"Start";
@@ -88,7 +93,7 @@ int main() {
     HANDLE h;
     OBJECT_ATTRIBUTES oa;
     UNICODE_STRING us;
-    ULONG index, len;
+    ULONG index, len, dispos;
     char buf[255];
     DWORD val, type;
 
@@ -221,6 +226,19 @@ int main() {
     Status = NtDeleteValueKey(h, &us);
     if (!NT_SUCCESS(Status))
         printf("NtDeleteValueKey returned %08x\n", (int32_t)Status);
+
+    Status = NtClose(h);
+    if (!NT_SUCCESS(Status))
+        printf("NtClose returned %08x\n", (int32_t)Status);
+
+    us.Length = us.MaximumLength = sizeof(regpath2) - sizeof(char16_t);
+    us.Buffer = (char16_t*)regpath2;
+
+    oa.ObjectName = &us;
+
+    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
+    if (!NT_SUCCESS(Status))
+        printf("NtCreateKey returned %08x (dispos = %x)\n", (int32_t)Status, (int32_t)dispos);
 
     Status = NtClose(h);
     if (!NT_SUCCESS(Status))
