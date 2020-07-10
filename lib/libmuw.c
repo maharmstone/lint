@@ -136,3 +136,14 @@ NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRI
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATEKEY, args);
 }
+
+NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)KeyHandle
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEKEY, args);
+}

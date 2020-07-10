@@ -140,6 +140,7 @@ NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleI
 NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName);
 NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
                      PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition);
+NTSTATUS NtDeleteKey(HANDLE KeyHandle);
 
 #ifdef __cplusplus
 }
