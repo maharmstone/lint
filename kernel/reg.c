@@ -618,7 +618,7 @@ static void key_object_close(object_header* obj) {
     kfree(key);
 }
 
-static NTSTATUS get_key_item_by_index(hive* h, size_t offset, unsigned int index, size_t* cell_offset) {
+static NTSTATUS get_key_item_by_index(hive* h, uint32_t offset, unsigned int index, uint32_t* cell_offset) {
     int32_t size;
     uint16_t sig;
 
@@ -674,7 +674,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     int32_t size;
     CM_KEY_NODE* kn;
     CM_KEY_NODE* kn2;
-    size_t cell_offset;
+    uint32_t cell_offset;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
     if (!key || key->header.type != muwine_object_key)
@@ -1943,7 +1943,7 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
     lh->List[pos].Cell = cell;
     lh->List[pos].HashKey = hash;
 
-    memcpy(&lh->List[pos+1], &old_lh->List[pos], old_lh->Count - pos);
+    memcpy(&lh->List[pos+1], &old_lh->List[pos], (old_lh->Count - pos) * sizeof(CM_INDEX));
 
     return STATUS_SUCCESS;
 }
