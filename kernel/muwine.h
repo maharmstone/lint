@@ -150,3 +150,4 @@ NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG T
 NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName);
 NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
                           PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition);
+NTSTATUS NtDeleteKey(HANDLE KeyHandle);

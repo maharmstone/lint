@@ -2248,3 +2248,11 @@ NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 
     return Status;
 }
+
+NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
+    printk(KERN_INFO "NtDeleteKey(%lx): stub\n", (uintptr_t)KeyHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

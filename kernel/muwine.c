@@ -22,6 +22,7 @@ static struct muwine_func funcs[] = {
     { user_NtSetValueKey, 6 },
     { user_NtDeleteValueKey, 2 },
     { user_NtCreateKey, 7 },
+    { NtDeleteKey, 1 }
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
