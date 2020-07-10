@@ -1300,6 +1300,7 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset) {
     }
 
     // FIXME - if can't find anything, add new bin and extend file
+    printk(KERN_ALERT "allocate_cell: FIXME - add new bin\n");
 
     return STATUS_INTERNAL_ERROR;
 }
@@ -1970,6 +1971,11 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     CM_KEY_NODE* kn;
     CM_KEY_NODE* kn2;
     uint32_t hash;
+    bool is_volatile = false;
+    hive* h;
+    hive* parent_hive;
+    uint32_t* subkey_count;
+    uint32_t* subkey_list;
 
     static const WCHAR prefix[] = L"\\Registry\\";
     static const WCHAR machine[] = L"Machine";
@@ -2009,6 +2015,11 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     if (!system_hive.data) // HKLM not loaded
         return STATUS_OBJECT_PATH_INVALID;
+
+    if (CreateOptions & REG_OPTION_VOLATILE) {
+        is_volatile = true;
+        write_lock(&volatile_hive.lock);
+    }
 
     write_lock(&system_hive.lock);
 
@@ -2054,24 +2065,24 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     } else if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
         goto end;
 
-    if (CreateOptions & REG_OPTION_VOLATILE) {
-        // FIXME - creating volatile keys
-        printk(KERN_ALERT "NtCreateKey: FIXME - support creating volatile keys\n"); // FIXME
-        Status = STATUS_NOT_IMPLEMENTED;
-        goto end;
-    }
+    parent_hive = &system_hive;
+
+    if (is_volatile)
+        h = &volatile_hive;
+    else
+        h = parent_hive;
 
     // FIXME - don't allow non-volatile keys to be created under volatile parent
 
     // allocate space for new kn
 
-    Status = allocate_cell(&system_hive, offsetof(CM_KEY_NODE, Name) + us.Length, &subkey_offset);
+    Status = allocate_cell(h, offsetof(CM_KEY_NODE, Name) + us.Length, &subkey_offset);
     if (!NT_SUCCESS(Status))
         goto end;
 
     // FIXME - compute SD and allocate or find cell for it
 
-    kn2 = (CM_KEY_NODE*)((uint8_t*)system_hive.bins + subkey_offset + sizeof(int32_t));
+    kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + subkey_offset + sizeof(int32_t));
 
     kn2->Signature = CM_KEY_NODE_SIGNATURE;
     kn2->Flags = 0;
@@ -2097,7 +2108,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     // open kn of parent (checking already done in open_key_in_hive)
 
-    kn = (CM_KEY_NODE*)((uint8_t*)system_hive.bins + offset + sizeof(int32_t));
+    kn = (CM_KEY_NODE*)((uint8_t*)parent_hive->bins + offset + sizeof(int32_t));
 
     hash = calc_subkey_hash(&us);
 
@@ -2112,8 +2123,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
     k->header.close = key_object_close;
-    k->h = &system_hive;
-    __sync_add_and_fetch(&system_hive.refcount, 1);
+    k->h = h;
+    __sync_add_and_fetch(&h->refcount, 1);
 
     Status = muwine_add_handle(&k->header, KeyHandle);
 
@@ -2122,43 +2133,53 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         goto end;
     }
 
-    if (kn->SubKeyCount == 0) {
+    if (is_volatile) {
+        subkey_count = &kn->VolatileSubKeyCount;
+        subkey_list = &kn->VolatileSubKeyList;
+    } else {
+        subkey_count = &kn->SubKeyCount;
+        subkey_list = &kn->SubKeyList;
+    }
+
+    if (*subkey_count == 0) {
         CM_KEY_FAST_INDEX* lh;
         uint32_t lh_offset;
 
-        Status = allocate_cell(&system_hive, offsetof(CM_KEY_FAST_INDEX, List[0]) + sizeof(CM_INDEX), &lh_offset);
+        Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + sizeof(CM_INDEX), &lh_offset);
         if (!NT_SUCCESS(Status)) {
-            free_cell(&system_hive, subkey_offset);
+            free_cell(h, subkey_offset);
             NtClose(*KeyHandle);
             goto end;
         }
 
-        lh = (CM_KEY_FAST_INDEX*)(system_hive.bins + lh_offset + sizeof(int32_t));
+        lh = (CM_KEY_FAST_INDEX*)(h->bins + lh_offset + sizeof(int32_t));
 
         lh->Signature = CM_KEY_HASH_LEAF;
         lh->Count = 1;
         lh->List[0].Cell = subkey_offset;
         lh->List[0].HashKey = hash;
 
-        kn->MaxNameLen = us.Length;
-        kn->SubKeyCount = 1;
-        kn->SubKeyList = lh_offset;
+        if (us.Length > kn->MaxNameLen)
+            kn->MaxNameLen = us.Length;
+
+        *subkey_count = 1;
+        *subkey_list = lh_offset;
 
         k->offset = subkey_offset;
     } else {
         uint16_t sig;
         int32_t size;
 
-        size = -*(int32_t*)(system_hive.bins + kn->SubKeyList);
+        size = -*(int32_t*)(h->bins + *subkey_list);
 
         if (size < sizeof(int32_t) + sizeof(uint16_t)) {
-            free_cell(&system_hive, subkey_offset);
+            free_cell(h, subkey_offset);
             NtClose(*KeyHandle);
             Status = STATUS_REGISTRY_CORRUPT;
             goto end;
         }
 
-        sig = *(uint16_t*)(system_hive.bins + kn->SubKeyList + sizeof(int32_t));
+        sig = *(uint16_t*)(h->bins + *subkey_list + sizeof(int32_t));
 
         // FIXME - dealing with existing ri rather than lh
         // FIXME - creating new ri if lh gets too large
@@ -2167,26 +2188,26 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             CM_KEY_FAST_INDEX* old_lh;
             uint32_t lh_offset;
 
-            old_lh = (CM_KEY_FAST_INDEX*)(system_hive.bins + kn->SubKeyList + sizeof(int32_t));
+            old_lh = (CM_KEY_FAST_INDEX*)(h->bins + *subkey_list + sizeof(int32_t));
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
-                free_cell(&system_hive, subkey_offset);
+                free_cell(h, subkey_offset);
                 NtClose(*KeyHandle);
                 Status = STATUS_REGISTRY_CORRUPT;
                 goto end;
             }
 
-            Status = lh_copy_and_add(&system_hive, old_lh, &lh_offset, subkey_offset, hash, &us);
+            Status = lh_copy_and_add(h, old_lh, &lh_offset, subkey_offset, hash, &us);
             if (!NT_SUCCESS(Status)) {
-                free_cell(&system_hive, subkey_offset);
+                free_cell(h, subkey_offset);
                 NtClose(*KeyHandle);
                 goto end;
             }
 
-            free_cell(&system_hive, kn->SubKeyList);
+            free_cell(h, *subkey_list);
 
-            kn->SubKeyCount++;
-            kn->SubKeyList = lh_offset;
+            (*subkey_count)++;
+            *subkey_list = lh_offset;
 
             if (us.Length > kn->MaxNameLen)
                 kn->MaxNameLen = us.Length;
@@ -2207,6 +2228,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
 end:
     write_unlock(&system_hive.lock);
+
+    if (is_volatile)
+        write_unlock(&volatile_hive.lock);
 
     return Status;
 }
