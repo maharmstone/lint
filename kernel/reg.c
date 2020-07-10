@@ -409,7 +409,7 @@ static NTSTATUS find_subkey(hive* h, uint32_t offset, UNICODE_STRING* us, uint32
     // FIXME - work with volatile keys
 
     if (kn->SubKeyCount == 0)
-        return STATUS_OBJECT_PATH_INVALID;
+        return STATUS_OBJECT_PATH_NOT_FOUND;
 
     // FIXME - check not out of bounds
 
@@ -1825,6 +1825,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     UNICODE_STRING us;
     uint32_t offset, subkey_offset;
     key_object* k;
+    CM_KEY_NODE* kn;
+    CM_KEY_NODE* kn2;
+    uint32_t hash;
 
     static const WCHAR prefix[] = L"\\Registry\\";
     static const WCHAR machine[] = L"Machine";
@@ -1836,7 +1839,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         return STATUS_INVALID_PARAMETER;
 
     if (ObjectAttributes->RootDirectory) {
-        printk(KERN_ALERT "NtOpenKey: FIXME - support RootDirectory\n"); // FIXME
+        printk(KERN_ALERT "NtCreateKey: FIXME - support RootDirectory\n"); // FIXME
         return STATUS_NOT_IMPLEMENTED;
     }
 
@@ -1907,22 +1910,119 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     } else if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
         goto end;
 
-    // FIXME - if non-volatile:
+    if (CreateOptions & REG_OPTION_VOLATILE) {
+        // FIXME - creating volatile keys
+        printk(KERN_ALERT "NtCreateKey: FIXME - support creating volatile keys\n"); // FIXME
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
     // FIXME - don't allow non-volatile keys to be created under volatile parent
-    // FIXME - open kn of parent
-    // FIXME - allocate space for new kn
-    // FIXME - get existing lh
-    // FIXME - add new entry in lh correct place
-    // FIXME - allocate cell for new lh and write
-    // FIXME - free old cell for lh
-    // FIXME - dealing with ri rather than lh
-    // FIXME - update kn->SubKeyCount and kn->SubKeyList
-    // FIXME - set disposition to REG_CREATED_NEW_KEY
-    // FIXME - create handle and return
 
-    // FIXME - creating volatile keys
+    // allocate space for new kn
 
-    Status = STATUS_NOT_IMPLEMENTED;
+    Status = allocate_cell(&system_hive, offsetof(CM_KEY_NODE, Name) + us.Length, &subkey_offset);
+    if (!NT_SUCCESS(Status))
+        goto end;
+
+    // FIXME - compute SD and allocate or find cell for it
+
+    kn2 = (CM_KEY_NODE*)((uint8_t*)system_hive.bins + subkey_offset + sizeof(int32_t));
+
+    kn2->Signature = CM_KEY_NODE_SIGNATURE;
+    kn2->Flags = 0;
+    kn2->LastWriteTime = 0; // FIXME
+    kn2->Spare = 0;
+    kn2->Parent = offset;
+    kn2->SubKeyCount = 0;
+    kn2->VolatileSubKeyCount = 0;
+    kn2->SubKeyList = 0;
+    kn2->VolatileSubKeyList = 0;
+    kn2->ValuesCount = 0;
+    kn2->Values = 0;
+    kn2->Security = 0; // FIXME
+    kn2->Class = 0; // FIXME
+    kn2->MaxNameLen = 0;
+    kn2->MaxClassLen = 0;
+    kn2->MaxValueNameLen = 0;
+    kn2->MaxValueDataLen = 0;
+    kn2->WorkVar = 0;
+    kn2->NameLength = us.Length;
+    kn2->ClassLength = 0; // FIXME
+    memcpy(kn2->Name, us.Buffer, us.Length);
+
+    // open kn of parent (checking already done in open_key_in_hive)
+
+    kn = (CM_KEY_NODE*)((uint8_t*)system_hive.bins + offset + sizeof(int32_t));
+
+    hash = calc_subkey_hash(&us);
+
+    // add handle here, to make things easier if we fail later on
+
+    k = kmalloc(sizeof(key_object), GFP_KERNEL);
+    if (!k) {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    k->header.refcount = 1;
+    k->header.type = muwine_object_key;
+    k->header.close = key_object_close;
+    k->h = &system_hive;
+    __sync_add_and_fetch(&system_hive.refcount, 1);
+
+    Status = muwine_add_handle(&k->header, KeyHandle);
+
+    if (!NT_SUCCESS(Status)) {
+        kfree(k);
+        goto end;
+    }
+
+    if (kn->SubKeyCount == 0) {
+        CM_KEY_FAST_INDEX* lh;
+        uint32_t lh_offset;
+
+        Status = allocate_cell(&system_hive, offsetof(CM_KEY_FAST_INDEX, List[0]) + sizeof(CM_INDEX), &lh_offset);
+        if (!NT_SUCCESS(Status)) {
+            free_cell(&system_hive, subkey_offset);
+            NtClose(*KeyHandle);
+            goto end;
+        }
+
+        lh = (CM_KEY_FAST_INDEX*)(system_hive.bins + lh_offset + sizeof(int32_t));
+
+        lh->Signature = CM_KEY_HASH_LEAF;
+        lh->Count = 1;
+        lh->List[0].Cell = subkey_offset;
+        lh->List[0].HashKey = hash;
+
+        kn->MaxClassLen = us.Length;
+        kn->SubKeyCount = 1;
+        kn->SubKeyList = lh_offset;
+
+        k->offset = subkey_offset;
+    } else {
+        // FIXME - dealing with existing ri rather than lh
+        // FIXME - creating new ri if lh gets too large
+        // FIXME - get existing lh
+        // FIXME - add new entry in lh correct place
+        // FIXME - allocate cell for new lh and write
+        // FIXME - free old cell for lh
+        // FIXME - update kn->SubKeyCount and kn->SubKeyList
+        // FIXME - update kn->MaxClassLen
+
+        printk(KERN_ALERT "NtCreateKey: FIXME - support creating keys to existing list\n"); // FIXME
+        Status = STATUS_NOT_IMPLEMENTED;
+        NtClose(*KeyHandle);
+        goto end;
+    }
+
+    if (Disposition)
+        *Disposition = REG_CREATED_NEW_KEY;
+
+    k->h->dirty = true;
+
+    Status = STATUS_SUCCESS;
 
 end:
     write_unlock(&system_hive.lock);

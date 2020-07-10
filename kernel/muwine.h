@@ -90,6 +90,12 @@ typedef enum _KEY_VALUE_INFORMATION_CLASS {
 #define REG_CREATED_NEW_KEY         0x00000001
 #define REG_OPENED_EXISTING_KEY     0x00000002
 
+#define REG_OPTION_NON_VOLATILE     0x00000000
+#define REG_OPTION_VOLATILE         0x00000001
+#define REG_OPTION_CREATE_LINK      0x00000002
+#define REG_OPTION_BACKUP_RESTORE   0x00000004
+#define REG_OPTION_OPEN_LINK        0x00000008
+
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
 typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
