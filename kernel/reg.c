@@ -4,6 +4,7 @@
 
 static void key_object_close(object_header* obj);
 
+static hive volatile_hive;
 static hive system_hive;
 
 static bool hive_is_valid(hive* h) {
@@ -157,27 +158,39 @@ static NTSTATUS find_bin_holes(hive* h, void** off) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS init_hive(hive* h) {
+static NTSTATUS init_hive(hive* h, bool is_volatile) {
     NTSTATUS Status;
     void* off;
 
-    h->bins = (uint8_t*)h->data + BIN_SIZE;
     h->refcount = 0;
 
-    clear_volatile(h, ((HBASE_BLOCK*)h->data)->RootCell);
+    if (is_volatile)
+        h->bins = NULL;
+    else {
+        h->bins = (uint8_t*)h->data + BIN_SIZE;
+        clear_volatile(h, ((HBASE_BLOCK*)h->data)->RootCell);
+    }
 
     INIT_LIST_HEAD(&h->holes);
     rwlock_init(&h->lock);
     h->dirty = false;
 
-    off = h->bins;
-    while (off < h->bins + ((HBASE_BLOCK*)h->data)->Length) {
-        Status = find_bin_holes(h, &off);
-        if (!NT_SUCCESS(Status))
-            return Status;
+    if (!is_volatile) {
+        off = h->bins;
+        while (off < h->bins + ((HBASE_BLOCK*)h->data)->Length) {
+            Status = find_bin_holes(h, &off);
+            if (!NT_SUCCESS(Status))
+                return Status;
+        }
     }
 
     return STATUS_SUCCESS;
+}
+
+void muwine_init_volatile_hive(void) {
+    volatile_hive.data = NULL;
+    volatile_hive.size = 0;
+    init_hive(&volatile_hive, true);
 }
 
 NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
@@ -247,7 +260,7 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    Status = init_hive(&system_hive);
+    Status = init_hive(&system_hive, false);
     if (!NT_SUCCESS(Status)) {
         vfree(system_hive.data);
         system_hive.data = NULL;

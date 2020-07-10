@@ -592,6 +592,9 @@ static int __init muwine_init(void) {
     }
 
     printk(KERN_INFO "muwine module loaded with device major number %d\n", major_num);
+
+    muwine_init_volatile_hive();
+
     return 0;
 }
 
