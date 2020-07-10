@@ -1819,6 +1819,135 @@ NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     return Status;
 }
 
+static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* offset, uint32_t cell, uint32_t hash,
+                                UNICODE_STRING* us) {
+    NTSTATUS Status;
+    CM_KEY_FAST_INDEX* lh;
+    unsigned int i;
+    uint32_t pos;
+    bool found = false;
+
+    for (i = 0; i < old_lh->Count; i++) {
+        int32_t size = -*(int32_t*)(h->bins + old_lh->List[i].Cell);
+        uint16_t sig;
+        CM_KEY_NODE* kn;
+
+        // FIXME - check not out of bounds
+
+        if (size < sizeof(int32_t) + sizeof(uint16_t))
+            return STATUS_REGISTRY_CORRUPT;
+
+        sig = *(uint16_t*)(h->bins + old_lh->List[i].Cell + sizeof(int32_t));
+
+        if (sig != CM_KEY_NODE_SIGNATURE)
+            return STATUS_REGISTRY_CORRUPT;
+
+        kn = (CM_KEY_NODE*)(h->bins + old_lh->List[i].Cell + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn->NameLength)
+            return STATUS_REGISTRY_CORRUPT;
+
+        if (kn->Flags & KEY_COMP_NAME) {
+            bool stop = false;
+            unsigned int j;
+            unsigned int len = kn->NameLength;
+
+            if (len > us->Length / sizeof(WCHAR))
+                len = us->Length / sizeof(WCHAR);
+
+            for (j = 0; j < len; j++) {
+                WCHAR c1 = ((char*)kn->Name)[j];
+                WCHAR c2 = us->Buffer[j];
+
+                if (c1 >= 'a' && c1 <= 'z')
+                    c1 = c1 - 'a' + 'A';
+
+                if (c2 >= 'a' && c2 <= 'z')
+                    c2 = c2 - 'a' + 'A';
+
+                if (c1 < c2) {
+                    stop = true;
+                    break;
+                }
+
+                if (c1 > c2) {
+                    found = true;
+                    pos = i;
+                    break;
+                }
+            }
+
+            if (found)
+                break;
+
+            if (!stop && kn->NameLength > us->Length / sizeof(WCHAR)) {
+                pos = i;
+                found = true;
+                break;
+            }
+        } else {
+            bool stop = false;
+            unsigned int j;
+            unsigned int len = kn->NameLength / sizeof(WCHAR);
+
+            if (len > us->Length / sizeof(WCHAR))
+                len = us->Length / sizeof(WCHAR);
+
+            for (j = 0; j < len; j++) {
+                WCHAR c1 = kn->Name[j];
+                WCHAR c2 = us->Buffer[j];
+
+                if (c1 >= 'a' && c1 <= 'z')
+                    c1 = c1 - 'a' + 'A';
+
+                if (c2 >= 'a' && c2 <= 'z')
+                    c2 = c2 - 'a' + 'A';
+
+                if (c1 < c2) {
+                    stop = true;
+                    break;
+                }
+
+                if (c1 > c2) {
+                    found = true;
+                    pos = i;
+                    break;
+                }
+            }
+
+            if (found)
+                break;
+
+            if (!stop && kn->NameLength > us->Length) {
+                pos = i;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found)
+        pos = old_lh->Count - 1;
+
+    Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * (old_lh->Count + 1)), offset);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    lh = (CM_KEY_FAST_INDEX*)(h->bins + *offset + sizeof(int32_t));
+
+    lh->Signature = CM_KEY_HASH_LEAF;
+    lh->Count = old_lh->Count + 1;
+
+    memcpy(lh->List, old_lh->List, pos * sizeof(CM_INDEX));
+
+    lh->List[pos].Cell = cell;
+    lh->List[pos].HashKey = hash;
+
+    memcpy(&lh->List[pos+1], &old_lh->List[pos], old_lh->Count - pos);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
                             PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
     NTSTATUS Status;
@@ -1831,9 +1960,6 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     static const WCHAR prefix[] = L"\\Registry\\";
     static const WCHAR machine[] = L"Machine";
-
-    printk(KERN_INFO "NtCreateKey(%lx, %x, %p, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, DesiredAccess,
-           ObjectAttributes, TitleIndex, Class, CreateOptions, Disposition);
 
     if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES))
         return STATUS_INVALID_PARAMETER;
@@ -1878,6 +2004,11 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     Status = open_key_in_hive(&system_hive, &us, &offset, true);
     if (!NT_SUCCESS(Status))
         goto end;
+
+    if (us.Length < sizeof(WCHAR)) {
+        Status = STATUS_OBJECT_NAME_INVALID;
+        goto end;
+    }
 
     // FIXME - make sure SD allows us to create subkeys
 
@@ -1996,25 +2127,62 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         lh->List[0].Cell = subkey_offset;
         lh->List[0].HashKey = hash;
 
-        kn->MaxClassLen = us.Length;
+        kn->MaxNameLen = us.Length;
         kn->SubKeyCount = 1;
         kn->SubKeyList = lh_offset;
 
         k->offset = subkey_offset;
     } else {
+        uint16_t sig;
+        int32_t size;
+
+        size = -*(int32_t*)(system_hive.bins + kn->SubKeyList);
+
+        if (size < sizeof(int32_t) + sizeof(uint16_t)) {
+            free_cell(&system_hive, subkey_offset);
+            NtClose(*KeyHandle);
+            Status = STATUS_REGISTRY_CORRUPT;
+            goto end;
+        }
+
+        sig = *(uint16_t*)(system_hive.bins + kn->SubKeyList + sizeof(int32_t));
+
         // FIXME - dealing with existing ri rather than lh
         // FIXME - creating new ri if lh gets too large
-        // FIXME - get existing lh
-        // FIXME - add new entry in lh correct place
-        // FIXME - allocate cell for new lh and write
-        // FIXME - free old cell for lh
-        // FIXME - update kn->SubKeyCount and kn->SubKeyList
-        // FIXME - update kn->MaxClassLen
 
-        printk(KERN_ALERT "NtCreateKey: FIXME - support creating keys to existing list\n"); // FIXME
-        Status = STATUS_NOT_IMPLEMENTED;
-        NtClose(*KeyHandle);
-        goto end;
+        if (sig == CM_KEY_HASH_LEAF) {
+            CM_KEY_FAST_INDEX* old_lh;
+            uint32_t lh_offset;
+
+            old_lh = (CM_KEY_FAST_INDEX*)(system_hive.bins + kn->SubKeyList + sizeof(int32_t));
+
+            if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
+                free_cell(&system_hive, subkey_offset);
+                NtClose(*KeyHandle);
+                Status = STATUS_REGISTRY_CORRUPT;
+                goto end;
+            }
+
+            Status = lh_copy_and_add(&system_hive, old_lh, &lh_offset, subkey_offset, hash, &us);
+            if (!NT_SUCCESS(Status)) {
+                free_cell(&system_hive, subkey_offset);
+                NtClose(*KeyHandle);
+                goto end;
+            }
+
+            free_cell(&system_hive, kn->SubKeyList);
+
+            kn->SubKeyCount++;
+            kn->SubKeyList = lh_offset;
+
+            if (us.Length > kn->MaxNameLen)
+                kn->MaxNameLen = us.Length;
+        } else {
+            printk(KERN_ALERT "NtCreateKey: unhandled list type %x\n", sig);
+            Status = STATUS_NOT_IMPLEMENTED;
+            NtClose(*KeyHandle);
+            goto end;
+        }
     }
 
     if (Disposition)
