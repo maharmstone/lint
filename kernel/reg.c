@@ -114,7 +114,13 @@ static void clear_volatile(hive* h, uint32_t key) {
         CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->bins + nk->SubKeyList + sizeof(int32_t));
 
         for (i = 0; i < ri->Count; i++) {
-            clear_volatile(h, ri->List[i]);
+            unsigned int j;
+
+            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + ri->List[i] + sizeof(int32_t));
+
+            for (j = 0; j < lh->Count; j++) {
+                clear_volatile(h, lh->List[j].Cell);
+            }
         }
     } else
         printk(KERN_INFO "muwine: unhandled registry signature %x\n", sig);
@@ -282,13 +288,17 @@ static void free_hive(hive* h) {
 
         kfree(hh);
     }
+
+    if (h->data)
+        vfree(h->data);
+    else if (h->bins)
+        vfree(h->bins);
 }
 
 void muwine_free_reg(void) {
     // FIXME - iterate through hive list
 
-    if (system_hive.data)
-        free_hive(&system_hive);
+    free_hive(&system_hive);
 }
 
 static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
@@ -1241,6 +1251,7 @@ NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_V
 static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset) {
     struct list_head* le;
     hive_hole* found_hh;
+    void* new_data;
 
     size += sizeof(int32_t);
 
@@ -1299,10 +1310,68 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset) {
         return STATUS_SUCCESS;
     }
 
-    // FIXME - if can't find anything, add new bin and extend file
-    printk(KERN_ALERT "allocate_cell: FIXME - add new bin\n");
+    // if can't find anything, add new bin and extend file
 
-    return STATUS_INTERNAL_ERROR;
+    new_data = vmalloc(h->size + BIN_SIZE);
+    if (!new_data)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    if (h->data) { // non-volatile
+        HBIN* hbin;
+
+        memcpy(new_data, h->data, h->size);
+        vfree(h->data);
+        h->data = new_data;
+        h->bins = (uint8_t*)h->data + BIN_SIZE;
+
+        hbin = (HBIN*)((uint8_t*)h->bins + h->size);
+        hbin->Signature = HV_HBIN_SIGNATURE;
+        hbin->FileOffset = (uint8_t*)hbin - (uint8_t*)h->bins;
+        hbin->Size = BIN_SIZE;
+        hbin->Reserved[0] = 0;
+        hbin->Reserved[1] = 0;
+        hbin->TimeStamp.QuadPart = 0; // FIXME
+        hbin->Spare = 0;
+
+        *offset = h->size + sizeof(HBIN);
+        h->size += BIN_SIZE;
+
+        if (size < BIN_SIZE - sizeof(HBIN)) { // add hole entry for rest
+            hive_hole* hh2 = kmalloc(sizeof(hive_hole), GFP_KERNEL);
+
+            // FIXME - handle malloc failure
+
+            hh2->offset = *offset + size;
+            hh2->size = BIN_SIZE - sizeof(HBIN) - size;
+
+            list_add_tail(&hh2->list, &h->holes);
+        }
+    } else { // volatile
+        if (h->bins) {
+            memcpy(new_data, h->bins, h->size);
+            vfree(h->bins);
+        }
+
+        h->bins = new_data;
+
+        *offset = h->size + sizeof(HBIN);
+        h->size += BIN_SIZE;
+
+        if (size < BIN_SIZE) { // add hole entry for rest
+            hive_hole* hh2 = kmalloc(sizeof(hive_hole), GFP_KERNEL);
+
+            // FIXME - handle malloc failure
+
+            hh2->offset = *offset + size;
+            hh2->size = BIN_SIZE - size;
+
+            list_add_tail(&hh2->list, &h->holes);
+        }
+    }
+
+    *(int32_t*)(h->bins + *offset) = -size;
+
+    return STATUS_SUCCESS;
 }
 
 static void free_cell(hive* h, uint32_t offset) {
