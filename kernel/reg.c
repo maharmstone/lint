@@ -449,12 +449,9 @@ static NTSTATUS find_subkey(hive* h, size_t offset, UNICODE_STRING* us, size_t* 
         return STATUS_REGISTRY_CORRUPT;
 }
 
-static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ACCESS_MASK DesiredAccess) {
+static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offset) {
     NTSTATUS Status;
     size_t offset;
-    key_object* k;
-
-    read_lock(&h->lock);
 
     // loop through parts and locate
 
@@ -472,10 +469,8 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
         // FIXME - should this be checking for KEY_ENUMERATE_SUB_KEYS against all keys in path?
 
         Status = find_subkey(h, offset, us, &offset);
-        if (!NT_SUCCESS(Status)) {
-            read_unlock(&h->lock);
+        if (!NT_SUCCESS(Status))
             return Status;
-        }
 
         while (us->Length >= sizeof(WCHAR) && *us->Buffer != '\\') {
             us->Length -= sizeof(WCHAR);
@@ -483,34 +478,15 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle,
         }
     } while (true);
 
-    read_unlock(&h->lock);
+    *ret_offset = offset;
 
-    // FIXME - do SeAccessCheck
-    // FIXME - store access mask in handle
-
-    // create key object and return handle
-
-    k = kmalloc(sizeof(key_object), GFP_KERNEL);
-    if (!k)
-        return STATUS_INSUFFICIENT_RESOURCES;
-
-    k->header.refcount = 1;
-    k->header.type = muwine_object_key;
-    k->header.close = key_object_close;
-    k->h = h;
-    __sync_add_and_fetch(&h->refcount, 1);
-    k->offset = offset;
-
-    Status = muwine_add_handle(&k->header, KeyHandle);
-
-    if (!NT_SUCCESS(Status))
-        kfree(k);
-
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    NTSTATUS Status;
     UNICODE_STRING us;
+    uint32_t offset;
 
     static const WCHAR prefix[] = L"\\Registry\\";
     static const WCHAR machine[] = L"Machine";
@@ -540,6 +516,8 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     us.Length -= sizeof(prefix) - sizeof(WCHAR);
 
     if (us.Length >= sizeof(machine) - sizeof(WCHAR) && !wcsnicmp(us.Buffer, machine, (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR))) {
+        key_object* k;
+
         us.Buffer += (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR);
         us.Length -= sizeof(machine) - sizeof(WCHAR);
 
@@ -549,7 +527,38 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
         if (!system_hive.data) // HKLM not loaded
             return STATUS_OBJECT_PATH_INVALID;
 
-        return open_key_in_hive(&system_hive, &us, KeyHandle, DesiredAccess);
+        read_lock(&system_hive.lock);
+
+        Status = open_key_in_hive(&system_hive, &us, &offset);
+        if (!NT_SUCCESS(Status)) {
+            read_unlock(&system_hive.lock);
+            return Status;
+        }
+
+        read_unlock(&system_hive.lock);
+
+        // FIXME - do SeAccessCheck
+        // FIXME - store access mask in handle
+
+        // create key object and return handle
+
+        k = kmalloc(sizeof(key_object), GFP_KERNEL);
+        if (!k)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        k->header.refcount = 1;
+        k->header.type = muwine_object_key;
+        k->header.close = key_object_close;
+        k->h = &system_hive;
+        __sync_add_and_fetch(&system_hive.refcount, 1);
+        k->offset = offset;
+
+        Status = muwine_add_handle(&k->header, KeyHandle);
+
+        if (!NT_SUCCESS(Status))
+            kfree(k);
+
+        return Status;
     } else
         return STATUS_OBJECT_PATH_INVALID;
 
