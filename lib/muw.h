@@ -47,9 +47,18 @@ typedef struct _LARGE_INTEGER {
     int64_t QuadPart;
 } LARGE_INTEGER;
 
-#define KEY_QUERY_VALUE        (0x0001)
-#define KEY_SET_VALUE          (0x0002)
-#define KEY_ENUMERATE_SUB_KEYS (0x0008)
+#define KEY_QUERY_VALUE        0x0001
+#define KEY_SET_VALUE          0x0002
+#define KEY_CREATE_SUB_KEY     0x0004
+#define KEY_ENUMERATE_SUB_KEYS 0x0008
+#define KEY_NOTIFY             0x0010
+#define KEY_CREATE_LINK        0x0020
+
+#define REG_OPTION_NON_VOLATILE     0x00000000
+#define REG_OPTION_VOLATILE         0x00000001
+#define REG_OPTION_CREATE_LINK      0x00000002
+#define REG_OPTION_BACKUP_RESTORE   0x00000004
+#define REG_OPTION_OPEN_LINK        0x00000008
 
 #define REG_NONE                        0
 #define REG_SZ                          1
