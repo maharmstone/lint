@@ -2115,18 +2115,16 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     uint32_t* subkey_count;
     uint32_t* subkey_list;
 
-    if (CreateOptions & REG_OPTION_VOLATILE)
-        is_volatile = true;
-
     // get offset for kn of parent
 
     Status = open_key_in_hive(h, us, &offset, true, &parent_is_volatile);
     if (!NT_SUCCESS(Status))
         return Status;
 
-    if (us->Length < sizeof(WCHAR)) {
+    if (us->Length < sizeof(WCHAR))
         return STATUS_OBJECT_NAME_INVALID;
-    }
+
+    is_volatile = parent_is_volatile;
 
     // FIXME - make sure SD allows us to create subkeys
 
@@ -2157,6 +2155,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
         return Status;
     } else if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
         return Status;
+
+    if (CreateOptions & REG_OPTION_VOLATILE)
+        is_volatile = true;
 
     // don't allow non-volatile keys to be created under volatile parent
 
