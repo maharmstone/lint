@@ -5,6 +5,7 @@
 static void key_object_close(object_header* obj);
 
 LIST_HEAD(hive_list);
+DEFINE_RWLOCK(hive_list_lock);
 
 static bool hive_is_valid(hive* h) {
     HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
@@ -323,6 +324,8 @@ static void free_hive(hive* h) {
 }
 
 void muwine_free_reg(void) {
+    write_lock(&hive_list_lock);
+
     while (!list_empty(&hive_list)) {
         hive* h = list_entry(hive_list.next, hive, list);
 
@@ -330,6 +333,8 @@ void muwine_free_reg(void) {
 
         free_hive(h);
     }
+
+    write_unlock(&hive_list_lock);
 }
 
 static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
@@ -611,7 +616,7 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
     us.Length -= sizeof(prefix) - sizeof(WCHAR);
 
-    // FIXME - get hive_list lock
+    read_lock(&hive_list_lock);
 
     le = hive_list.next;
 
@@ -645,6 +650,7 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
             Status = open_key_in_hive(h, &us, &offset, false, &is_volatile);
             if (!NT_SUCCESS(Status)) {
                 read_unlock(&h->lock);
+                read_unlock(&hive_list_lock);
                 return Status;
             }
 
@@ -656,8 +662,10 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
             // create key object and return handle
 
             k = kmalloc(sizeof(key_object), GFP_KERNEL);
-            if (!k)
+            if (!k) {
+                read_unlock(&hive_list_lock);
                 return STATUS_INSUFFICIENT_RESOURCES;
+            }
 
             k->header.refcount = 1;
             k->header.type = muwine_object_key;
@@ -666,6 +674,8 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
             __sync_add_and_fetch(&h->refcount, 1);
             k->offset = offset;
             k->is_volatile = is_volatile;
+
+            read_unlock(&hive_list_lock);
 
             Status = muwine_add_handle(&k->header, KeyHandle);
 
@@ -2449,6 +2459,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
     us.Length -= sizeof(prefix) - sizeof(WCHAR);
 
+    write_lock(&hive_list_lock);
+
     le = hive_list.next;
 
     while (le != &hive_list) {
@@ -2478,12 +2490,15 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             Status = create_key_in_hive(h, &us, KeyHandle, CreateOptions, Disposition);
 
             write_unlock(&h->lock);
+            write_unlock(&hive_list_lock);
 
             return Status;
         }
 
         le = le->next;
     }
+
+    write_unlock(&hive_list_lock);
 
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
