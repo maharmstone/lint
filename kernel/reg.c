@@ -2562,12 +2562,180 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
+static NTSTATUS translate_path(UNICODE_STRING* us, char** path) {
+    UNICODE_STRING us2;
+    unsigned int i;
+    char* s;
+
+    static const WCHAR prefix[] = L"\\Device\\UnixRoot";
+
+    // FIXME - translate symlinks (DosDevices etc.)
+
+    if (us->Length <= sizeof(prefix) - sizeof(WCHAR))
+        return STATUS_OBJECT_PATH_INVALID;
+
+    if (wcsnicmp(us->Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1))
+        return STATUS_OBJECT_PATH_INVALID;
+
+    us2.Length = us2.MaximumLength = us->Length - sizeof(prefix) + sizeof(WCHAR);
+    us2.Buffer = us->Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1;
+
+    // FIXME - convert UTF-16 to UTF-8 properly here
+
+    *path = s = kmalloc((us2.Length / sizeof(WCHAR)) + 1, GFP_KERNEL);
+
+    for (i = 0; i < us2.Length / sizeof(WCHAR); i++) {
+        if (us2.Buffer[i] == '\\')
+            *s = '/';
+        else
+            *s = us2.Buffer[i];
+
+        s++;
+    }
+
+    *s = 0;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
+    NTSTATUS Status;
+    char* fs_path;
+    struct file* f;
+    loff_t pos;
+    hive* h;
+    UNICODE_STRING us;
+
+    static const WCHAR prefix[] = L"\\Registry\\";
+
     printk(KERN_INFO "NtLoadKey(%p, %p): stub\n", DestinationKeyName, HiveFileName);
 
-    // FIXME
+    // FIXME - make sure user has SE_RESTORE_PRIVILEGE
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME - make sure not already loaded
+
+    if (!DestinationKeyName || !HiveFileName || !DestinationKeyName->ObjectName || !HiveFileName->ObjectName)
+        return STATUS_INVALID_PARAMETER;
+
+    // FIXME - support RootDirectory?
+
+    // make sure DestinationKeyName begins with prefix
+
+    if (DestinationKeyName->ObjectName->Length <= sizeof(prefix) - sizeof(WCHAR))
+        return STATUS_INVALID_PARAMETER;
+
+    if (wcsnicmp(DestinationKeyName->ObjectName->Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1))
+        return STATUS_INVALID_PARAMETER;
+
+    us.Buffer = DestinationKeyName->ObjectName->Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1;
+    us.Length = DestinationKeyName->ObjectName->Length - sizeof(prefix) + sizeof(WCHAR);
+
+    // translate HiveFileName to actual FS path
+
+    Status = translate_path(HiveFileName->ObjectName, &fs_path);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    // FIXME - make sure DestinationKeyName refers to actual key
+    // FIXME - increase refcount of hive in which DestinationKeyName lives
+
+    f = filp_open(fs_path, O_RDONLY, 0);
+    if (IS_ERR(f)) {
+        printk(KERN_INFO "muwine_init_registry: could not open %s\n", fs_path);
+        kfree(fs_path);
+        return muwine_error_to_ntstatus((int)(uintptr_t)f);
+    }
+
+    if (!f->f_inode) {
+        printk(KERN_INFO "NtLoadKey: file did not have an inode\n");
+        filp_close(f, NULL);
+        kfree(fs_path);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    h = kmalloc(sizeof(hive), GFP_KERNEL);
+    if (!h) {
+        filp_close(f, NULL);
+        kfree(h);
+        kfree(fs_path);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    h->path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+    if (!h->path.Buffer) {
+        filp_close(f, NULL);
+        kfree(h);
+        kfree(fs_path);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(h->path.Buffer, us.Buffer, us.Length);
+    h->path.Length = h->path.MaximumLength = us.Length;
+
+//     system_hive->depth = 1;
+
+    h->size = f->f_inode->i_size;
+
+    if (h->size == 0) {
+        filp_close(f, NULL);
+        kfree(h->path.Buffer);
+        kfree(h);
+        kfree(fs_path);
+        return STATUS_REGISTRY_CORRUPT;
+    }
+
+    h->data = vmalloc(h->size);
+    if (!h->data) {
+        filp_close(f, NULL);
+        kfree(h->path.Buffer);
+        kfree(h);
+        kfree(fs_path);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    pos = 0;
+
+    while (pos < h->size) {
+        ssize_t read = kernel_read(f, (uint8_t*)h->data + pos, h->size - pos, &pos);
+
+        if (read < 0) {
+            printk(KERN_INFO "muwine_init_registry: read returned %ld\n", read);
+            filp_close(f, NULL);
+            vfree(h->data);
+            kfree(h->path.Buffer);
+            kfree(h);
+            kfree(fs_path);
+            return muwine_error_to_ntstatus(read);
+        }
+    }
+
+    filp_close(f, NULL);
+
+    if (!hive_is_valid(h)) {
+        vfree(h->data);
+        kfree(h->path.Buffer);
+        kfree(h);
+        kfree(fs_path);
+        return STATUS_REGISTRY_CORRUPT;
+    }
+
+    Status = init_hive(h);
+    if (!NT_SUCCESS(Status)) {
+        vfree(h->data);
+        kfree(h->path.Buffer);
+        kfree(h);
+        kfree(fs_path);
+        return Status;
+    }
+
+    // FIXME - put in reverse order by depth
+//     list_add(&system_hive->list, &hive_list);
+
+    printk(KERN_INFO "NtLoadKey: loaded hive at %s.\n", fs_path);
+
+    kfree(fs_path);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
