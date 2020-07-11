@@ -23,7 +23,7 @@ static struct muwine_func funcs[] = {
     { user_NtDeleteValueKey, 2 },
     { user_NtCreateKey, 7 },
     { NtDeleteKey, 1 },
-    { NtLoadKey, 2 },
+    { user_NtLoadKey, 2 },
     { NtUnloadKey, 1 }
 };
 

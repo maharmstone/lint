@@ -2479,12 +2479,52 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
+static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
     printk(KERN_INFO "NtLoadKey(%p, %p): stub\n", DestinationKeyName, HiveFileName);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa1, oa2;
+
+    if (!DestinationKeyName || !HiveFileName)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa1, DestinationKeyName))
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa2, HiveFileName)) {
+        if (oa1.ObjectName) {
+            if (oa1.ObjectName->Buffer)
+                kfree(oa1.ObjectName->Buffer);
+
+            kfree(oa1.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtLoadKey(&oa1, &oa2);
+
+    if (oa1.ObjectName) {
+        if (oa1.ObjectName->Buffer)
+            kfree(oa1.ObjectName->Buffer);
+
+        kfree(oa1.ObjectName);
+    }
+
+    if (oa2.ObjectName) {
+        if (oa2.ObjectName->Buffer)
+            kfree(oa2.ObjectName->Buffer);
+
+        kfree(oa2.ObjectName);
+    }
+
+    return Status;
 }
 
 NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
