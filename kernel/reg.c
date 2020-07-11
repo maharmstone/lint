@@ -1148,6 +1148,7 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
     CM_KEY_NODE* kn;
     uint32_t* values_list;
     unsigned int i;
+    void* bins;
 
     if (!ValueName)
         return STATUS_INVALID_PARAMETER;
@@ -1160,39 +1161,39 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
 
     read_lock(&key->h->lock);
 
-    size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
+    bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+
+    size = -*(int32_t*)((uint8_t*)bins + key->offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
         read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+    kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
         read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    // FIXME - work with volatile keys
-
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+    size = -*(int32_t*)((uint8_t*)bins + kn->Values);
 
     if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
         read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+    values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
 
     for (i = 0; i < kn->ValuesCount; i++) {
-        CM_KEY_VALUE* vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
+        CM_KEY_VALUE* vk = (CM_KEY_VALUE*)((uint8_t*)bins + values_list[i] + sizeof(int32_t));
 
         // FIXME - check not out of bounds
 
-        size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[i]);
+        size = -*(int32_t*)((uint8_t*)bins + values_list[i]);
 
         if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
             read_unlock(&key->h->lock);
