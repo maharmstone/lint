@@ -80,8 +80,8 @@ NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POB
 static const char16_t regpath[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs";
 static const char16_t regpath2[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs\\NewSubKey";
 #else
-static const char16_t regpath[] = u"\\Registry\\Machine\\ControlSet001\\Services\\btrfs"; // FIXME
-static const char16_t regpath2[] = u"\\Registry\\Machine\\ControlSet001\\Services\\btrfs\\NewSubKey";
+static const char16_t regpath[] = u"\\Registry\\Machine\\System\\ControlSet001\\Services\\btrfs"; // FIXME
+static const char16_t regpath2[] = u"\\Registry\\Machine\\System\\ControlSet001\\Services\\btrfs\\volatile";
 #endif
 
 static const char16_t key_name[] = u"Start";
@@ -236,9 +236,8 @@ int main() {
 
     oa.ObjectName = &us;
 
-    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
-    if (!NT_SUCCESS(Status))
-        printf("NtCreateKey returned %08x (dispos = %x)\n", (int32_t)Status, (int32_t)dispos);
+    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE, &dispos);
+    printf("NtCreateKey returned %08x (dispos = %x)\n", (int32_t)Status, (int32_t)dispos);
 
     Status = NtClose(h);
     if (!NT_SUCCESS(Status))
