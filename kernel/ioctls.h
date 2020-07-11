@@ -15,5 +15,6 @@
 #define MUWINE_IOCTL_NTDELETEKEY          MUWINE_IOCTL(8)
 #define MUWINE_IOCTL_NTLOADKEY            MUWINE_IOCTL(9)
 #define MUWINE_IOCTL_NTUNLOADKEY          MUWINE_IOCTL(10)
+#define MUWINE_IOCTL_NTFLUSHKEY           MUWINE_IOCTL(11)
 
-#define MUWINE_IOCTL_MAX                  10
+#define MUWINE_IOCTL_MAX                  11

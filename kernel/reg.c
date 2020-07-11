@@ -2847,3 +2847,11 @@ NTSTATUS muwine_init_reg_root(void) {
 
     return STATUS_SUCCESS;
 }
+
+NTSTATUS NtFlushKey(HANDLE KeyHandle) {
+    printk(KERN_INFO "NtFlushKey(%lx): stub\n", (uintptr_t)KeyHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
