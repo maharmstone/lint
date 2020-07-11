@@ -2600,6 +2600,18 @@ static NTSTATUS translate_path(UNICODE_STRING* us, char** path) {
     return STATUS_SUCCESS;
 }
 
+static unsigned int count_backslashes(UNICODE_STRING* us) {
+    unsigned int i;
+    unsigned int bs = 0;
+
+    for (i = 0; i < us->Length; i++) {
+        if (us->Buffer[i] == '\\')
+            bs++;
+    }
+
+    return bs;
+}
+
 static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
     NTSTATUS Status;
     char* fs_path;
@@ -2607,14 +2619,12 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
     loff_t pos;
     hive* h;
     UNICODE_STRING us;
+    struct list_head* le;
+    bool found = false;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
-    printk(KERN_INFO "NtLoadKey(%p, %p): stub\n", DestinationKeyName, HiveFileName);
-
     // FIXME - make sure user has SE_RESTORE_PRIVILEGE
-
-    // FIXME - make sure not already loaded
 
     if (!DestinationKeyName || !HiveFileName || !DestinationKeyName->ObjectName || !HiveFileName->ObjectName)
         return STATUS_INVALID_PARAMETER;
@@ -2637,9 +2647,6 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
     Status = translate_path(HiveFileName->ObjectName, &fs_path);
     if (!NT_SUCCESS(Status))
         return Status;
-
-    // FIXME - make sure DestinationKeyName refers to actual key
-    // FIXME - increase refcount of hive in which DestinationKeyName lives
 
     f = filp_open(fs_path, O_RDONLY, 0);
     if (IS_ERR(f)) {
@@ -2674,7 +2681,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
     memcpy(h->path.Buffer, us.Buffer, us.Length);
     h->path.Length = h->path.MaximumLength = us.Length;
 
-//     system_hive->depth = 1;
+    h->depth = count_backslashes(&us) + 1;
 
     h->size = f->f_inode->i_size;
 
@@ -2730,8 +2737,33 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
         return Status;
     }
 
-    // FIXME - put in reverse order by depth
-//     list_add(&system_hive->list, &hive_list);
+    write_lock(&hive_list_lock);
+
+    // FIXME - make sure DestinationKeyName refers to actual key
+    // FIXME - make sure not already loaded (check for KEY_HIVE_EXIT flag)
+    // FIXME - set KEY_HIVE_EXIT flag on key node
+
+    // FIXME - increase refcount of hive in which DestinationKeyName lives
+
+    // store hives in reverse order by depth
+
+    le = hive_list.next;
+    while (le != &hive_list) {
+        hive* h2 = list_entry(le, hive, list);
+
+        if (h2->depth <= h->depth) {
+            list_add(&h->list, le->prev);
+            found = true;
+            break;
+        }
+
+        le = le->next;
+    }
+
+    if (!found)
+        list_add_tail(&h->list, &hive_list);
+
+    write_unlock(&hive_list_lock);
 
     printk(KERN_INFO "NtLoadKey: loaded hive at %s.\n", fs_path);
 
