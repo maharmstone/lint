@@ -1526,6 +1526,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     uint32_t vk_offset, values_list_offset;
     CM_KEY_VALUE* vk;
     uint32_t* values_list;
+    void* bins;
 
     // FIXME - should we be rejecting short REG_DWORDs etc. here?
 
@@ -1537,35 +1538,35 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
     write_lock(&key->h->lock);
 
-    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+    bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+
+    kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
         Status = STATUS_REGISTRY_CORRUPT;
         goto end;
     }
 
-    // FIXME - work with volatile keys
-
     if (kn->ValuesCount > 0) {
         unsigned int i;
 
-        size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+        size = -*(int32_t*)((uint8_t*)bins + kn->Values);
 
         if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
             Status = STATUS_REGISTRY_CORRUPT;
             goto end;
         }
 
-        values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+        values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
 
         for (i = 0; i < kn->ValuesCount; i++) {
             bool found = false;
 
-            vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
+            vk = (CM_KEY_VALUE*)((uint8_t*)bins + values_list[i] + sizeof(int32_t));
 
             // FIXME - check not out of bounds
 
-            size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[i]);
+            size = -*(int32_t*)((uint8_t*)bins + values_list[i]);
 
             if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
                 Status = STATUS_REGISTRY_CORRUPT;
@@ -1636,7 +1637,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                         if (!NT_SUCCESS(Status))
                             goto end;
 
-                        memcpy(key->h->bins + cell + sizeof(int32_t), Data, DataSize);
+                        memcpy(bins + cell + sizeof(int32_t), Data, DataSize);
 
                         vk->Data = cell;
                         vk->DataLength = DataSize;
@@ -1644,13 +1645,13 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                     }
                 } else {
                     if (DataSize <= sizeof(uint32_t)) { // if wasn't resident but will be, free data cell and write into vk
-                        free_cell(key->h, vk->Data, false);
+                        free_cell(key->h, vk->Data, key->is_volatile);
 
                         memcpy(&vk->Data, Data, DataSize);
                         vk->DataLength = DataSize == 0 ? 0 : (CM_KEY_VALUE_SPECIAL_SIZE | DataSize);
                         vk->Type = Type;
                     } else {
-                        int32_t old_cell_size = -*(int32_t*)((uint8_t*)key->h->bins + vk->Data);
+                        int32_t old_cell_size = -*(int32_t*)((uint8_t*)bins + vk->Data);
                         int32_t new_cell_size;
 
                         new_cell_size = sizeof(int32_t) + DataSize;
@@ -1659,7 +1660,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                             new_cell_size += 8 - (new_cell_size & 7);
 
                         if (old_cell_size == new_cell_size) { // if wasn't resident, still won't be, and cell similar size, write over existing data
-                            memcpy(key->h->bins + vk->Data + sizeof(int32_t), Data, DataSize);
+                            memcpy(bins + vk->Data + sizeof(int32_t), Data, DataSize);
                             vk->DataLength = DataSize;
                             vk->Type = Type;
                         } else { // if wasn't resident, still won't be, and cell different size, free data cell and allocate new one
@@ -1669,13 +1670,13 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                             if (!NT_SUCCESS(Status))
                                 goto end;
 
-                            free_cell(key->h, vk->Data, false);
+                            free_cell(key->h, vk->Data, key->is_volatile);
 
                             vk->Data = cell;
                             vk->DataLength = DataSize;
                             vk->Type = Type;
 
-                            memcpy(key->h->bins + vk->Data + sizeof(int32_t), Data, DataSize);
+                            memcpy(bins + vk->Data + sizeof(int32_t), Data, DataSize);
                         }
                     }
                 }
@@ -1694,7 +1695,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     if (!NT_SUCCESS(Status))
         goto end;
 
-    vk = (CM_KEY_VALUE*)(key->h->bins + vk_offset + sizeof(int32_t));
+    vk = (CM_KEY_VALUE*)(bins + vk_offset + sizeof(int32_t));
     vk->Signature = CM_KEY_VALUE_SIGNATURE;
     vk->NameLength = ValueName ? ValueName->Length : 0;
     vk->Type = Type;
@@ -1709,25 +1710,25 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
         Status = allocate_cell(key->h, DataSize, &vk->Data, key->is_volatile);
         if (!NT_SUCCESS(Status)) {
-            free_cell(key->h, vk_offset, false);
+            free_cell(key->h, vk_offset, key->is_volatile);
             goto end;
         }
 
-        memcpy(key->h->bins + vk->Data + sizeof(int32_t), Data, DataSize);
+        memcpy(bins + vk->Data + sizeof(int32_t), Data, DataSize);
     } else {
         vk->DataLength = DataSize == 0 ? 0 : (CM_KEY_VALUE_SPECIAL_SIZE | DataSize);
         memcpy(&vk->Data, Data, DataSize);
     }
 
     if (kn->ValuesCount > 0) {
-        int32_t old_size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+        int32_t old_size = -*(int32_t*)((uint8_t*)bins + kn->Values);
         int32_t new_size = ((kn->ValuesCount + 1) * sizeof(uint32_t)) + sizeof(int32_t);
 
         if (new_size & 7)
             new_size += 8 - (new_size & 7);
 
         if (old_size == new_size) { // if enough space in values list, add to the end
-            values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+            values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
 
             values_list[kn->ValuesCount] = vk_offset;
             kn->ValuesCount++;
@@ -1741,20 +1742,20 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     Status = allocate_cell(key->h, sizeof(uint32_t) * (kn->ValuesCount + 1), &values_list_offset, key->is_volatile);
     if (!NT_SUCCESS(Status)) {
         if (!(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) && vk->DataLength != 0)
-            free_cell(key->h, vk->Data, false);
+            free_cell(key->h, vk->Data, key->is_volatile);
 
-        free_cell(key->h, vk_offset, false);
+        free_cell(key->h, vk_offset, key->is_volatile);
         goto end;
     }
 
-    values_list = (uint32_t*)((uint8_t*)key->h->bins + values_list_offset + sizeof(int32_t));
+    values_list = (uint32_t*)((uint8_t*)bins + values_list_offset + sizeof(int32_t));
 
     if (kn->ValuesCount > 0) {
-        uint32_t* old_values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+        uint32_t* old_values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
 
         memcpy(values_list, old_values_list, kn->ValuesCount * sizeof(uint32_t));
 
-        free_cell(key->h, kn->Values, false);
+        free_cell(key->h, kn->Values, key->is_volatile);
     }
 
     values_list[kn->ValuesCount] = vk_offset;
@@ -1765,7 +1766,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     Status = STATUS_SUCCESS;
 
 end:
-    if (NT_SUCCESS(Status))
+    if (NT_SUCCESS(Status) && !key->is_volatile)
         key->h->dirty = true;
 
     write_unlock(&key->h->lock);
