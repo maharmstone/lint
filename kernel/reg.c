@@ -2524,7 +2524,6 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
     hive* h;
     UNICODE_STRING us;
     struct list_head* le;
-    bool found = false;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
@@ -2643,37 +2642,97 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
     write_lock(&hive_list_lock);
 
-    // FIXME - make sure DestinationKeyName refers to actual key
-    // FIXME - make sure not already loaded (check for KEY_HIVE_EXIT flag)
-    // FIXME - set KEY_HIVE_EXIT flag on key node
-
-    // FIXME - increase refcount of hive in which DestinationKeyName lives
-
-    // store hives in reverse order by depth
-
     le = hive_list.next;
-    while (le != &hive_list) {
-        hive* h2 = list_entry(le, hive, list);
 
-        if (h2->depth <= h->depth) {
-            list_add(&h->list, le->prev);
-            found = true;
-            break;
+    while (le != &hive_list) {
+        hive* parent_hive = list_entry(le, hive, list);
+
+        if (h->path.Length <= parent_hive->path.Length) {
+            le = le->next;
+            continue;
+        }
+
+        if (parent_hive->depth != 0 && h->path.Buffer[parent_hive->path.Length / sizeof(WCHAR)] != 0 &&
+            h->path.Buffer[parent_hive->path.Length / sizeof(WCHAR)] != '\\') {
+            le = le->next;
+            continue;
+        }
+
+        if (parent_hive->depth == 0 || !wcsnicmp(h->path.Buffer, parent_hive->path.Buffer, parent_hive->path.Length / sizeof(WCHAR))) {
+            bool found = false;
+            uint32_t offset;
+            bool is_volatile;
+            CM_KEY_NODE* kn;
+
+            read_lock(&parent_hive->lock);
+
+            Status = open_key_in_hive(parent_hive, &us, &offset, false, &is_volatile);
+            if (!NT_SUCCESS(Status)) {
+                read_unlock(&parent_hive->lock);
+                write_unlock(&hive_list_lock);
+
+                vfree(h->data);
+                kfree(h->path.Buffer);
+                kfree(h);
+                kfree(fs_path);
+
+                return Status;
+            }
+
+            if (is_volatile)
+                kn = (CM_KEY_NODE*)((uint8_t*)parent_hive->volatile_bins + offset + sizeof(int32_t));
+            else
+                kn = (CM_KEY_NODE*)((uint8_t*)parent_hive->bins + offset + sizeof(int32_t));
+
+            if (kn->Flags & KEY_HIVE_EXIT) { // something already mounted here
+                read_unlock(&parent_hive->lock);
+                write_unlock(&hive_list_lock);
+
+                vfree(h->data);
+                kfree(h->path.Buffer);
+                kfree(h);
+                kfree(fs_path);
+
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            kn->Flags |= KEY_HIVE_EXIT;
+
+            // FIXME - increase refcount of hive in which DestinationKeyName lives
+
+            // store hives in reverse order by depth
+
+            read_unlock(&parent_hive->lock);
+
+            le = hive_list.next;
+            while (le != &hive_list) {
+                hive* h2 = list_entry(le, hive, list);
+
+                if (h2->depth <= h->depth) {
+                    list_add(&h->list, le->prev);
+                    found = true;
+                    break;
+                }
+
+                le = le->next;
+            }
+
+            if (!found)
+                list_add_tail(&h->list, &hive_list);
+
+            write_unlock(&hive_list_lock);
+
+            printk(KERN_INFO "NtLoadKey: loaded hive at %s.\n", fs_path);
+
+            kfree(fs_path);
+
+            return STATUS_SUCCESS;
         }
 
         le = le->next;
     }
 
-    if (!found)
-        list_add_tail(&h->list, &hive_list);
-
-    write_unlock(&hive_list_lock);
-
-    printk(KERN_INFO "NtLoadKey: loaded hive at %s.\n", fs_path);
-
-    kfree(fs_path);
-
-    return STATUS_SUCCESS;
+    return STATUS_INTERNAL_ERROR;
 }
 
 NTSTATUS user_NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {

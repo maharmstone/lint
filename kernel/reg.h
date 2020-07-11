@@ -53,6 +53,8 @@ typedef struct {
     ULONG Spare;
 } HBIN;
 
+#define KEY_HIVE_EXIT           0x0002
+
 typedef struct {
     uint16_t Signature;
     uint16_t Flags;
