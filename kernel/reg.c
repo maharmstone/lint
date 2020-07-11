@@ -661,17 +661,27 @@ static void key_object_close(object_header* obj) {
     kfree(key);
 }
 
-static NTSTATUS get_key_item_by_index(hive* h, uint32_t offset, unsigned int index, uint32_t* cell_offset) {
+static NTSTATUS get_key_item_by_index(hive* h, CM_KEY_NODE* kn, unsigned int index, uint32_t* cell_offset, bool is_volatile) {
     int32_t size;
     uint16_t sig;
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)h->bins + offset);
-    sig = *(uint16_t*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+    if (is_volatile) {
+        size = -*(int32_t*)((uint8_t*)h->volatile_bins + kn->VolatileSubKeyList);
+        sig = *(uint16_t*)((uint8_t*)h->volatile_bins + kn->VolatileSubKeyList + sizeof(int32_t));
+    } else {
+        size = -*(int32_t*)((uint8_t*)h->bins + kn->SubKeyList);
+        sig = *(uint16_t*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
+    }
 
     if (sig == CM_KEY_HASH_LEAF) {
-        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+        CM_KEY_FAST_INDEX* lh;
+
+        if (is_volatile)
+            lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->volatile_bins + kn->VolatileSubKeyList + sizeof(int32_t));
+        else
+            lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
 
         if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
             return STATUS_REGISTRY_CORRUPT;
@@ -684,15 +694,26 @@ static NTSTATUS get_key_item_by_index(hive* h, uint32_t offset, unsigned int ind
         return STATUS_SUCCESS;
     } else if (sig == CM_KEY_INDEX_ROOT) {
         unsigned int i;
-        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+        CM_KEY_INDEX* ri;
+
+        if (is_volatile)
+            ri = (CM_KEY_INDEX*)((uint8_t*)h->volatile_bins + kn->VolatileSubKeyList + sizeof(int32_t));
+        else
+            ri = (CM_KEY_INDEX*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
 
         if (size < sizeof(int32_t) + offsetof(CM_KEY_INDEX, List[0]) + (ri->Count * sizeof(uint32_t)))
             return STATUS_REGISTRY_CORRUPT;
 
         for (i = 0; i < ri->Count; i++) {
-            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + ri->List[i] + sizeof(int32_t));
+            CM_KEY_FAST_INDEX* lh;
 
-            size = -*(int32_t*)((uint8_t*)h->bins + ri->List[i]);
+            if (is_volatile) {
+                lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->volatile_bins + ri->List[i] + sizeof(int32_t));
+                size = -*(int32_t*)((uint8_t*)h->volatile_bins + ri->List[i]);
+            } else {
+                lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + ri->List[i] + sizeof(int32_t));
+                size = -*(int32_t*)((uint8_t*)h->bins + ri->List[i]);
+            }
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
                 return STATUS_REGISTRY_CORRUPT;
@@ -718,6 +739,9 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     CM_KEY_NODE* kn;
     CM_KEY_NODE* kn2;
     uint32_t cell_offset;
+    void* bins;
+    void* bins2;
+    bool is_volatile;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
     if (!key || key->header.type != muwine_object_key)
@@ -727,14 +751,16 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
 
     read_lock(&key->h->lock);
 
-    size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
+    bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+
+    size = -*(int32_t*)((uint8_t*)bins + key->offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
         read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+    kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
         read_unlock(&key->h->lock);
@@ -743,27 +769,43 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
 
     // FIXME - work with volatile keys
 
-    if (Index >= kn->SubKeyCount) {
+    if (Index >= kn->SubKeyCount + kn->VolatileSubKeyCount) {
         read_unlock(&key->h->lock);
         return STATUS_NO_MORE_ENTRIES;
     }
 
-    Status = get_key_item_by_index(key->h, kn->SubKeyList, Index, &cell_offset);
-    if (!NT_SUCCESS(Status)) {
-        read_unlock(&key->h->lock);
-        return Status;
+    if (Index >= kn->SubKeyCount) {
+        Status = get_key_item_by_index(key->h, kn, Index - kn->SubKeyCount, &cell_offset, true);
+        if (!NT_SUCCESS(Status)) {
+            printk(KERN_INFO "get_key_item_by_index returned %08x\n", Status);
+            read_unlock(&key->h->lock);
+            return Status;
+        }
+
+        is_volatile = true;
+    } else {
+        Status = get_key_item_by_index(key->h, kn, Index, &cell_offset, false);
+        if (!NT_SUCCESS(Status)) {
+            printk(KERN_INFO "get_key_item_by_index returned %08x\n", Status);
+            read_unlock(&key->h->lock);
+            return Status;
+        }
+
+        is_volatile = false;
     }
+
+    bins2 = is_volatile ? key->h->volatile_bins : key->h->bins;
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)key->h->bins + cell_offset);
+    size = -*(int32_t*)((uint8_t*)bins2 + cell_offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
         read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->bins + cell_offset + sizeof(int32_t));
+    kn2 = (CM_KEY_NODE*)((uint8_t*)bins2 + cell_offset + sizeof(int32_t));
 
     if (kn2->Signature != CM_KEY_NODE_SIGNATURE) {
         read_unlock(&key->h->lock);
