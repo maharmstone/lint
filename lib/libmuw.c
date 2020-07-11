@@ -170,3 +170,14 @@ NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTUNLOADKEY, args);
 }
+
+NTSTATUS NtFlushKey(HANDLE KeyHandle) {
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)KeyHandle
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTFLUSHKEY, args);
+}
