@@ -1048,6 +1048,7 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     CM_KEY_NODE* kn;
     uint32_t* values_list;
     CM_KEY_VALUE* vk;
+    void* bins;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
     if (!key || key->header.type != muwine_object_key)
@@ -1057,21 +1058,21 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
 
     read_lock(&key->h->lock);
 
-    size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
+    bins = key->is_volatile ? key->h->volatile_bins: key->h->bins;
+
+    size = -*(int32_t*)((uint8_t*)bins + key->offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
         read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+    kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
         read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
     }
-
-    // FIXME - work with volatile keys
 
     if (Index >= kn->ValuesCount) {
         read_unlock(&key->h->lock);
@@ -1080,19 +1081,19 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+    size = -*(int32_t*)((uint8_t*)bins + kn->Values);
 
     if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
         read_unlock(&key->h->lock);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+    values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
 
     // FIXME - check not out of bounds
 
-    size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[Index]);
-    vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[Index] + sizeof(int32_t));
+    size = -*(int32_t*)((uint8_t*)bins + values_list[Index]);
+    vk = (CM_KEY_VALUE*)((uint8_t*)bins + values_list[Index] + sizeof(int32_t));
 
     if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
         read_unlock(&key->h->lock);
