@@ -314,7 +314,7 @@ static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
     return h;
 }
 
-static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE_STRING* us, uint32_t* offset_out) {
+static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE_STRING* us, bool is_volatile, uint32_t* offset_out) {
     unsigned int i, uslen;
 
     uslen = 0;
@@ -333,12 +333,18 @@ static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE
 
             // FIXME - check not out of bounds
 
-            size = -*(int32_t*)((uint8_t*)h->bins + lh->List[i].Cell);
+            if (is_volatile)
+                size = -*(int32_t*)((uint8_t*)h->volatile_bins + lh->List[i].Cell);
+            else
+                size = -*(int32_t*)((uint8_t*)h->bins + lh->List[i].Cell);
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
                 return STATUS_REGISTRY_CORRUPT;
 
-            kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + lh->List[i].Cell + sizeof(int32_t));
+            if (is_volatile)
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + lh->List[i].Cell + sizeof(int32_t));
+            else
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + lh->List[i].Cell + sizeof(int32_t));
 
             if (kn2->Signature != CM_KEY_NODE_SIGNATURE)
                 return STATUS_REGISTRY_CORRUPT;
@@ -404,10 +410,53 @@ static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
 
+static NTSTATUS search_index(hive* h, uint32_t offset, UNICODE_STRING* us, uint32_t hash, bool is_volatile, uint32_t* offset_out) {
+    uint16_t sig;
+    int32_t size;
+    void* bins = is_volatile ? h->volatile_bins : h->bins;
+
+    // FIXME - check not out of bounds
+
+    sig = *(uint16_t*)((uint8_t*)bins + offset + sizeof(int32_t));
+    size = -*(int32_t*)((uint8_t*)bins + offset);
+
+    if (sig == CM_KEY_HASH_LEAF) {
+        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)bins + offset + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+            return STATUS_REGISTRY_CORRUPT;
+
+        return search_lh(h, lh, hash, us, is_volatile, offset_out);
+    } else if (sig == CM_KEY_INDEX_ROOT) {
+        unsigned int i;
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)bins + offset + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_INDEX, List[0]) + (ri->Count * sizeof(uint32_t)))
+            return STATUS_REGISTRY_CORRUPT;
+
+        for (i = 0; i < ri->Count; i++) {
+            NTSTATUS Status;
+            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)bins + ri->List[i] + sizeof(int32_t));
+
+            size = -*(int32_t*)((uint8_t*)bins + ri->List[i]);
+
+            if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
+                return STATUS_REGISTRY_CORRUPT;
+
+            Status = search_lh(h, lh, hash, us, is_volatile, offset_out);
+            if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
+                return Status;
+        }
+
+        return STATUS_OBJECT_PATH_NOT_FOUND;
+    } else
+        return STATUS_REGISTRY_CORRUPT;
+}
+
 static NTSTATUS find_subkey(hive* h, uint32_t offset, UNICODE_STRING* us, uint32_t* offset_out, bool* is_volatile) {
+    NTSTATUS Status;
     uint32_t hash = calc_subkey_hash(us);
     int32_t size;
-    uint16_t sig;
     CM_KEY_NODE* kn;
 
     size = -*(int32_t*)((uint8_t*)h->bins + offset);
@@ -420,49 +469,25 @@ static NTSTATUS find_subkey(hive* h, uint32_t offset, UNICODE_STRING* us, uint32
     if (kn->Signature != CM_KEY_NODE_SIGNATURE)
         return STATUS_REGISTRY_CORRUPT;
 
-    // FIXME - work with volatile keys
+    if (kn->SubKeyCount > 0) {
+        Status = search_index(h, kn->SubKeyList, us, hash, false, offset_out);
+        if (NT_SUCCESS(Status)) {
+            *is_volatile = false;
+            return Status;
+        } else if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
+            return Status;
+    }
 
-    if (kn->SubKeyCount == 0)
-        return STATUS_OBJECT_PATH_NOT_FOUND;
+    if (kn->VolatileSubKeyCount > 0) {
+        Status = search_index(h, kn->VolatileSubKeyList, us, hash, true, offset_out);
+        if (NT_SUCCESS(Status)) {
+            *is_volatile = true;
+            return Status;
+        } else if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
+            return Status;
+    }
 
-    // FIXME - check not out of bounds
-
-    sig = *(uint16_t*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
-    size = -*(int32_t*)((uint8_t*)h->bins + kn->SubKeyList);
-
-    *is_volatile = false;
-
-    if (sig == CM_KEY_HASH_LEAF) {
-        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
-
-        if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
-            return STATUS_REGISTRY_CORRUPT;
-
-        return search_lh(h, lh, hash, us, offset_out);
-    } else if (sig == CM_KEY_INDEX_ROOT) {
-        unsigned int i;
-        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->bins + kn->SubKeyList + sizeof(int32_t));
-
-        if (size < sizeof(int32_t) + offsetof(CM_KEY_INDEX, List[0]) + (ri->Count * sizeof(uint32_t)))
-            return STATUS_REGISTRY_CORRUPT;
-
-        for (i = 0; i < ri->Count; i++) {
-            NTSTATUS Status;
-            CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + ri->List[i] + sizeof(int32_t));
-
-            size = -*(int32_t*)((uint8_t*)h->bins + ri->List[i]);
-
-            if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_KEY_INDEX)))
-                return STATUS_REGISTRY_CORRUPT;
-
-            Status = search_lh(h, lh, hash, us, offset_out);
-            if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
-                return Status;
-        }
-
-        return STATUS_OBJECT_PATH_NOT_FOUND;
-    } else
-        return STATUS_REGISTRY_CORRUPT;
+    return STATUS_OBJECT_PATH_NOT_FOUND;
 }
 
 static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offset, bool parent, bool* is_volatile) {
@@ -1367,7 +1392,7 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset, bool all
 
         h->volatile_bins = new_data;
 
-        *offset = h->volatile_size + sizeof(HBIN);
+        *offset = h->volatile_size;
         h->volatile_size += BIN_SIZE;
 
         if (size < BIN_SIZE) { // add hole entry for rest
@@ -1387,15 +1412,16 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset, bool all
     return STATUS_SUCCESS;
 }
 
-static void free_cell(hive* h, uint32_t offset) {
+static void free_cell(hive* h, uint32_t offset, bool is_volatile) {
     struct list_head* le;
+    struct list_head* head = is_volatile ? &h->volatile_holes : &h->holes;
     bool added = false;
 
     // add entry to hive holes
 
-    le = h->holes.next;
+    le = head->next;
 
-    while (le != &h->holes) {
+    while (le != head) {
         hive_hole* hh = list_entry(le, hive_hole, list);
 
         // FIXME - if follows on from previous, merge entries
@@ -1407,7 +1433,11 @@ static void free_cell(hive* h, uint32_t offset) {
             // FIXME - handle malloc failure
 
             hh2->offset = offset;
-            hh2->size = -*(int32_t*)(h->bins + offset);
+
+            if (is_volatile)
+                hh2->size = -*(int32_t*)(h->volatile_bins + offset);
+            else
+                hh2->size = -*(int32_t*)(h->bins + offset);
 
             list_add(&hh2->list, hh->list.prev); // add before this one
             added = true;
@@ -1426,14 +1456,21 @@ static void free_cell(hive* h, uint32_t offset) {
         // FIXME - handle malloc failure
 
         hh2->offset = offset;
-        hh2->size = -*(int32_t*)(h->bins + offset);
 
-        list_add_tail(&hh2->list, &h->holes);
+        if (is_volatile)
+            hh2->size = -*(int32_t*)(h->volatile_bins + offset);
+        else
+            hh2->size = -*(int32_t*)(h->bins + offset);
+
+        list_add_tail(&hh2->list, head);
     }
 
     // change sign of cell size, to indicate now free
 
-    *(int32_t*)(h->bins + offset) = -*(int32_t*)(h->bins + offset);
+    if (is_volatile)
+        *(int32_t*)(h->volatile_bins + offset) = -*(int32_t*)(h->volatile_bins + offset);
+    else
+        *(int32_t*)(h->bins + offset) = -*(int32_t*)(h->bins + offset);
 }
 
 static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
@@ -1563,7 +1600,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                     }
                 } else {
                     if (DataSize <= sizeof(uint32_t)) { // if wasn't resident but will be, free data cell and write into vk
-                        free_cell(key->h, vk->Data);
+                        free_cell(key->h, vk->Data, false);
 
                         memcpy(&vk->Data, Data, DataSize);
                         vk->DataLength = DataSize == 0 ? 0 : (CM_KEY_VALUE_SPECIAL_SIZE | DataSize);
@@ -1588,7 +1625,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                             if (!NT_SUCCESS(Status))
                                 goto end;
 
-                            free_cell(key->h, vk->Data);
+                            free_cell(key->h, vk->Data, false);
 
                             vk->Data = cell;
                             vk->DataLength = DataSize;
@@ -1628,7 +1665,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
         Status = allocate_cell(key->h, DataSize, &vk->Data, key->is_volatile);
         if (!NT_SUCCESS(Status)) {
-            free_cell(key->h, vk_offset);
+            free_cell(key->h, vk_offset, false);
             goto end;
         }
 
@@ -1660,9 +1697,9 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     Status = allocate_cell(key->h, sizeof(uint32_t) * (kn->ValuesCount + 1), &values_list_offset, key->is_volatile);
     if (!NT_SUCCESS(Status)) {
         if (!(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) && vk->DataLength != 0)
-            free_cell(key->h, vk->Data);
+            free_cell(key->h, vk->Data, false);
 
-        free_cell(key->h, vk_offset);
+        free_cell(key->h, vk_offset, false);
         goto end;
     }
 
@@ -1673,7 +1710,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
         memcpy(values_list, old_values_list, kn->ValuesCount * sizeof(uint32_t));
 
-        free_cell(key->h, kn->Values);
+        free_cell(key->h, kn->Values, false);
     }
 
     values_list[kn->ValuesCount] = vk_offset;
@@ -1844,7 +1881,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
             uint32_t vk_offset = values_list[i];
 
             if (kn->ValuesCount == 1) {
-                free_cell(key->h, kn->Values);
+                free_cell(key->h, kn->Values, false);
                 kn->Values = 0;
             } else {
                 int32_t old_size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
@@ -1873,9 +1910,9 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
             }
 
             if (vk->DataLength != 0 && !(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE)) // free data cell, if not resident
-                free_cell(key->h, vk->Data);
+                free_cell(key->h, vk->Data, false);
 
-            free_cell(key->h, vk_offset);
+            free_cell(key->h, vk_offset, false);
 
             kn->ValuesCount--;
 
@@ -1922,9 +1959,10 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
     unsigned int i;
     uint32_t pos;
     bool found = false;
+    void* bins = is_volatile ? h->volatile_bins : h->bins;
 
     for (i = 0; i < old_lh->Count; i++) {
-        int32_t size = -*(int32_t*)(h->bins + old_lh->List[i].Cell);
+        int32_t size = -*(int32_t*)(bins + old_lh->List[i].Cell);
         uint16_t sig;
         CM_KEY_NODE* kn;
 
@@ -1933,12 +1971,12 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
         if (size < sizeof(int32_t) + sizeof(uint16_t))
             return STATUS_REGISTRY_CORRUPT;
 
-        sig = *(uint16_t*)(h->bins + old_lh->List[i].Cell + sizeof(int32_t));
+        sig = *(uint16_t*)(bins + old_lh->List[i].Cell + sizeof(int32_t));
 
         if (sig != CM_KEY_NODE_SIGNATURE)
             return STATUS_REGISTRY_CORRUPT;
 
-        kn = (CM_KEY_NODE*)(h->bins + old_lh->List[i].Cell + sizeof(int32_t));
+        kn = (CM_KEY_NODE*)(bins + old_lh->List[i].Cell + sizeof(int32_t));
 
         if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn->NameLength)
             return STATUS_REGISTRY_CORRUPT;
@@ -2030,7 +2068,7 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
     if (!NT_SUCCESS(Status))
         return Status;
 
-    lh = (CM_KEY_FAST_INDEX*)(h->bins + *offset + sizeof(int32_t));
+    lh = (CM_KEY_FAST_INDEX*)(bins + *offset + sizeof(int32_t));
 
     lh->Signature = CM_KEY_HASH_LEAF;
     lh->Count = old_lh->Count + 1;
@@ -2149,7 +2187,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     // don't allow non-volatile keys to be created under volatile parent
 
-    if (is_volatile && !parent_is_volatile) {
+    if (!is_volatile && parent_is_volatile) {
         Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
@@ -2213,6 +2251,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     k->header.close = key_object_close;
     k->h = h;
     __sync_add_and_fetch(&h->refcount, 1);
+    k->is_volatile = is_volatile;
 
     Status = muwine_add_handle(&k->header, KeyHandle);
 
@@ -2235,7 +2274,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
         Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + sizeof(CM_INDEX), &lh_offset, is_volatile);
         if (!NT_SUCCESS(Status)) {
-            free_cell(h, subkey_offset);
+            free_cell(h, subkey_offset, is_volatile);
             NtClose(*KeyHandle);
             goto end;
         }
@@ -2267,7 +2306,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             size = -*(int32_t*)(h->bins + *subkey_list);
 
         if (size < sizeof(int32_t) + sizeof(uint16_t)) {
-            free_cell(h, subkey_offset);
+            free_cell(h, subkey_offset, is_volatile);
             NtClose(*KeyHandle);
             Status = STATUS_REGISTRY_CORRUPT;
             goto end;
@@ -2281,6 +2320,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         // FIXME - dealing with existing ri rather than lh
         // FIXME - creating new ri if lh gets too large
 
+        k->offset = subkey_offset;
+
         if (sig == CM_KEY_HASH_LEAF) {
             CM_KEY_FAST_INDEX* old_lh;
             uint32_t lh_offset;
@@ -2291,7 +2332,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                 old_lh = (CM_KEY_FAST_INDEX*)(h->bins + *subkey_list + sizeof(int32_t));
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
-                free_cell(h, subkey_offset);
+                free_cell(h, subkey_offset, is_volatile);
                 NtClose(*KeyHandle);
                 Status = STATUS_REGISTRY_CORRUPT;
                 goto end;
@@ -2299,12 +2340,12 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             Status = lh_copy_and_add(h, old_lh, &lh_offset, subkey_offset, hash, &us, is_volatile);
             if (!NT_SUCCESS(Status)) {
-                free_cell(h, subkey_offset);
+                free_cell(h, subkey_offset, is_volatile);
                 NtClose(*KeyHandle);
                 goto end;
             }
 
-            free_cell(h, *subkey_list);
+            free_cell(h, *subkey_list, is_volatile);
 
             (*subkey_count)++;
             *subkey_list = lh_offset;
@@ -2322,7 +2363,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     if (Disposition)
         *Disposition = REG_CREATED_NEW_KEY;
 
-    k->h->dirty = true;
+    if (!is_volatile)
+        k->h->dirty = true;
 
     Status = STATUS_SUCCESS;
 
