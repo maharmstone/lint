@@ -585,11 +585,19 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 }
 
 static int __init muwine_init(void) {
+    NTSTATUS Status;
+
     major_num = register_chrdev(0, "muwine", &file_ops);
 
     if (major_num < 0) {
         printk(KERN_ALERT "Could not register device: %d\n", major_num);
         return major_num;
+    }
+
+    Status = muwine_init_reg_root();
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "muwine_init_reg_root returned %08x\n", Status);
+        return -ENOMEM;
     }
 
     printk(KERN_INFO "muwine module loaded with device major number %d\n", major_num);

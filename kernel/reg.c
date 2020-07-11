@@ -394,12 +394,18 @@ static NTSTATUS find_subkey(hive* h, uint32_t offset, UNICODE_STRING* us, uint32
     int32_t size;
     CM_KEY_NODE* kn;
 
-    size = -*(int32_t*)((uint8_t*)h->bins + offset);
+    if (*is_volatile)
+        size = -*(int32_t*)((uint8_t*)h->volatile_bins + offset);
+    else
+        size = -*(int32_t*)((uint8_t*)h->bins + offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
         return STATUS_REGISTRY_CORRUPT;
 
-    kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+    if (*is_volatile)
+        kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+    else
+        kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE)
         return STATUS_REGISTRY_CORRUPT;
@@ -428,10 +434,17 @@ static NTSTATUS find_subkey(hive* h, uint32_t offset, UNICODE_STRING* us, uint32
 static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offset, bool parent, bool* is_volatile) {
     NTSTATUS Status;
     uint32_t offset;
+    bool vol;
 
     // loop through parts and locate
 
-    offset = ((HBASE_BLOCK*)h->data)->RootCell;
+    if (h->depth == 0) { // volatile root
+        offset = h->volatile_root_cell;
+        vol = true;
+    } else {
+        offset = ((HBASE_BLOCK*)h->data)->RootCell;
+        vol = false;
+    }
 
     do {
         while (us->Length >= sizeof(WCHAR) && *us->Buffer == '\\') {
@@ -459,7 +472,7 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offs
 
         // FIXME - should this be checking for KEY_ENUMERATE_SUB_KEYS against all keys in path?
 
-        Status = find_subkey(h, offset, us, &offset, is_volatile);
+        Status = find_subkey(h, offset, us, &offset, &vol);
         if (!NT_SUCCESS(Status))
             return Status;
 
@@ -470,6 +483,7 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offs
     } while (true);
 
     *ret_offset = offset;
+    *is_volatile = vol;
 
     return STATUS_SUCCESS;
 }
@@ -2351,7 +2365,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
     us.Length -= sizeof(prefix) - sizeof(WCHAR);
 
-    write_lock(&hive_list_lock);
+    read_lock(&hive_list_lock);
 
     le = hive_list.next;
 
@@ -2363,12 +2377,12 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             continue;
         }
 
-        if (us.Buffer[h->path.Length / sizeof(WCHAR)] != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
+        if (h->depth != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
             le = le->next;
             continue;
         }
 
-        if (!wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
+        if (h->depth == 0 || !wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
             us.Buffer += h->path.Length / sizeof(WCHAR);
             us.Length -= h->path.Length;
 
@@ -2382,7 +2396,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             Status = create_key_in_hive(h, &us, KeyHandle, CreateOptions, Disposition);
 
             write_unlock(&h->lock);
-            write_unlock(&hive_list_lock);
+            read_unlock(&hive_list_lock);
 
             return Status;
         }
@@ -2390,7 +2404,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         le = le->next;
     }
 
-    write_unlock(&hive_list_lock);
+    read_unlock(&hive_list_lock);
 
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
@@ -2708,4 +2722,68 @@ NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS muwine_init_reg_root(void) {
+    NTSTATUS Status;
+    hive* h;
+    uint32_t offset;
+    CM_KEY_NODE* kn;
+
+    h = kmalloc(sizeof(hive), GFP_KERNEL);
+    if (!h)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    h->path.Buffer = NULL;
+    h->path.Length = h->path.MaximumLength = 0;
+    h->depth = 0;
+    h->data = NULL;
+    h->bins = NULL;
+    h->size = 0;
+    h->refcount = 0;
+    INIT_LIST_HEAD(&h->holes);
+    rwlock_init(&h->lock);
+    h->dirty = false;
+    h->volatile_bins = NULL;
+    h->volatile_size = 0;
+    INIT_LIST_HEAD(&h->volatile_holes);
+
+    Status = allocate_cell(h, sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]), &offset, true);
+    if (!NT_SUCCESS(Status)) {
+        kfree(h);
+        return Status;
+    }
+
+    kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+
+    kn->Signature = CM_KEY_NODE_SIGNATURE;
+    kn->Flags = 0;
+    kn->LastWriteTime = 0;;
+    kn->Spare = 0;
+    kn->Parent = 0;
+    kn->SubKeyCount = 0;
+    kn->VolatileSubKeyCount = 0;
+    kn->SubKeyList = 0;
+    kn->VolatileSubKeyList = 0;
+    kn->ValuesCount = 0;
+    kn->Values = 0;
+    kn->Security = 0; // FIXME
+    kn->Class = 0;
+    kn->MaxNameLen = 0;
+    kn->MaxClassLen = 0;
+    kn->MaxValueNameLen = 0;
+    kn->MaxValueDataLen = 0;
+    kn->WorkVar = 0;
+    kn->NameLength = 0;
+    kn->ClassLength = 0;
+
+    h->volatile_root_cell = offset;
+
+    write_lock(&hive_list_lock);
+
+    list_add_tail(&h->list, &hive_list);
+
+    write_unlock(&hive_list_lock);
+
+    return STATUS_SUCCESS;
 }

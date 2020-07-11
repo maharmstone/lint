@@ -157,6 +157,7 @@ typedef struct {
     void* volatile_bins;
     size_t volatile_size;
     struct list_head volatile_holes;
+    uint32_t volatile_root_cell;
 } hive;
 
 typedef struct {
