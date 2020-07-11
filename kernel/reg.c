@@ -688,6 +688,8 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
         le = le->next;
     }
 
+    read_unlock(&hive_list_lock);
+
     return STATUS_OBJECT_PATH_INVALID;
 }
 
