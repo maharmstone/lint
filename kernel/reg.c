@@ -767,8 +767,6 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    // FIXME - work with volatile keys
-
     if (Index >= kn->SubKeyCount + kn->VolatileSubKeyCount) {
         read_unlock(&key->h->lock);
         return STATUS_NO_MORE_ENTRIES;
@@ -1826,6 +1824,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     int32_t size;
     unsigned int i;
     uint32_t* values_list;
+    void* bins;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
     if (!key || key->header.type != muwine_object_key)
@@ -1835,7 +1834,9 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
 
     write_lock(&key->h->lock);
 
-    kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+    bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+
+    kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
         Status = STATUS_REGISTRY_CORRUPT;
@@ -1847,24 +1848,24 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
         goto end;
     }
 
-    size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+    size = -*(int32_t*)((uint8_t*)bins + kn->Values);
 
     if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
         Status = STATUS_REGISTRY_CORRUPT;
         goto end;
     }
 
-    values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+    values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
 
     for (i = 0; i < kn->ValuesCount; i++) {
         bool found = false;
         CM_KEY_VALUE* vk;
 
-        vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
+        vk = (CM_KEY_VALUE*)((uint8_t*)bins + values_list[i] + sizeof(int32_t));
 
         // FIXME - check not out of bounds
 
-        size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[i]);
+        size = -*(int32_t*)((uint8_t*)bins + values_list[i]);
 
         if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
             Status = STATUS_REGISTRY_CORRUPT;
@@ -1926,10 +1927,10 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
             uint32_t vk_offset = values_list[i];
 
             if (kn->ValuesCount == 1) {
-                free_cell(key->h, kn->Values, false);
+                free_cell(key->h, kn->Values, key->is_volatile);
                 kn->Values = 0;
             } else {
-                int32_t old_size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+                int32_t old_size = -*(int32_t*)((uint8_t*)bins + kn->Values);
                 int32_t new_size = ((kn->ValuesCount - 1) * sizeof(uint32_t)) + sizeof(int32_t);
 
                 if (new_size & 7)
@@ -1945,7 +1946,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
                     if (!NT_SUCCESS(Status))
                         goto end;
 
-                    new_values_list = (uint32_t*)((uint8_t*)key->h->bins + values_list_offset + sizeof(int32_t));
+                    new_values_list = (uint32_t*)((uint8_t*)bins + values_list_offset + sizeof(int32_t));
 
                     memcpy(new_values_list, values_list, i * sizeof(uint32_t));
                     memcpy(&new_values_list[i], &values_list[i+1], (kn->ValuesCount - i - 1) * sizeof(uint32_t));
@@ -1955,9 +1956,9 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
             }
 
             if (vk->DataLength != 0 && !(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE)) // free data cell, if not resident
-                free_cell(key->h, vk->Data, false);
+                free_cell(key->h, vk->Data, key->is_volatile);
 
-            free_cell(key->h, vk_offset, false);
+            free_cell(key->h, vk_offset, key->is_volatile);
 
             kn->ValuesCount--;
 
@@ -1969,7 +1970,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     Status = STATUS_OBJECT_NAME_NOT_FOUND;
 
 end:
-    if (NT_SUCCESS(Status))
+    if (NT_SUCCESS(Status) && !key->is_volatile)
         key->h->dirty = true;
 
     write_unlock(&key->h->lock);
