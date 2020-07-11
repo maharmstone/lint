@@ -4,7 +4,7 @@
 
 static void key_object_close(object_header* obj);
 
-static hive system_hive;
+LIST_HEAD(hive_list);
 
 static bool hive_is_valid(hive* h) {
     HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
@@ -195,11 +195,13 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
     char system_hive_path[255];
     struct file* f;
     loff_t pos;
+    hive* system_hive;
+
+    const WCHAR machine[] = L"Machine";
 
     // FIXME - make sure uid is root
 
-    if (system_hive.data) // make sure not already loaded
-        return STATUS_INVALID_PARAMETER;
+    // FIXME - make sure not already loaded
 
     if (!user_system_hive_path)
         return STATUS_INVALID_PARAMETER;
@@ -222,47 +224,76 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
         return STATUS_INTERNAL_ERROR;
     }
 
-    system_hive.size = f->f_inode->i_size;
-
-    if (system_hive.size == 0) {
+    system_hive = kmalloc(sizeof(hive), GFP_KERNEL);
+    if (!system_hive) {
         filp_close(f, NULL);
+        kfree(system_hive);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    system_hive->path.Buffer = kmalloc(sizeof(machine), GFP_KERNEL);
+    if (!system_hive->path.Buffer) {
+        filp_close(f, NULL);
+        kfree(system_hive);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(system_hive->path.Buffer, machine, sizeof(machine));
+    system_hive->path.Length = system_hive->path.MaximumLength = sizeof(machine) - sizeof(WCHAR);
+
+    system_hive->depth = 1;
+
+    system_hive->size = f->f_inode->i_size;
+
+    if (system_hive->size == 0) {
+        filp_close(f, NULL);
+        kfree(system_hive->path.Buffer);
+        kfree(system_hive);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    system_hive.data = vmalloc(system_hive.size);
-    if (!system_hive.data) {
+    system_hive->data = vmalloc(system_hive->size);
+    if (!system_hive->data) {
         filp_close(f, NULL);
+        kfree(system_hive->path.Buffer);
+        kfree(system_hive);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     pos = 0;
 
-    while (pos < system_hive.size) {
-        ssize_t read = kernel_read(f, (uint8_t*)system_hive.data + pos, system_hive.size - pos, &pos);
+    while (pos < system_hive->size) {
+        ssize_t read = kernel_read(f, (uint8_t*)system_hive->data + pos, system_hive->size - pos, &pos);
 
         if (read < 0) {
             printk(KERN_INFO "muwine_init_registry: read returned %ld\n", read);
             filp_close(f, NULL);
-            vfree(system_hive.data);
-            system_hive.data = NULL;
+            vfree(system_hive->data);
+            kfree(system_hive->path.Buffer);
+            kfree(system_hive);
             return muwine_error_to_ntstatus(read);
         }
     }
 
     filp_close(f, NULL);
 
-    if (!hive_is_valid(&system_hive)) {
-        vfree(system_hive.data);
-        system_hive.data = NULL;
+    if (!hive_is_valid(system_hive)) {
+        vfree(system_hive->data);
+        kfree(system_hive->path.Buffer);
+        kfree(system_hive);
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    Status = init_hive(&system_hive);
+    Status = init_hive(system_hive);
     if (!NT_SUCCESS(Status)) {
-        vfree(system_hive.data);
-        system_hive.data = NULL;
+        vfree(system_hive->data);
+        kfree(system_hive->path.Buffer);
+        kfree(system_hive);
         return Status;
     }
+
+    // FIXME - put in reverse order by depth
+    list_add(&system_hive->list, &hive_list);
 
     printk(KERN_INFO "muwine_init_registry: loaded system hive at %s.\n", system_hive_path);
 
@@ -270,8 +301,6 @@ NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
 }
 
 static void free_hive(hive* h) {
-    // FIXME - flush if dirty
-
     while (!list_empty(&h->holes)) {
         hive_hole* hh = list_entry(h->holes.next, hive_hole, list);
 
@@ -284,12 +313,23 @@ static void free_hive(hive* h) {
         vfree(h->data);
     else if (h->bins)
         vfree(h->bins);
+
+    if (h->path.Buffer)
+        kfree(h->path.Buffer);
+
+    list_del(&h->list);
+
+    kfree(h);
 }
 
 void muwine_free_reg(void) {
-    // FIXME - iterate through hive list
+    while (!list_empty(&hive_list)) {
+        hive* h = list_entry(hive_list.next, hive, list);
 
-    free_hive(&system_hive);
+        // FIXME - flush if dirty
+
+        free_hive(h);
+    }
 }
 
 static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
@@ -543,9 +583,9 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     NTSTATUS Status;
     UNICODE_STRING us;
     uint32_t offset;
+    struct list_head* le;
 
     static const WCHAR prefix[] = L"\\Registry\\";
-    static const WCHAR machine[] = L"Machine";
 
     if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES))
         return STATUS_INVALID_PARAMETER;
@@ -571,56 +611,74 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
     us.Length -= sizeof(prefix) - sizeof(WCHAR);
 
-    if (us.Length >= sizeof(machine) - sizeof(WCHAR) && !wcsnicmp(us.Buffer, machine, (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR))) {
-        key_object* k;
-        bool is_volatile;
+    // FIXME - get hive_list lock
 
-        us.Buffer += (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR);
-        us.Length -= sizeof(machine) - sizeof(WCHAR);
+    le = hive_list.next;
 
-        if (us.Length >= sizeof(WCHAR) && us.Buffer[0] != '\\')
-            return STATUS_OBJECT_PATH_INVALID;
+    while (le != &hive_list) {
+        hive* h = list_entry(le, hive, list);
 
-        if (!system_hive.data) // HKLM not loaded
-            return STATUS_OBJECT_PATH_INVALID;
+        if (us.Length < h->path.Length) {
+            le = le->next;
+            continue;
+        }
 
-        read_lock(&system_hive.lock);
+        if (us.Buffer[h->path.Length / sizeof(WCHAR)] != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
+            le = le->next;
+            continue;
+        }
 
-        Status = open_key_in_hive(&system_hive, &us, &offset, false, &is_volatile);
-        if (!NT_SUCCESS(Status)) {
-            read_unlock(&system_hive.lock);
+        if (!wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
+            key_object* k;
+            bool is_volatile;
+
+            us.Buffer += h->path.Length / sizeof(WCHAR);
+            us.Length -= h->path.Length;
+
+            while (us.Length >= sizeof(WCHAR) && us.Buffer[0] == '\\') {
+                us.Buffer++;
+                us.Length -= sizeof(WCHAR);
+            }
+
+            read_lock(&h->lock);
+
+            Status = open_key_in_hive(h, &us, &offset, false, &is_volatile);
+            if (!NT_SUCCESS(Status)) {
+                read_unlock(&h->lock);
+                return Status;
+            }
+
+            read_unlock(&h->lock);
+
+            // FIXME - do SeAccessCheck
+            // FIXME - store access mask in handle
+
+            // create key object and return handle
+
+            k = kmalloc(sizeof(key_object), GFP_KERNEL);
+            if (!k)
+                return STATUS_INSUFFICIENT_RESOURCES;
+
+            k->header.refcount = 1;
+            k->header.type = muwine_object_key;
+            k->header.close = key_object_close;
+            k->h = h;
+            __sync_add_and_fetch(&h->refcount, 1);
+            k->offset = offset;
+            k->is_volatile = is_volatile;
+
+            Status = muwine_add_handle(&k->header, KeyHandle);
+
+            if (!NT_SUCCESS(Status))
+                kfree(k);
+
             return Status;
         }
 
-        read_unlock(&system_hive.lock);
+        le = le->next;
+    }
 
-        // FIXME - do SeAccessCheck
-        // FIXME - store access mask in handle
-
-        // create key object and return handle
-
-        k = kmalloc(sizeof(key_object), GFP_KERNEL);
-        if (!k)
-            return STATUS_INSUFFICIENT_RESOURCES;
-
-        k->header.refcount = 1;
-        k->header.type = muwine_object_key;
-        k->header.close = key_object_close;
-        k->h = &system_hive;
-        __sync_add_and_fetch(&system_hive.refcount, 1);
-        k->offset = offset;
-        k->is_volatile = is_volatile;
-
-        Status = muwine_add_handle(&k->header, KeyHandle);
-
-        if (!NT_SUCCESS(Status))
-            kfree(k);
-
-        return Status;
-    } else
-        return STATUS_OBJECT_PATH_INVALID;
-
-    // FIXME - also look in \\Registry\\User
+    return STATUS_OBJECT_PATH_INVALID;
 }
 
 NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
@@ -2129,93 +2187,46 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
-                            PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
+static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions, PULONG Disposition) {
     NTSTATUS Status;
-    UNICODE_STRING us;
-    uint32_t offset, subkey_offset;
     key_object* k;
     CM_KEY_NODE* kn;
     CM_KEY_NODE* kn2;
     uint32_t hash;
     bool is_volatile = false;
+    uint32_t offset, subkey_offset;
     bool parent_is_volatile;
-    hive* h;
     uint32_t* subkey_count;
     uint32_t* subkey_list;
-
-    static const WCHAR prefix[] = L"\\Registry\\";
-    static const WCHAR machine[] = L"Machine";
-
-    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES))
-        return STATUS_INVALID_PARAMETER;
-
-    if (ObjectAttributes->RootDirectory) {
-        printk(KERN_ALERT "NtCreateKey: FIXME - support RootDirectory\n"); // FIXME
-        return STATUS_NOT_IMPLEMENTED;
-    }
-
-    if (!ObjectAttributes->ObjectName)
-        return STATUS_INVALID_PARAMETER;
-
-    // fail if ObjectAttributes->ObjectName doesn't begin with "\\Registry\\";
-
-    us.Length = ObjectAttributes->ObjectName->Length;
-    us.Buffer = ObjectAttributes->ObjectName->Buffer;
-
-    if (us.Length < sizeof(prefix) - sizeof(WCHAR) ||
-        wcsnicmp(us.Buffer, prefix, (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR))) {
-        return STATUS_OBJECT_PATH_INVALID;
-    }
-
-    us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
-    us.Length -= sizeof(prefix) - sizeof(WCHAR);
-
-    if (us.Length < sizeof(machine) - sizeof(WCHAR) || wcsnicmp(us.Buffer, machine, (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR)))
-        return STATUS_OBJECT_PATH_INVALID;
-
-    us.Buffer += (sizeof(machine) - sizeof(WCHAR)) / sizeof(WCHAR);
-    us.Length -= sizeof(machine) - sizeof(WCHAR);
-
-    if (us.Length >= sizeof(WCHAR) && us.Buffer[0] != '\\')
-        return STATUS_OBJECT_PATH_INVALID;
-
-    if (!system_hive.data) // HKLM not loaded
-        return STATUS_OBJECT_PATH_INVALID;
 
     if (CreateOptions & REG_OPTION_VOLATILE)
         is_volatile = true;
 
-    write_lock(&system_hive.lock);
-
     // get offset for kn of parent
 
-    Status = open_key_in_hive(&system_hive, &us, &offset, true, &parent_is_volatile);
+    Status = open_key_in_hive(h, us, &offset, true, &parent_is_volatile);
     if (!NT_SUCCESS(Status))
-        goto end;
+        return Status;
 
-    if (us.Length < sizeof(WCHAR)) {
-        Status = STATUS_OBJECT_NAME_INVALID;
-        goto end;
+    if (us->Length < sizeof(WCHAR)) {
+        return STATUS_OBJECT_NAME_INVALID;
     }
 
     // FIXME - make sure SD allows us to create subkeys
 
     // if already exists, set Disposition to REG_OPENED_EXISTING_KEY, create handle, and return
 
-    Status = find_subkey(&system_hive, offset, &us, &subkey_offset, &is_volatile);
+    Status = find_subkey(h, offset, us, &subkey_offset, &is_volatile);
     if (NT_SUCCESS(Status)) {
         k = kmalloc(sizeof(key_object), GFP_KERNEL);
-        if (!k) {
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
+        if (!k)
+            return STATUS_INSUFFICIENT_RESOURCES;
 
         k->header.refcount = 1;
         k->header.type = muwine_object_key;
         k->header.close = key_object_close;
-        k->h = &system_hive;
-        __sync_add_and_fetch(&system_hive.refcount, 1);
+        k->h = h;
+        __sync_add_and_fetch(&h->refcount, 1);
         k->offset = offset;
         k->is_volatile = is_volatile;
 
@@ -2227,24 +2238,20 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         if (Disposition)
             *Disposition = REG_OPENED_EXISTING_KEY;
 
-        goto end;
+        return Status;
     } else if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
-        goto end;
+        return Status;
 
     // don't allow non-volatile keys to be created under volatile parent
 
-    if (!is_volatile && parent_is_volatile) {
-        Status = STATUS_INVALID_PARAMETER;
-        goto end;
-    }
-
-    h = &system_hive;
+    if (!is_volatile && parent_is_volatile)
+        return STATUS_INVALID_PARAMETER;
 
     // allocate space for new kn
 
-    Status = allocate_cell(h, offsetof(CM_KEY_NODE, Name) + us.Length, &subkey_offset, is_volatile);
+    Status = allocate_cell(h, offsetof(CM_KEY_NODE, Name) + us->Length, &subkey_offset, is_volatile);
     if (!NT_SUCCESS(Status))
-        goto end;
+        return Status;
 
     // FIXME - compute SD and allocate or find cell for it
 
@@ -2271,9 +2278,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     kn2->MaxValueNameLen = 0;
     kn2->MaxValueDataLen = 0;
     kn2->WorkVar = 0;
-    kn2->NameLength = us.Length;
+    kn2->NameLength = us->Length;
     kn2->ClassLength = 0; // FIXME
-    memcpy(kn2->Name, us.Buffer, us.Length);
+    memcpy(kn2->Name, us->Buffer, us->Length);
 
     // open kn of parent (checking already done in open_key_in_hive)
 
@@ -2282,15 +2289,13 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     else
         kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
-    hash = calc_subkey_hash(&us);
+    hash = calc_subkey_hash(us);
 
     // add handle here, to make things easier if we fail later on
 
     k = kmalloc(sizeof(key_object), GFP_KERNEL);
-    if (!k) {
-        Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
-    }
+    if (!k)
+        return STATUS_INSUFFICIENT_RESOURCES;
 
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
@@ -2303,7 +2308,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     if (!NT_SUCCESS(Status)) {
         kfree(k);
-        goto end;
+        return Status;
     }
 
     if (is_volatile) {
@@ -2322,7 +2327,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         if (!NT_SUCCESS(Status)) {
             free_cell(h, subkey_offset, is_volatile);
             NtClose(*KeyHandle);
-            goto end;
+            return Status;
         }
 
         if (is_volatile)
@@ -2335,8 +2340,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         lh->List[0].Cell = subkey_offset;
         lh->List[0].HashKey = hash;
 
-        if (us.Length > kn->MaxNameLen)
-            kn->MaxNameLen = us.Length;
+        if (us->Length > kn->MaxNameLen)
+            kn->MaxNameLen = us->Length;
 
         *subkey_count = 1;
         *subkey_list = lh_offset;
@@ -2354,8 +2359,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         if (size < sizeof(int32_t) + sizeof(uint16_t)) {
             free_cell(h, subkey_offset, is_volatile);
             NtClose(*KeyHandle);
-            Status = STATUS_REGISTRY_CORRUPT;
-            goto end;
+            return STATUS_REGISTRY_CORRUPT;
         }
 
         if (is_volatile)
@@ -2380,15 +2384,14 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
                 free_cell(h, subkey_offset, is_volatile);
                 NtClose(*KeyHandle);
-                Status = STATUS_REGISTRY_CORRUPT;
-                goto end;
+                return STATUS_REGISTRY_CORRUPT;
             }
 
-            Status = lh_copy_and_add(h, old_lh, &lh_offset, subkey_offset, hash, &us, is_volatile);
+            Status = lh_copy_and_add(h, old_lh, &lh_offset, subkey_offset, hash, us, is_volatile);
             if (!NT_SUCCESS(Status)) {
                 free_cell(h, subkey_offset, is_volatile);
                 NtClose(*KeyHandle);
-                goto end;
+                return Status;
             }
 
             free_cell(h, *subkey_list, is_volatile);
@@ -2396,13 +2399,12 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             (*subkey_count)++;
             *subkey_list = lh_offset;
 
-            if (us.Length > kn->MaxNameLen)
-                kn->MaxNameLen = us.Length;
+            if (us->Length > kn->MaxNameLen)
+                kn->MaxNameLen = us->Length;
         } else {
             printk(KERN_ALERT "NtCreateKey: unhandled list type %x\n", sig);
-            Status = STATUS_NOT_IMPLEMENTED;
             NtClose(*KeyHandle);
-            goto end;
+            return STATUS_NOT_IMPLEMENTED;
         }
     }
 
@@ -2412,12 +2414,78 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     if (!is_volatile)
         k->h->dirty = true;
 
-    Status = STATUS_SUCCESS;
+    return STATUS_SUCCESS;
+}
 
-end:
-    write_unlock(&system_hive.lock);
+static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
+                            PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
+    NTSTATUS Status;
+    UNICODE_STRING us;
+    struct list_head* le;
 
-    return Status;
+    static const WCHAR prefix[] = L"\\Registry\\";
+
+    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES))
+        return STATUS_INVALID_PARAMETER;
+
+    if (ObjectAttributes->RootDirectory) {
+        printk(KERN_ALERT "NtCreateKey: FIXME - support RootDirectory\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (!ObjectAttributes->ObjectName)
+        return STATUS_INVALID_PARAMETER;
+
+    // fail if ObjectAttributes->ObjectName doesn't begin with "\\Registry\\";
+
+    us.Length = ObjectAttributes->ObjectName->Length;
+    us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+    if (us.Length < sizeof(prefix) - sizeof(WCHAR) ||
+        wcsnicmp(us.Buffer, prefix, (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR))) {
+        return STATUS_OBJECT_PATH_INVALID;
+    }
+
+    us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
+    us.Length -= sizeof(prefix) - sizeof(WCHAR);
+
+    le = hive_list.next;
+
+    while (le != &hive_list) {
+        hive* h = list_entry(le, hive, list);
+
+        if (us.Length < h->path.Length) {
+            le = le->next;
+            continue;
+        }
+
+        if (us.Buffer[h->path.Length / sizeof(WCHAR)] != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
+            le = le->next;
+            continue;
+        }
+
+        if (!wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
+            us.Buffer += h->path.Length / sizeof(WCHAR);
+            us.Length -= h->path.Length;
+
+            while (us.Length >= sizeof(WCHAR) && us.Buffer[0] == '\\') {
+                us.Buffer++;
+                us.Length -= sizeof(WCHAR);
+            }
+
+            write_lock(&h->lock);
+
+            Status = create_key_in_hive(h, &us, KeyHandle, CreateOptions, Disposition);
+
+            write_unlock(&h->lock);
+
+            return Status;
+        }
+
+        le = le->next;
+    }
+
+    return STATUS_OBJECT_PATH_NOT_FOUND;
 }
 
 NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,

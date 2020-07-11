@@ -144,6 +144,9 @@ typedef struct {
 } hive_hole;
 
 typedef struct {
+    struct list_head list;
+    UNICODE_STRING path;
+    unsigned int depth;
     void* data;
     void* bins;
     size_t size;
