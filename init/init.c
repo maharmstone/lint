@@ -1,40 +1,39 @@
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include <muw.h>
 #include <stdio.h>
-#include <stdint.h>
-#include "../kernel/ioctls.h"
-
-static int muwine_init_registry(int fd, const char* system) {
-    uintptr_t args[] = {
-        1,
-        (uintptr_t)system
-    };
-
-    return ioctl(fd, MUWINE_IOCTL_INIT_REGISTRY, args);
-}
 
 int main() {
-    int fd, ret;
+    NTSTATUS Status;
+    UNICODE_STRING file_us, key_us;
+    OBJECT_ATTRIBUTES key, file;
 
-    fd = open("/dev/muwine", 0);
-    if (fd < 0) {
-        fprintf(stderr, "Couldn't open /dev/muwine: error %d\n", fd);
+    static const WCHAR file_str[] = L"\\Device\\UnixRoot\\root\\temp\\init\\SYSTEM"; // FIXME
+    static const WCHAR key_str[] = L"\\Registry\\Machine";
+
+    file_us.Length = file_us.MaximumLength = sizeof(file_str) - sizeof(WCHAR);
+    file_us.Buffer = (WCHAR*)file_str;
+
+    key.Length = sizeof(key);
+    key.RootDirectory = NULL;
+    key.ObjectName = &key_us;
+    key.Attributes = 0;
+    key.SecurityDescriptor = NULL;
+    key.SecurityQualityOfService = NULL;
+
+    key_us.Length = key_us.MaximumLength = sizeof(key_str) - sizeof(WCHAR);
+    key_us.Buffer = (WCHAR*)key_str;
+
+    file.Length = sizeof(file);
+    file.RootDirectory = NULL;
+    file.ObjectName = &file_us;
+    file.Attributes = 0;
+    file.SecurityDescriptor = NULL;
+    file.SecurityQualityOfService = NULL;
+
+    Status = NtLoadKey(&key, &file);
+    if (!NT_SUCCESS(Status)) {
+        fprintf(stderr, "NtLoadKey returned %08x.\n", (int32_t)Status);
         return 1;
     }
-
-    ret = muwine_init_registry(fd, "/root/temp/init/SYSTEM");
-    if (ret < 0) {
-        fprintf(stderr, "muwine_init_registry: error %08x\n", ret);
-        close(fd);
-        return 1;
-    }
-
-    printf("muwine_init_registry returned %08x\n", ret);
-
-    close(fd);
 
     return 0;
 }
