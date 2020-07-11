@@ -135,7 +135,6 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h);
 object_header* get_object_from_handle(HANDLE h);
 
 // reg.c
-NTSTATUS muwine_init_registry(const char* system_hive);
 void muwine_free_reg(void);
 NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtClose(HANDLE Handle);

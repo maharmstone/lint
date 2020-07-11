@@ -191,116 +191,6 @@ static NTSTATUS init_hive(hive* h) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS muwine_init_registry(const char* user_system_hive_path) {
-    NTSTATUS Status;
-    char system_hive_path[255];
-    struct file* f;
-    loff_t pos;
-    hive* system_hive;
-
-    const WCHAR machine[] = L"Machine";
-
-    // FIXME - make sure uid is root
-
-    // FIXME - make sure not already loaded
-
-    if (!user_system_hive_path)
-        return STATUS_INVALID_PARAMETER;
-
-    if (!read_user_string(user_system_hive_path, system_hive_path, sizeof(system_hive_path)))
-        return STATUS_INVALID_PARAMETER;
-
-    if (system_hive_path[0] == 0)
-        return STATUS_INVALID_PARAMETER;
-
-    f = filp_open(system_hive_path, O_RDONLY, 0);
-    if (IS_ERR(f)) {
-        printk(KERN_INFO "muwine_init_registry: could not open %s\n", system_hive_path);
-        return muwine_error_to_ntstatus((int)(uintptr_t)f);
-    }
-
-    if (!f->f_inode) {
-        printk(KERN_INFO "muwine_init_registry: file did not have an inode\n");
-        filp_close(f, NULL);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    system_hive = kmalloc(sizeof(hive), GFP_KERNEL);
-    if (!system_hive) {
-        filp_close(f, NULL);
-        kfree(system_hive);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    system_hive->path.Buffer = kmalloc(sizeof(machine), GFP_KERNEL);
-    if (!system_hive->path.Buffer) {
-        filp_close(f, NULL);
-        kfree(system_hive);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    memcpy(system_hive->path.Buffer, machine, sizeof(machine));
-    system_hive->path.Length = system_hive->path.MaximumLength = sizeof(machine) - sizeof(WCHAR);
-
-    system_hive->depth = 1;
-
-    system_hive->size = f->f_inode->i_size;
-
-    if (system_hive->size == 0) {
-        filp_close(f, NULL);
-        kfree(system_hive->path.Buffer);
-        kfree(system_hive);
-        return STATUS_REGISTRY_CORRUPT;
-    }
-
-    system_hive->data = vmalloc(system_hive->size);
-    if (!system_hive->data) {
-        filp_close(f, NULL);
-        kfree(system_hive->path.Buffer);
-        kfree(system_hive);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    pos = 0;
-
-    while (pos < system_hive->size) {
-        ssize_t read = kernel_read(f, (uint8_t*)system_hive->data + pos, system_hive->size - pos, &pos);
-
-        if (read < 0) {
-            printk(KERN_INFO "muwine_init_registry: read returned %ld\n", read);
-            filp_close(f, NULL);
-            vfree(system_hive->data);
-            kfree(system_hive->path.Buffer);
-            kfree(system_hive);
-            return muwine_error_to_ntstatus(read);
-        }
-    }
-
-    filp_close(f, NULL);
-
-    if (!hive_is_valid(system_hive)) {
-        vfree(system_hive->data);
-        kfree(system_hive->path.Buffer);
-        kfree(system_hive);
-        return STATUS_REGISTRY_CORRUPT;
-    }
-
-    Status = init_hive(system_hive);
-    if (!NT_SUCCESS(Status)) {
-        vfree(system_hive->data);
-        kfree(system_hive->path.Buffer);
-        kfree(system_hive);
-        return Status;
-    }
-
-    // FIXME - put in reverse order by depth
-    list_add(&system_hive->list, &hive_list);
-
-    printk(KERN_INFO "muwine_init_registry: loaded system hive at %s.\n", system_hive_path);
-
-    return STATUS_SUCCESS;
-}
-
 static void free_hive(hive* h) {
     while (!list_empty(&h->holes)) {
         hive_hole* hh = list_entry(h->holes.next, hive_hole, list);
@@ -2650,7 +2540,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
     f = filp_open(fs_path, O_RDONLY, 0);
     if (IS_ERR(f)) {
-        printk(KERN_INFO "muwine_init_registry: could not open %s\n", fs_path);
+        printk(KERN_INFO "NtLoadKey: could not open %s\n", fs_path);
         kfree(fs_path);
         return muwine_error_to_ntstatus((int)(uintptr_t)f);
     }
@@ -2708,7 +2598,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
         ssize_t read = kernel_read(f, (uint8_t*)h->data + pos, h->size - pos, &pos);
 
         if (read < 0) {
-            printk(KERN_INFO "muwine_init_registry: read returned %ld\n", read);
+            printk(KERN_INFO "NtLoadKey: read returned %ld\n", read);
             filp_close(f, NULL);
             vfree(h->data);
             kfree(h->path.Buffer);

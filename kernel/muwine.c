@@ -13,7 +13,6 @@ static int muwine_release(struct inode* inode, struct file* file);
 static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg);
 
 static struct muwine_func funcs[] = {
-    { muwine_init_registry, 1 },
     { user_NtOpenKey, 3 },
     { NtClose, 1 },
     { user_NtEnumerateKey, 6 },
