@@ -2478,3 +2478,19 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
+    printk(KERN_INFO "NtLoadKey(%p, %p): stub\n", DestinationKeyName, HiveFileName);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
+    printk(KERN_INFO "NtUnloadKey(%p): stub\n", DestinationKeyName);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
