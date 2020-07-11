@@ -147,3 +147,26 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEKEY, args);
 }
+
+NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)DestinationKeyName,
+        (uintptr_t)HiveFileName
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTLOADKEY, args);
+}
+
+NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)DestinationKeyName
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTUNLOADKEY, args);
+}

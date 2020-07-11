@@ -141,6 +141,8 @@ NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName);
 NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
                      PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition);
 NTSTATUS NtDeleteKey(HANDLE KeyHandle);
+NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName);
+NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
 
 #ifdef __cplusplus
 }
