@@ -2372,7 +2372,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     while (le != &hive_list) {
         hive* h = list_entry(le, hive, list);
 
-        if (us.Length < h->path.Length) {
+        if (us.Length <= h->path.Length) {
             le = le->next;
             continue;
         }
