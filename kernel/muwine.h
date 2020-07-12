@@ -152,5 +152,5 @@ NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
                           PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition);
 NTSTATUS NtDeleteKey(HANDLE KeyHandle);
 NTSTATUS user_NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName);
-NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
+NTSTATUS user_NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
 NTSTATUS NtFlushKey(HANDLE KeyHandle);

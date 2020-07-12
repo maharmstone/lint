@@ -2819,12 +2819,34 @@ NTSTATUS user_NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTE
     return Status;
 }
 
-NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
+static NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
     printk(KERN_INFO "NtUnloadKey(%p): stub\n", DestinationKeyName);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+
+    if (!DestinationKeyName)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, DestinationKeyName))
+        return STATUS_INVALID_PARAMETER;
+
+    Status = NtUnloadKey(&oa);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    return Status;
 }
 
 static int reg_flush_thread_func(void* data) {
