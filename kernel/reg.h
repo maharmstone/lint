@@ -161,6 +161,8 @@ typedef struct {
     size_t volatile_size;
     struct list_head volatile_holes;
     uint32_t volatile_root_cell;
+    char* fs_path;
+    int file_mode;
 } hive;
 
 typedef struct {

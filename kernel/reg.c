@@ -2,6 +2,7 @@
 #include <linux/kthread.h>
 #include <linux/timer.h>
 #include <linux/reboot.h>
+#include <linux/namei.h>
 #include "muwine.h"
 #include "reg.h"
 
@@ -229,6 +230,9 @@ static void free_hive(hive* h) {
 
     if (h->path.Buffer)
         kfree(h->path.Buffer);
+
+    if (h->fs_path)
+        kfree(h->fs_path);
 
     list_del(&h->list);
 
@@ -2626,6 +2630,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
     h->depth = count_backslashes(&us) + 1;
 
     h->size = f->f_inode->i_size;
+    h->file_mode = f->f_inode->i_mode;
 
     if (h->size == 0) {
         filp_close(f, NULL);
@@ -2759,11 +2764,11 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
             if (!found)
                 list_add_tail(&h->list, &hive_list);
 
+            h->fs_path = fs_path;
+
             up_write(&hive_list_sem);
 
             printk(KERN_INFO "NtLoadKey: loaded hive at %s.\n", fs_path);
-
-            kfree(fs_path);
 
             return STATUS_SUCCESS;
         }
@@ -2894,6 +2899,7 @@ NTSTATUS muwine_init_registry(void) {
     h->volatile_bins = NULL;
     h->volatile_size = 0;
     INIT_LIST_HEAD(&h->volatile_holes);
+    h->fs_path = NULL;
 
     Status = allocate_cell(h, sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]), &offset, true);
     if (!NT_SUCCESS(Status)) {
@@ -2941,26 +2947,58 @@ NTSTATUS muwine_init_registry(void) {
     return STATUS_SUCCESS;
 }
 
+static void get_temp_hive_path(hive* h, char** out) {
+    size_t len = strlen(h->fs_path);
+
+    static const char suffix[] = ".tmp";
+
+    // FIXME - also prepend dot, so that file is hidden
+
+    *out = kmalloc(len + sizeof(suffix), GFP_KERNEL);
+    if (!*out)
+        return;
+
+    memcpy(*out, h->fs_path, len);
+    memcpy(&(*out)[len], suffix, sizeof(suffix));
+}
+
+static void init_qstr_from_path(struct qstr* q, const char* path) {
+    unsigned int i, start = 0;
+
+    i = 0;
+    while (path[i] != 0) {
+        if (path[i] == '/')
+            start = i + 1;
+
+        i++;
+    }
+
+    q->name = &path[start];
+    q->len = i - start;
+}
+
 static NTSTATUS flush_hive(hive* h) {
     struct file* f;
     loff_t pos;
     HBASE_BLOCK* base_block;
     unsigned int i;
     uint32_t csum;
+    char* temp_fn;
+    int ret;
+    struct qstr q;
+    struct dentry* new_dentry;
 
     // FIXME - if called from periodic thread, give up if can't acquire lock immediately? (Might need to put a limit on how often this happens.)
 
     if (h->depth == 0) // volatile root
         return STATUS_SUCCESS;
 
-    down_write(&h->sem);
+    down_read(&h->sem);
 
     if (!h->dirty) {
-        up_write(&h->sem);
+        up_read(&h->sem);
         return STATUS_SUCCESS;
     }
-
-    printk(KERN_INFO "flushing hive %p (depth = %u)\n", h, h->depth); // FIXME
 
     // FIXME - do reflink copy from old file to new, and only write changed sectors?
 
@@ -2986,15 +3024,19 @@ static NTSTATUS flush_hive(hive* h) {
 
     base_block->CheckSum = csum;
 
-    // FIXME - get path of hive
-    // FIXME - create new path
-    // FIXME - create new file (with same uid, gid, and permissions) (also preserve xattrs)
+    get_temp_hive_path(h, &temp_fn);
+    if (!temp_fn) {
+        printk(KERN_ALERT "flush_hive: unable to get temporary filename for hive\n");
+        up_read(&h->sem);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     // FIXME - O_TMPFILE?
-    f = filp_open("/root/hive", O_CREAT | O_WRONLY, 0); // FIXME
+    f = filp_open(temp_fn, O_CREAT | O_WRONLY, h->file_mode);
     if (IS_ERR(f)) {
-//         printk(KERN_ALERT "flush_hive: could not open %s\n", fs_path);
-        up_write(&h->sem);
+        printk(KERN_ALERT "flush_hive: could not open %s for writing\n", temp_fn);
+        up_read(&h->sem);
+        kfree(temp_fn);
         return muwine_error_to_ntstatus((int)(uintptr_t)f);
     }
 
@@ -3010,18 +3052,38 @@ static NTSTATUS flush_hive(hive* h) {
         if (written < 0) {
             printk(KERN_INFO "flush_hive: write returned %ld\n", written);
             filp_close(f, NULL);
-            up_write(&h->sem);
+            up_read(&h->sem);
+            kfree(temp_fn);
             return muwine_error_to_ntstatus(written);
         }
     }
 
-    // FIXME - copy new file over old
+    // copy new file over old
+
+    init_qstr_from_path(&q, h->fs_path);
+
+    new_dentry = d_alloc(file_dentry(f)->d_parent, &q);
+
+    lock_rename(file_dentry(f)->d_parent, file_dentry(f)->d_parent);
+
+    ret = vfs_rename(file_dentry(f)->d_parent->d_inode, file_dentry(f), file_dentry(f)->d_parent->d_inode,
+                     new_dentry, NULL, 0);
+    if (ret < 0)
+        printk(KERN_WARNING "flush_hive: vfs_rename returned %d\n", ret);
+
+    unlock_rename(file_dentry(f)->d_parent, file_dentry(f)->d_parent);
+
+    d_invalidate(new_dentry);
+
+    // FIXME - preserve uid, gid, and extended attributes
 
     filp_close(f, NULL);
 
     h->dirty = false;
 
-    up_write(&h->sem);
+    up_read(&h->sem);
+
+    kfree(temp_fn);
 
     return STATUS_SUCCESS;
 }
