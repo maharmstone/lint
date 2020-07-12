@@ -154,7 +154,7 @@ typedef struct {
     size_t size;
     unsigned int refcount;
     struct list_head holes;
-    rwlock_t lock;
+    struct rw_semaphore sem;
     bool dirty;
     void* volatile_bins;
     size_t volatile_size;
