@@ -1,6 +1,7 @@
 #include <linux/vmalloc.h>
 #include <linux/kthread.h>
 #include <linux/timer.h>
+#include <linux/reboot.h>
 #include "muwine.h"
 #include "reg.h"
 
@@ -9,6 +10,7 @@
 static void key_object_close(object_header* obj);
 static void reg_flush_timer_handler(struct timer_list* timer);
 static NTSTATUS flush_hive(hive* h);
+static int reboot_callback(struct notifier_block* self, unsigned long val, void* data);
 
 LIST_HEAD(hive_list);
 DECLARE_RWSEM(hive_list_sem);
@@ -16,6 +18,10 @@ DEFINE_TIMER(reg_flush_timer, reg_flush_timer_handler);
 
 static struct task_struct* reg_flush_thread = NULL;
 static bool reg_thread_running = true;
+
+static struct notifier_block reboot_notifier = {
+    .notifier_call = reboot_callback,
+};
 
 static bool hive_is_valid(hive* h) {
     HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
@@ -246,6 +252,8 @@ void muwine_free_reg(void) {
     }
 
     up_write(&hive_list_sem);
+
+    unregister_reboot_notifier(&reboot_notifier);
 }
 
 static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
@@ -2924,7 +2932,11 @@ NTSTATUS muwine_init_registry(void) {
 
     up_write(&hive_list_sem);
 
-    init_flush_thread();
+    Status = init_flush_thread();
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    register_reboot_notifier(&reboot_notifier);
 
     return STATUS_SUCCESS;
 }
@@ -3022,4 +3034,25 @@ NTSTATUS NtFlushKey(HANDLE KeyHandle) {
         return STATUS_INVALID_HANDLE;
 
     return flush_hive(key->h);
+}
+
+static int reboot_callback(struct notifier_block* self, unsigned long val, void* data) {
+    struct list_head* le;
+
+    printk(KERN_INFO "reboot_callback(%p, %lx, %p)\n", self, val, data);
+
+    down_read(&hive_list_sem);
+
+    le = hive_list.next;
+    while (le != &hive_list) {
+        hive* h = list_entry(le, hive, list);
+
+        flush_hive(h);
+
+        le = le->next;
+    }
+
+    up_read(&hive_list_sem);
+
+    return NOTIFY_DONE;
 }
