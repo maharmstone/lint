@@ -146,7 +146,7 @@ typedef struct {
     uint32_t size;
 } hive_hole;
 
-typedef struct {
+typedef struct _hive {
     struct list_head list;
     UNICODE_STRING path;
     unsigned int depth;
@@ -163,6 +163,9 @@ typedef struct {
     uint32_t volatile_root_cell;
     char* fs_path;
     int file_mode;
+    struct _hive* parent_hive;
+    uint32_t parent_key_offset;
+    bool parent_key_volatile;
 } hive;
 
 typedef struct {

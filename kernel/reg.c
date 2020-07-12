@@ -2742,7 +2742,11 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
             kn->Flags |= KEY_HIVE_EXIT;
 
-            // FIXME - increase refcount of hive in which DestinationKeyName lives
+            h->parent_hive = parent_hive;
+            h->parent_key_offset = offset;
+            h->parent_key_volatile = is_volatile;
+
+            parent_hive->refcount++;
 
             // store hives in reverse order by depth
 
@@ -2775,6 +2779,8 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
         le = le->next;
     }
+
+    up_write(&hive_list_sem);
 
     return STATUS_INTERNAL_ERROR;
 }
@@ -2820,11 +2826,84 @@ NTSTATUS user_NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTE
 }
 
 static NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
-    printk(KERN_INFO "NtUnloadKey(%p): stub\n", DestinationKeyName);
+    UNICODE_STRING us;
+    struct list_head* le;
 
-    // FIXME
+    static const WCHAR prefix[] = L"\\Registry\\";
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME - make sure user has SE_RESTORE_PRIVILEGE
+
+    if (!DestinationKeyName || !DestinationKeyName->ObjectName)
+        return STATUS_INVALID_PARAMETER;
+
+    // FIXME - support RootDirectory?
+
+    // make sure DestinationKeyName begins with prefix
+
+    if (DestinationKeyName->ObjectName->Length <= sizeof(prefix) - sizeof(WCHAR))
+        return STATUS_INVALID_PARAMETER;
+
+    if (wcsnicmp(DestinationKeyName->ObjectName->Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1))
+        return STATUS_INVALID_PARAMETER;
+
+    us.Buffer = DestinationKeyName->ObjectName->Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1;
+    us.Length = DestinationKeyName->ObjectName->Length - sizeof(prefix) + sizeof(WCHAR);
+
+    down_write(&hive_list_sem);
+
+    le = hive_list.next;
+
+    while (le != &hive_list) {
+        hive* h = list_entry(le, hive, list);
+
+        if (us.Length != h->path.Length) {
+            le = le->next;
+            continue;
+        }
+
+        if (!wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
+            CM_KEY_NODE* kn;
+
+            if (h->refcount != 0) {
+                up_write(&hive_list_sem);
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            if (!h->parent_hive) {
+                up_write(&hive_list_sem);
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            if (h->parent_key_volatile)
+                kn = (CM_KEY_NODE*)(h->parent_hive->volatile_bins + h->parent_key_offset + sizeof(int32_t));
+            else
+                kn = (CM_KEY_NODE*)(h->parent_hive->bins + h->parent_key_offset + sizeof(int32_t));
+
+            if (!(kn->Flags & KEY_HIVE_EXIT)) {
+                up_write(&hive_list_sem);
+                return STATUS_INVALID_PARAMETER;
+            }
+
+            kn->Flags &= ~KEY_HIVE_EXIT;
+
+            flush_hive(h);
+            h->parent_hive->refcount--;
+
+            printk(KERN_INFO "NtUnloadKey: unloaded hive at %s\n", h->fs_path);
+
+            free_hive(h);
+
+            up_write(&hive_list_sem);
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->next;
+    }
+
+    up_write(&hive_list_sem);
+
+    return STATUS_INTERNAL_ERROR;
 }
 
 NTSTATUS user_NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
@@ -2922,6 +3001,7 @@ NTSTATUS muwine_init_registry(void) {
     h->volatile_size = 0;
     INIT_LIST_HEAD(&h->volatile_holes);
     h->fs_path = NULL;
+    h->parent_hive = NULL;
 
     Status = allocate_cell(h, sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]), &offset, true);
     if (!NT_SUCCESS(Status)) {
