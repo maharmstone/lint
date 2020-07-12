@@ -240,7 +240,7 @@ void muwine_free_reg(void) {
     while (!list_empty(&hive_list)) {
         hive* h = list_entry(hive_list.next, hive, list);
 
-        // FIXME - flush if dirty
+        flush_hive(h);
 
         free_hive(h);
     }
