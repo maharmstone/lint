@@ -1,11 +1,21 @@
 #include <linux/vmalloc.h>
+#include <linux/kthread.h>
+#include <linux/timer.h>
 #include "muwine.h"
 #include "reg.h"
 
+#define REG_FLUSH_INTERVAL 30 // seconds
+
 static void key_object_close(object_header* obj);
+static void reg_flush_timer_handler(struct timer_list* timer);
+static NTSTATUS flush_hive(hive* h);
 
 LIST_HEAD(hive_list);
 DECLARE_RWSEM(hive_list_sem);
+DEFINE_TIMER(reg_flush_timer, reg_flush_timer_handler);
+
+static struct task_struct* reg_flush_thread = NULL;
+static bool reg_thread_running = true;
 
 static bool hive_is_valid(hive* h) {
     HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
@@ -220,6 +230,11 @@ static void free_hive(hive* h) {
 }
 
 void muwine_free_reg(void) {
+    if (reg_flush_thread) {
+        reg_thread_running = false;
+        wake_up_process(reg_flush_thread);
+    }
+
     down_write(&hive_list_sem);
 
     while (!list_empty(&hive_list)) {
@@ -2799,7 +2814,56 @@ NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS muwine_init_reg_root(void) {
+static int reg_flush_thread_func(void* data) {
+    while (reg_thread_running) {
+        struct list_head* le;
+        set_current_state(TASK_INTERRUPTIBLE);
+
+        schedule(); // yield
+
+        down_read(&hive_list_sem);
+
+        le = hive_list.next;
+        while (le != &hive_list) {
+            hive* h = list_entry(le, hive, list);
+
+            flush_hive(h);
+
+            le = le->next;
+        }
+
+        up_read(&hive_list_sem);
+
+        if (reg_thread_running)
+            mod_timer(&reg_flush_timer, jiffies + msecs_to_jiffies(1000 * REG_FLUSH_INTERVAL));
+    }
+
+    del_timer(&reg_flush_timer);
+
+    set_current_state(TASK_RUNNING);
+
+    do_exit(0);
+}
+
+static void reg_flush_timer_handler(struct timer_list* timer) {
+    if (reg_flush_thread)
+        wake_up_process(reg_flush_thread);
+}
+
+static NTSTATUS init_flush_thread(void) {
+    reg_flush_thread = kthread_run(reg_flush_thread_func, NULL, "muwine_reg_flush");
+
+    if (!reg_flush_thread) {
+        printk(KERN_ALERT "muwine failed to create registry flush thread\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    mod_timer(&reg_flush_timer, jiffies + msecs_to_jiffies(1000 * REG_FLUSH_INTERVAL));
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS muwine_init_registry(void) {
     NTSTATUS Status;
     hive* h;
     uint32_t offset;
@@ -2860,6 +2924,8 @@ NTSTATUS muwine_init_reg_root(void) {
 
     up_write(&hive_list_sem);
 
+    init_flush_thread();
+
     return STATUS_SUCCESS;
 }
 
@@ -2877,12 +2943,12 @@ static NTSTATUS flush_hive(hive* h) {
 
     down_write(&h->sem);
 
-    printk(KERN_INFO "flushing hive %p (depth = %u)\n", h, h->depth); // FIXME
-
     if (!h->dirty) {
         up_write(&h->sem);
         return STATUS_SUCCESS;
     }
+
+    printk(KERN_INFO "flushing hive %p (depth = %u)\n", h, h->depth); // FIXME
 
     // FIXME - do reflink copy from old file to new, and only write changed sectors?
 

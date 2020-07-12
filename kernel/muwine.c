@@ -595,9 +595,9 @@ static int __init muwine_init(void) {
         return major_num;
     }
 
-    Status = muwine_init_reg_root();
+    Status = muwine_init_registry();
     if (!NT_SUCCESS(Status)) {
-        printk(KERN_ALERT "muwine_init_reg_root returned %08x\n", Status);
+        printk(KERN_ALERT "muwine_init_registry returned %08x\n", Status);
         return -ENOMEM;
     }
 
