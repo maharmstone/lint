@@ -1356,6 +1356,11 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset, bool all
         found_hh->offset += size;
         found_hh->size -= size;
 
+        if (alloc_volatile)
+            *(int32_t*)(h->volatile_bins + found_hh->offset) = found_hh->size;
+        else
+            *(int32_t*)(h->bins + found_hh->offset) = found_hh->size;
+
         return STATUS_SUCCESS;
     }
 
@@ -1397,6 +1402,8 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset, bool all
             hh2->offset = *offset + size;
             hh2->size = BIN_SIZE - sizeof(HBIN) - size;
 
+            *(int32_t*)(h->bins + hh2->offset) = hh2->size;
+
             list_add_tail(&hh2->list, &h->holes);
         }
 
@@ -1419,6 +1426,8 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset, bool all
 
             hh2->offset = *offset + size;
             hh2->size = BIN_SIZE - size;
+
+            *(int32_t*)(h->volatile_bins + hh2->offset) = hh2->size;
 
             list_add_tail(&hh2->list, &h->volatile_holes);
         }
