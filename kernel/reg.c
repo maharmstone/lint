@@ -27,8 +27,13 @@ static bool hive_is_valid(hive* h) {
         return false;
     }
 
-    if (base_block->Minor < HSYS_MINOR) {
-        printk(KERN_ALERT "muwine: hive had invalid minor value %x.\n", base_block->Minor);
+    if (base_block->Minor < HSYS_MAX_MINOR) {
+        printk(KERN_ALERT "muwine: hive had unsupported minor value %x.\n", base_block->Minor);
+        return false;
+    }
+
+    if (base_block->Minor > HSYS_MAX_MINOR) {
+        printk(KERN_ALERT "muwine: hive had unsupported minor value %x.\n", base_block->Minor);
         return false;
     }
 
@@ -2885,6 +2890,7 @@ static NTSTATUS flush_hive(hive* h) {
     base_block->Sequence1++;
     base_block->Sequence2++;
     // FIXME - update timestamp in header
+    base_block->Minor = HSYS_MAX_MINOR;
     base_block->Length = h->size - BIN_SIZE;
 
     // recalculate checksum in header
