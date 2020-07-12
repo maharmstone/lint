@@ -180,6 +180,7 @@ static NTSTATUS init_hive(hive* h) {
     h->dirty = false;
     h->volatile_bins = NULL;
     h->volatile_size = 0;
+    h->size = ((HBASE_BLOCK*)h->data)->Length + BIN_SIZE;
 
     off = h->bins;
     while (off < h->bins + ((HBASE_BLOCK*)h->data)->Length) {
@@ -2848,10 +2849,96 @@ NTSTATUS muwine_init_reg_root(void) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS flush_hive(hive* h) {
+    struct file* f;
+    loff_t pos;
+    HBASE_BLOCK* base_block;
+    unsigned int i;
+    uint32_t csum;
+
+    // FIXME - if called from periodic thread, give up if can't acquire lock immediately? (Might need to put a limit on how often this happens.)
+
+    if (h->depth == 0) // volatile root
+        return STATUS_SUCCESS;
+
+    down_write(&h->sem);
+
+    printk(KERN_INFO "flushing hive %p (depth = %u)\n", h, h->depth); // FIXME
+
+    if (!h->dirty) {
+        up_write(&h->sem);
+        return STATUS_SUCCESS;
+    }
+
+    // FIXME - do reflink copy from old file to new, and only write changed sectors?
+
+    base_block = (HBASE_BLOCK*)h->data;
+    base_block->Sequence1++;
+    base_block->Sequence2++;
+    // FIXME - update timestamp in header
+    base_block->Length = h->size - BIN_SIZE;
+
+    // recalculate checksum in header
+
+    csum = 0;
+
+    for (i = 0; i < 127; i++) {
+        csum ^= ((uint32_t*)h->data)[i];
+    }
+
+    if (csum == 0xffffffff)
+        csum = 0xfffffffe;
+    else if (csum == 0)
+        csum = 1;
+
+    base_block->CheckSum = csum;
+
+    // FIXME - get path of hive
+    // FIXME - create new path
+    // FIXME - create new file (with same uid, gid, and permissions) (also preserve xattrs)
+
+    // FIXME - O_TMPFILE?
+    f = filp_open("/root/hive", O_CREAT | O_WRONLY, 0); // FIXME
+    if (IS_ERR(f)) {
+//         printk(KERN_ALERT "flush_hive: could not open %s\n", fs_path);
+        up_write(&h->sem);
+        return muwine_error_to_ntstatus((int)(uintptr_t)f);
+    }
+
+    // FIXME - preallocate file (vfs_fallocate?)
+
+    // dump contents of h->data
+
+    pos = 0;
+
+    while (pos < h->size) {
+        ssize_t written = kernel_write(f, (uint8_t*)h->data + pos, h->size - pos, &pos);
+
+        if (written < 0) {
+            printk(KERN_INFO "flush_hive: write returned %ld\n", written);
+            filp_close(f, NULL);
+            up_write(&h->sem);
+            return muwine_error_to_ntstatus(written);
+        }
+    }
+
+    // FIXME - copy new file over old
+
+    filp_close(f, NULL);
+
+    h->dirty = false;
+
+    up_write(&h->sem);
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS NtFlushKey(HANDLE KeyHandle) {
-    printk(KERN_INFO "NtFlushKey(%lx): stub\n", (uintptr_t)KeyHandle);
+    key_object* key;
 
-    // FIXME
+    key = (key_object*)get_object_from_handle(KeyHandle);
+    if (!key || key->header.type != muwine_object_key)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    return flush_hive(key->h);
 }
