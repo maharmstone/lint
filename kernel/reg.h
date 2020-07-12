@@ -55,6 +55,8 @@ typedef struct {
 } HBIN;
 
 #define KEY_HIVE_EXIT           0x0002
+#define KEY_HIVE_ENTRY          0x0004
+#define KEY_NO_DELETE           0x0008
 
 typedef struct {
     uint16_t Signature;
@@ -173,4 +175,5 @@ typedef struct {
     hive* h;
     size_t offset;
     bool is_volatile;
+    bool parent_is_volatile;
 } key_object;

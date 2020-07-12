@@ -116,6 +116,7 @@ static void clear_volatile(hive* h, uint32_t key) {
     if (nk->Signature != CM_KEY_NODE_SIGNATURE)
         return;
 
+    nk->Flags &= ~KEY_HIVE_EXIT;
     nk->VolatileSubKeyList = 0xbaadf00d;
     nk->VolatileSubKeyCount = 0;
 
@@ -189,11 +190,16 @@ static NTSTATUS find_bin_holes(hive* h, void** off) {
 static NTSTATUS init_hive(hive* h) {
     NTSTATUS Status;
     void* off;
+    CM_KEY_NODE* root_cell;
 
     h->refcount = 0;
 
     h->bins = (uint8_t*)h->data + BIN_SIZE;
     clear_volatile(h, ((HBASE_BLOCK*)h->data)->RootCell);
+
+    // FIXME - check size, is in bounds, and signature
+    root_cell = (CM_KEY_NODE*)((uint8_t*)h->bins + ((HBASE_BLOCK*)h->data)->RootCell + sizeof(int32_t));
+    root_cell->Flags |= KEY_HIVE_ENTRY;
 
     INIT_LIST_HEAD(&h->holes);
     INIT_LIST_HEAD(&h->volatile_holes);
@@ -464,10 +470,11 @@ static NTSTATUS find_subkey(hive* h, uint32_t offset, UNICODE_STRING* us, uint32
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
 
-static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offset, bool parent, bool* is_volatile) {
+static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offset, bool parent,
+                                 bool* is_volatile, bool* parent_is_volatile) {
     NTSTATUS Status;
     uint32_t offset;
-    bool vol;
+    bool vol, parent_vol;
 
     // loop through parts and locate
 
@@ -505,6 +512,8 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offs
 
         // FIXME - should this be checking for KEY_ENUMERATE_SUB_KEYS against all keys in path?
 
+        parent_vol = vol;
+
         Status = find_subkey(h, offset, us, &offset, &vol);
         if (!NT_SUCCESS(Status))
             return Status;
@@ -517,6 +526,9 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offs
 
     *ret_offset = offset;
     *is_volatile = vol;
+
+    if (parent_is_volatile)
+        *parent_is_volatile = parent_vol;
 
     return STATUS_SUCCESS;
 }
@@ -572,7 +584,7 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 
         if (!wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
             key_object* k;
-            bool is_volatile;
+            bool is_volatile, parent_is_volatile;
 
             us.Buffer += h->path.Length / sizeof(WCHAR);
             us.Length -= h->path.Length;
@@ -584,7 +596,7 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 
             down_read(&h->sem);
 
-            Status = open_key_in_hive(h, &us, &offset, false, &is_volatile);
+            Status = open_key_in_hive(h, &us, &offset, false, &is_volatile, &parent_is_volatile);
             if (!NT_SUCCESS(Status)) {
                 up_read(&h->sem);
                 up_read(&hive_list_sem);
@@ -611,6 +623,7 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
             __sync_add_and_fetch(&h->refcount, 1);
             k->offset = offset;
             k->is_volatile = is_volatile;
+            k->parent_is_volatile = parent_is_volatile;
 
             up_read(&hive_list_sem);
 
@@ -2159,7 +2172,7 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
     // get offset for kn of parent
 
-    Status = open_key_in_hive(h, us, &offset, true, &parent_is_volatile);
+    Status = open_key_in_hive(h, us, &offset, true, &parent_is_volatile, NULL);
     if (!NT_SUCCESS(Status))
         return Status;
 
@@ -2183,8 +2196,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
         k->header.close = key_object_close;
         k->h = h;
         __sync_add_and_fetch(&h->refcount, 1);
-        k->offset = offset;
+        k->offset = subkey_offset;
         k->is_volatile = is_volatile;
+        k->parent_is_volatile = parent_is_volatile;
 
         Status = muwine_add_handle(&k->header, KeyHandle);
 
@@ -2262,6 +2276,7 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     k->h = h;
     __sync_add_and_fetch(&h->refcount, 1);
     k->is_volatile = is_volatile;
+    k->parent_is_volatile = parent_is_volatile;
 
     Status = muwine_add_handle(&k->header, KeyHandle);
 
@@ -2503,12 +2518,206 @@ NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     return Status;
 }
 
+static NTSTATUS lh_remove(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t key, bool is_volatile, uint32_t* addr) {
+    NTSTATUS Status;
+    uint32_t offset;
+    CM_KEY_FAST_INDEX* lh;
+    unsigned int i;
+
+    Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * (old_lh->Count - 1)),
+                           &offset, is_volatile);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    if (is_volatile)
+        lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+    else
+        lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
+    lh->Signature = CM_KEY_HASH_LEAF;
+    lh->Count = old_lh->Count - 1;
+
+    for (i = 0; i < old_lh->Count; i++) {
+        if (old_lh->List[i].Cell == key) {
+            memcpy(lh->List, old_lh->List, i * sizeof(CM_INDEX));
+            memcpy(&lh->List[i], &old_lh->List[i + 1], old_lh->Count - i - 1);
+
+            *addr = offset;
+            return STATUS_SUCCESS;
+        }
+    }
+
+    // key not found in list
+
+    free_cell(h, offset, is_volatile);
+
+    return STATUS_REGISTRY_CORRUPT;
+}
+
 NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
+    NTSTATUS Status;
+    key_object* key;
+    int32_t size;
+    CM_KEY_NODE* kn;
+    CM_KEY_NODE* kn2;
+    uint16_t sig;
+    uint32_t* subkey_count;
+    uint32_t* subkey_list;
+
     printk(KERN_INFO "NtDeleteKey(%lx): stub\n", (uintptr_t)KeyHandle);
 
-    // FIXME
+    key = (key_object*)get_object_from_handle(KeyHandle);
+    if (!key || key->header.type != muwine_object_key)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME - check access mask has DELETE permission
+
+    down_write(&key->h->sem);
+
+    if (key->is_volatile)
+        size = -*(int32_t*)((uint8_t*)key->h->volatile_bins + key->offset);
+    else
+        size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (key->is_volatile)
+        kn = (CM_KEY_NODE*)((uint8_t*)key->h->volatile_bins + key->offset + sizeof(int32_t));
+    else
+        kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn->NameLength) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (kn->Flags & (KEY_HIVE_EXIT | KEY_HIVE_ENTRY | KEY_NO_DELETE)) {
+        printk("kn->Flags = %x\n", kn->Flags);
+        Status = STATUS_CANNOT_DELETE;
+        goto end;
+    }
+
+    if (kn->SubKeyCount != 0 || kn->VolatileSubKeyCount != 0) {
+        printk("kn->SubKeyCount = %x, kn->VolatileSubKeyCount = %x\n", kn->SubKeyCount, kn->VolatileSubKeyCount);
+        Status = STATUS_CANNOT_DELETE;
+        goto end;
+    }
+
+    // get parent kn
+
+    if (key->parent_is_volatile)
+        size = -*(int32_t*)((uint8_t*)key->h->volatile_bins + kn->Parent);
+    else
+        size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Parent);
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (key->parent_is_volatile)
+        kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->volatile_bins + kn->Parent + sizeof(int32_t));
+    else
+        kn2 = (CM_KEY_NODE*)((uint8_t*)key->h->bins + kn->Parent + sizeof(int32_t));
+
+    if (kn2->Signature != CM_KEY_NODE_SIGNATURE) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn2->NameLength) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    // FIXME - get parent's subkey list (volatile or non-volatile)
+
+    if (key->is_volatile) {
+        size = -*(int32_t*)((uint8_t*)key->h->volatile_bins + kn2->VolatileSubKeyList);
+        subkey_count = &kn2->VolatileSubKeyCount;
+        subkey_list = &kn2->VolatileSubKeyList;
+    } else {
+        size = -*(int32_t*)((uint8_t*)key->h->bins + kn2->SubKeyList);
+        subkey_count = &kn2->SubKeyCount;
+        subkey_list = &kn2->SubKeyList;
+    }
+
+    if (size < sizeof(int32_t) + sizeof(uint16_t)) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    if (key->is_volatile)
+        sig = *(uint16_t*)((uint8_t*)key->h->volatile_bins + kn2->VolatileSubKeyList + sizeof(int32_t));
+    else
+        sig = *(uint16_t*)((uint8_t*)key->h->bins + kn2->SubKeyList + sizeof(int32_t));
+
+    if (sig == CM_KEY_HASH_LEAF) {
+        CM_KEY_FAST_INDEX* old_lh;
+
+        if (key->is_volatile)
+            old_lh = (CM_KEY_FAST_INDEX*)(key->h->volatile_bins + kn2->VolatileSubKeyList + sizeof(int32_t));
+        else
+            old_lh = (CM_KEY_FAST_INDEX*)(key->h->bins + kn2->SubKeyList + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) ||
+            size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+
+        if (*subkey_count == 1) {
+            free_cell(key->h, *subkey_list, key->is_volatile);
+
+            *subkey_count = 0;
+            *subkey_list = 0xffffffff;
+        } else {
+            uint32_t new_list;
+
+            Status = lh_remove(key->h, old_lh, key->offset, key->is_volatile, &new_list);
+            if (!NT_SUCCESS(Status))
+                goto end;
+
+            free_cell(key->h, *subkey_list, key->is_volatile);
+
+            (*subkey_count)--;
+            *subkey_list = new_list;
+        }
+    } else {
+        // FIXME - handle ri
+        printk(KERN_ALERT "NtDeleteKey: unhandled list type %x\n", sig);
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    if (kn->ValuesCount != 0) {
+        // FIXME - get values list
+        // FIXME - loop through values list and get vk
+        // FIXME - if not resident and not zero-length, free vk data cell
+        // FIXME - free vk cell
+    }
+
+    free_cell(key->h, key->offset, key->is_volatile);
+
+    // FIXME - update MaxNameLen in parent
+
+    Status = STATUS_SUCCESS;
+
+end:
+    if (NT_SUCCESS(Status))
+        key->h->dirty = true;
+
+    up_write(&key->h->sem);
+
+    return Status;
 }
 
 static NTSTATUS translate_path(UNICODE_STRING* us, char** path) {
@@ -2710,7 +2919,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
             down_read(&parent_hive->sem);
 
-            Status = open_key_in_hive(parent_hive, &us, &offset, false, &is_volatile);
+            Status = open_key_in_hive(parent_hive, &us, &offset, false, &is_volatile, NULL);
             if (!NT_SUCCESS(Status)) {
                 up_read(&parent_hive->sem);
                 up_write(&hive_list_sem);
@@ -3012,7 +3221,7 @@ NTSTATUS muwine_init_registry(void) {
     kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
 
     kn->Signature = CM_KEY_NODE_SIGNATURE;
-    kn->Flags = 0;
+    kn->Flags = KEY_HIVE_ENTRY;
     kn->LastWriteTime = 0;;
     kn->Spare = 0;
     kn->Parent = 0;

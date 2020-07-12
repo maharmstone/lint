@@ -28,6 +28,7 @@ struct muwine_func {
 #define STATUS_OBJECT_PATH_NOT_FOUND        0xc000003a
 #define STATUS_INSUFFICIENT_RESOURCES       0xc000009a
 #define STATUS_INTERNAL_ERROR               0xc00000e5
+#define STATUS_CANNOT_DELETE                0xc0000121
 #define STATUS_REGISTRY_CORRUPT             0xc000014c
 
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
