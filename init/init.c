@@ -62,7 +62,7 @@ static NTSTATUS create_reg_keys() {
 
     Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE, &dispos);
     if (!NT_SUCCESS(Status)) {
-        printf("NtCreateKey returned %08x\n", (int32_t)Status);
+        fprintf(stderr, "NtCreateKey returned %08x\n", (int32_t)Status);
         return Status;
     }
 
@@ -73,7 +73,48 @@ static NTSTATUS create_reg_keys() {
 
     Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE, &dispos);
     if (!NT_SUCCESS(Status)) {
-        printf("NtCreateKey returned %08x\n", (int32_t)Status);
+        fprintf(stderr, "NtCreateKey returned %08x\n", (int32_t)Status);
+        return Status;
+    }
+
+    NtClose(h);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS create_current_control_set_symlink() {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    UNICODE_STRING symlink, value_name;
+    ULONG dispos;
+
+    static const WCHAR ccs[] = L"\\Registry\\Machine\\System\\CurrentControlSet";
+    static const WCHAR slv[] = L"SymbolicLinkValue";
+    static const WCHAR target[] = L"\\Registry\\Machine\\System\\ControlSet001";
+
+    symlink.Length = symlink.MaximumLength = sizeof(ccs) - sizeof(WCHAR);
+    symlink.Buffer = (WCHAR*)ccs;
+
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &symlink;
+    oa.Attributes = 0;
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE | REG_OPTION_CREATE_LINK, &dispos);
+    if (!NT_SUCCESS(Status)) {
+        fprintf(stderr, "NtCreateKey returned %08x\n", (int32_t)Status);
+        return Status;
+    }
+
+    value_name.Length = value_name.MaximumLength = sizeof(slv) - sizeof(WCHAR);
+    value_name.Buffer = (WCHAR*)slv;
+
+    Status = NtSetValueKey(h, &value_name, 0, REG_LINK, (void*)target, sizeof(target) - sizeof(WCHAR));
+    if (!NT_SUCCESS(Status)) {
+        fprintf(stderr, "NtSetValueKey returned %08x\n", (int32_t)Status);
         return Status;
     }
 
@@ -90,6 +131,10 @@ int main() {
         return 1;
 
     Status = mount_system_hive();
+    if (!NT_SUCCESS(Status))
+        return 1;
+
+    Status = create_current_control_set_symlink();
     if (!NT_SUCCESS(Status))
         return 1;
 
