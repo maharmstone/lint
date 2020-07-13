@@ -3015,7 +3015,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
             up_write(&hive_list_sem);
 
-            printk(KERN_INFO "NtLoadKey: loaded hive at %s.\n", fs_path);
+            printk(KERN_INFO "NtLoadKey: loaded hive at %s\n", fs_path);
 
             return STATUS_SUCCESS;
         }
