@@ -20,7 +20,9 @@
 
 #define HIVE_FILENAME_MAXLEN 31
 
+#define KEY_SYM_LINK        0x0010
 #define KEY_COMP_NAME       0x0020
+
 #define VALUE_COMP_NAME     0x0001
 
 #pragma pack(push,1)

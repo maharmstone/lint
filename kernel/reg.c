@@ -2255,6 +2255,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     kn2->ClassLength = 0; // FIXME
     memcpy(kn2->Name, us->Buffer, us->Length);
 
+    if (CreateOptions & REG_OPTION_CREATE_LINK)
+        kn2->Flags |= KEY_SYM_LINK;
+
     // open kn of parent (checking already done in open_key_in_hive)
 
     if (parent_is_volatile)
