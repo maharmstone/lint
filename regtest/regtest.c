@@ -236,8 +236,25 @@ int main() {
 
     oa.ObjectName = &us;
 
-    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE, &dispos);
+    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
     printf("NtCreateKey returned %08x (dispos = %x)\n", (int32_t)Status, (int32_t)dispos);
+
+    Status = NtFlushKey(h);
+    if (!NT_SUCCESS(Status))
+        printf("NtFlushKey returned %08x\n", (int32_t)Status);
+
+    us.Length = us.MaximumLength = sizeof(key_name2) - sizeof(char16_t);
+    us.Buffer = (WCHAR*)key_name2;
+
+    val = 229;
+
+    Status = NtSetValueKey(h, &us, 0, REG_DWORD, &val, sizeof(val));
+    if (!NT_SUCCESS(Status))
+        printf("NtSetValueKey returned %08x\n", (int32_t)Status);
+
+    Status = NtDeleteKey(h);
+    if (!NT_SUCCESS(Status))
+        printf("NtDeleteKey returned %08x\n", (int32_t)Status);
 
     Status = NtClose(h);
     if (!NT_SUCCESS(Status))
