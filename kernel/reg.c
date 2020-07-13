@@ -2564,8 +2564,6 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     uint32_t* subkey_count;
     uint32_t* subkey_list;
 
-    printk(KERN_INFO "NtDeleteKey(%lx): stub\n", (uintptr_t)KeyHandle);
-
     key = (key_object*)get_object_from_handle(KeyHandle);
     if (!key || key->header.type != muwine_object_key)
         return STATUS_INVALID_HANDLE;
@@ -2699,15 +2697,51 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     }
 
     if (kn->ValuesCount != 0) {
-        // FIXME - get values list
-        // FIXME - loop through values list and get vk
-        // FIXME - if not resident and not zero-length, free vk data cell
-        // FIXME - free vk cell
+        // FIXME - check not out of bounds
+
+        if (key->is_volatile)
+            size = -*(int32_t*)((uint8_t*)key->h->volatile_bins + kn->Values);
+        else
+            size = -*(int32_t*)((uint8_t*)key->h->bins + kn->Values);
+
+        if (size >= sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
+            unsigned int i;
+            uint32_t* values_list;
+
+            if (key->is_volatile)
+                values_list = (uint32_t*)((uint8_t*)key->h->volatile_bins + kn->Values + sizeof(int32_t));
+            else
+                values_list = (uint32_t*)((uint8_t*)key->h->bins + kn->Values + sizeof(int32_t));
+
+            for (i = 0; i < kn->ValuesCount; i++) {
+                CM_KEY_VALUE* vk;
+
+                // FIXME - check not out of bounds
+
+                if (key->is_volatile) {
+                    size = -*(int32_t*)((uint8_t*)key->h->volatile_bins + values_list[i]);
+                    vk = (CM_KEY_VALUE*)((uint8_t*)key->h->volatile_bins + values_list[i] + sizeof(int32_t));
+                } else {
+                    size = -*(int32_t*)((uint8_t*)key->h->bins + values_list[i]);
+                    vk = (CM_KEY_VALUE*)((uint8_t*)key->h->bins + values_list[i] + sizeof(int32_t));
+                }
+
+                if (vk->Signature == CM_KEY_VALUE_SIGNATURE && size >= sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) &&
+                    sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
+                    if (vk->DataLength != 0 && !(vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE)) // free non-resident data cell
+                        free_cell(key->h, vk->Data, key->is_volatile);
+
+                    free_cell(key->h, values_list[i], key->is_volatile);
+                }
+            }
+
+            free_cell(key->h, kn->Values, key->is_volatile);
+        }
     }
 
     free_cell(key->h, key->offset, key->is_volatile);
 
-    // FIXME - update MaxNameLen in parent
+    // FIXME - update MaxNameLen in parent if necessary
 
     Status = STATUS_SUCCESS;
 
