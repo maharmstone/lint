@@ -17,6 +17,8 @@ static const WCHAR symlinkval[] = L"SymbolicLinkValue";
 
 LIST_HEAD(hive_list);
 DECLARE_RWSEM(hive_list_sem);
+LIST_HEAD(symlink_list);
+DEFINE_RWLOCK(symlink_lock);
 DEFINE_TIMER(reg_flush_timer, reg_flush_timer_handler);
 
 static struct task_struct* reg_flush_thread = NULL;
@@ -205,7 +207,6 @@ static NTSTATUS init_hive(hive* h) {
 
     INIT_LIST_HEAD(&h->holes);
     INIT_LIST_HEAD(&h->volatile_holes);
-    INIT_LIST_HEAD(&h->symlinks);
     init_rwsem(&h->sem);
 
     h->dirty = false;
@@ -230,17 +231,6 @@ static void free_hive(hive* h) {
         list_del(&hh->list);
 
         kfree(hh);
-    }
-
-    while (!list_empty(&h->symlinks)) {
-        symlink* s = list_entry(h->symlinks.next, symlink, list);
-
-        kfree(s->source);
-        kfree(s->destination);
-
-        list_del(&s->list);
-
-        kfree(s);
     }
 
     if (h->data)
@@ -276,6 +266,21 @@ void muwine_free_reg(void) {
     }
 
     up_write(&hive_list_sem);
+
+    write_lock(&symlink_lock);
+
+    while (!list_empty(&symlink_list)) {
+        symlink* s = list_entry(symlink_list.next, symlink, list);
+
+        kfree(s->source);
+        kfree(s->destination);
+
+        list_del(&s->list);
+
+        kfree(s);
+    }
+
+    write_unlock(&symlink_lock);
 
     unregister_reboot_notifier(&reboot_notifier);
 }
@@ -1560,6 +1565,7 @@ static void free_cell(hive* h, uint32_t offset, bool is_volatile) {
 
 static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCHAR* value, ULONG value_length) {
     CM_KEY_NODE* kn;
+    hive* h2;
     unsigned int len = 0, depth = 0, level;
     WCHAR* name;
     WCHAR* ptr;
@@ -1567,14 +1573,25 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
     symlink* s;
 
     // construct path to key
+    h2 = h;
+
     if (is_volatile)
-        kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+        kn = (CM_KEY_NODE*)((uint8_t*)h2->volatile_bins + offset + sizeof(int32_t));
     else
-        kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+        kn = (CM_KEY_NODE*)((uint8_t*)h2->bins + offset + sizeof(int32_t));
 
     do {
-        if (kn->Flags & KEY_HIVE_ENTRY)
-            break;
+        if (kn->Flags & KEY_HIVE_ENTRY) {
+            if (h2->depth == 0)
+                break;
+
+            if (h2->parent_key_volatile)
+                kn = (CM_KEY_NODE*)((uint8_t*)h2->parent_hive->volatile_bins + h2->parent_key_offset + sizeof(int32_t));
+            else
+                kn = (CM_KEY_NODE*)((uint8_t*)h2->parent_hive->bins + h2->parent_key_offset + sizeof(int32_t));
+
+            h2 = h2->parent_hive;
+        }
 
         if (kn->Flags & KEY_COMP_NAME)
             len += kn->NameLength * sizeof(WCHAR);
@@ -1585,9 +1602,9 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
         depth++;
 
         if (kn->Parent & 0x80000000)
-            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + (kn->Parent & 0x7fffffff) + sizeof(int32_t));
+            kn = (CM_KEY_NODE*)((uint8_t*)h2->volatile_bins + (kn->Parent & 0x7fffffff) + sizeof(int32_t));
         else
-            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + kn->Parent + sizeof(int32_t));
+            kn = (CM_KEY_NODE*)((uint8_t*)h2->bins + kn->Parent + sizeof(int32_t));
     } while (true);
 
     if (len == 0)
@@ -1600,16 +1617,27 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
 
     ptr = &name[len / sizeof(WCHAR)];
 
+    h2 = h;
+
     if (is_volatile)
-        kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+        kn = (CM_KEY_NODE*)((uint8_t*)h2->volatile_bins + offset + sizeof(int32_t));
     else
-        kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+        kn = (CM_KEY_NODE*)((uint8_t*)h2->bins + offset + sizeof(int32_t));
 
     level = 0;
 
     do {
-        if (kn->Flags & KEY_HIVE_ENTRY)
-            break;
+        if (kn->Flags & KEY_HIVE_ENTRY) {
+            if (h2->depth == 0)
+                break;
+
+            if (h2->parent_key_volatile)
+                kn = (CM_KEY_NODE*)((uint8_t*)h2->parent_hive->volatile_bins + h2->parent_key_offset + sizeof(int32_t));
+            else
+                kn = (CM_KEY_NODE*)((uint8_t*)h2->parent_hive->bins + h2->parent_key_offset + sizeof(int32_t));
+
+            h2 = h2->parent_hive;
+        }
 
         if (kn->Flags & KEY_COMP_NAME) {
             unsigned int i;
@@ -1630,17 +1658,19 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
         }
 
         if (kn->Parent & 0x80000000)
-            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + (kn->Parent & 0x7fffffff) + sizeof(int32_t));
+            kn = (CM_KEY_NODE*)((uint8_t*)h2->volatile_bins + (kn->Parent & 0x7fffffff) + sizeof(int32_t));
         else
-            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + kn->Parent + sizeof(int32_t));
+            kn = (CM_KEY_NODE*)((uint8_t*)h2->bins + kn->Parent + sizeof(int32_t));
 
         level++;
     } while (true);
 
     // check if already exists
 
-    le = h->symlinks.next;
-    while (le != &h->symlinks) {
+    write_lock(&symlink_lock);
+
+    le = symlink_list.next;
+    while (le != &symlink_list) {
         symlink* s = list_entry(le, symlink, list);
 
         if (s->depth == depth && s->source_len == len && !wcsnicmp(s->source, name, len / sizeof(WCHAR))) {
@@ -1648,6 +1678,7 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
 
             if (value_length == 0) {
                 list_del(&s->list);
+                write_unlock(&symlink_lock);
                 return;
             }
 
@@ -1659,6 +1690,7 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
             memcpy(s->destination, value, value_length);
 
             s->destination_len = value_length;
+            write_unlock(&symlink_lock);
 
             return;
         } else if (s->depth < depth)
@@ -1668,6 +1700,7 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
     }
 
     if (value_length == 0) {
+        write_unlock(&symlink_lock);
         kfree(name);
         return;
     }
@@ -1686,19 +1719,22 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
 
     // insert into symlink list, reverse-ordered by depth
 
-    le = h->symlinks.next;
-    while (le != &h->symlinks) {
+    le = symlink_list.next;
+    while (le != &symlink_list) {
         symlink* s2 = list_entry(le, symlink, list);
 
         if (s2->depth < s->depth) {
             list_add(&s->list, le->prev);
+            write_unlock(&symlink_lock);
             return;
         }
 
         le = le->next;
     }
 
-    list_add_tail(&s->list, &h->symlinks);
+    list_add_tail(&s->list, &symlink_list);
+
+    write_unlock(&symlink_lock);
 }
 
 static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
@@ -3433,7 +3469,6 @@ NTSTATUS muwine_init_registry(void) {
     INIT_LIST_HEAD(&h->volatile_holes);
     h->fs_path = NULL;
     h->parent_hive = NULL;
-    INIT_LIST_HEAD(&h->symlinks);
 
     Status = allocate_cell(h, sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]), &offset, true);
     if (!NT_SUCCESS(Status)) {

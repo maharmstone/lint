@@ -172,7 +172,6 @@ typedef struct _hive {
     struct _hive* parent_hive;
     uint32_t parent_key_offset;
     bool parent_key_volatile;
-    struct list_head symlinks;
 } hive;
 
 typedef struct {
