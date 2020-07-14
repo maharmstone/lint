@@ -189,4 +189,5 @@ typedef struct {
     ULONG source_len;
     WCHAR* destination;
     ULONG destination_len;
+    unsigned int depth;
 } symlink;

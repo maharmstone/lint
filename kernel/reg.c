@@ -1560,7 +1560,7 @@ static void free_cell(hive* h, uint32_t offset, bool is_volatile) {
 
 static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCHAR* value, ULONG value_length) {
     CM_KEY_NODE* kn;
-    unsigned int len = 0;
+    unsigned int len = 0, depth = 0, level;
     WCHAR* name;
     WCHAR* ptr;
     struct list_head* le;
@@ -1582,6 +1582,7 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
             len += kn->NameLength;
 
         len += sizeof(WCHAR);
+        depth++;
 
         if (kn->Parent & 0x80000000)
             kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + (kn->Parent & 0x7fffffff) + sizeof(int32_t));
@@ -1592,6 +1593,8 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
     if (len == 0)
         return;
 
+    len -= sizeof(WCHAR); // rm initial backslash
+
     name = kmalloc(len, GFP_KERNEL);
     // FIXME - check for malloc failure
 
@@ -1601,6 +1604,8 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
         kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
     else
         kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
+    level = 0;
 
     do {
         if (kn->Flags & KEY_HIVE_ENTRY)
@@ -1619,21 +1624,18 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
             memcpy(ptr, kn->Name, kn->NameLength);
         }
 
-        ptr--;
-        *ptr = '\\';
+        if (level != depth - 1){
+            ptr--;
+            *ptr = '\\';
+        }
 
         if (kn->Parent & 0x80000000)
             kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + (kn->Parent & 0x7fffffff) + sizeof(int32_t));
         else
             kn = (CM_KEY_NODE*)((uint8_t*)h->bins + kn->Parent + sizeof(int32_t));
+
+        level++;
     } while (true);
-
-    if (name[0] == '\\') { // FIXME - better way of doing this
-        memcpy(name, &name[1], len - sizeof(WCHAR));
-        len -= sizeof(WCHAR);
-    }
-
-    // FIXME - calculate depth
 
     // check if already exists
 
@@ -1641,8 +1643,7 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
     while (le != &h->symlinks) {
         symlink* s = list_entry(le, symlink, list);
 
-        // FIXME - compare by depth
-        if (s->source_len == len && !wcsnicmp(s->source, name, len / sizeof(WCHAR))) {
+        if (s->depth == depth && s->source_len == len && !wcsnicmp(s->source, name, len / sizeof(WCHAR))) {
             kfree(name);
 
             if (value_length == 0) {
@@ -1660,7 +1661,8 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
             s->destination_len = value_length;
 
             return;
-        }
+        } else if (s->depth < depth)
+            break;
 
         le = le->next;
     }
@@ -1672,18 +1674,30 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
 
     // otherwise, add new
 
-    s = kmalloc(sizeof(symlink), GFP_KERNEL);
-    // FIXME - handle malloc failure
+    s = kmalloc(sizeof(symlink), GFP_KERNEL); // FIXME - handle malloc failure
 
     s->source = name;
     s->source_len = len;
 
-    s->destination = kmalloc(value_length, GFP_KERNEL);
-    // FIXME - handle malloc failure
+    s->destination = kmalloc(value_length, GFP_KERNEL); // FIXME - handle malloc failure
     memcpy(s->destination, value, value_length);
     s->destination_len = value_length;
+    s->depth = depth;
 
-    // FIXME - make sure symlink list is reverse-ordered by depth
+    // insert into symlink list, reverse-ordered by depth
+
+    le = h->symlinks.next;
+    while (le != &h->symlinks) {
+        symlink* s2 = list_entry(le, symlink, list);
+
+        if (s2->depth < s->depth) {
+            list_add(&s->list, le->prev);
+            return;
+        }
+
+        le = le->next;
+    }
+
     list_add_tail(&s->list, &h->symlinks);
 }
 
