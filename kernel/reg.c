@@ -622,6 +622,7 @@ static NTSTATUS resolve_symlinks(UNICODE_STRING* us, bool* done_alloc) {
         if (count == 20) { // don't loop too many times
             read_unlock(&symlink_lock);
             kfree(us2.Buffer);
+            *done_alloc = false;
             return STATUS_INVALID_PARAMETER;
         }
     }
