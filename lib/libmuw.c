@@ -196,3 +196,19 @@ NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRI
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENKEYEX, args);
 }
+
+NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
+                    ULONG Length, PULONG ResultLength) {
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)KeyInformationClass,
+        (uintptr_t)KeyInformation,
+        (uintptr_t)Length,
+        (uintptr_t)ResultLength
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYKEY, args);
+}

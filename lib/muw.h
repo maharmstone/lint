@@ -146,6 +146,8 @@ NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
 NTSTATUS NtFlushKey(HANDLE KeyHandle);
 NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                      ULONG OpenOptions);
+NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
+                    ULONG Length, PULONG ResultLength);
 
 #ifdef __cplusplus
 }
