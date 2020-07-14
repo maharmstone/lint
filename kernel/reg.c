@@ -646,6 +646,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     uint32_t offset;
     struct list_head* le;
     bool us_alloc;
+    WCHAR* us_buf = NULL;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
@@ -680,6 +681,9 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     Status = resolve_symlinks(&us, &us_alloc);
     if (!NT_SUCCESS(Status))
         return Status;
+
+    if (us_alloc)
+        us_buf = us.Buffer;
 
     down_read(&hive_list_sem);
 
@@ -717,8 +721,8 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                 up_read(&h->sem);
                 up_read(&hive_list_sem);
 
-                if (us_alloc)
-                    kfree(us.Buffer);
+                if (us_buf)
+                    kfree(us_buf);
 
                 return Status;
             }
@@ -734,8 +738,8 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             if (!k) {
                 up_read(&hive_list_sem);
 
-                if (us_alloc)
-                    kfree(us.Buffer);
+                if (us_buf)
+                    kfree(us_buf);
 
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
@@ -756,8 +760,8 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             if (!NT_SUCCESS(Status))
                 kfree(k);
 
-            if (us_alloc)
-                kfree(us.Buffer);
+            if (us_buf)
+                kfree(us_buf);
 
             return Status;
         }
@@ -767,8 +771,8 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     up_read(&hive_list_sem);
 
-    if (us_alloc)
-        kfree(us.Buffer);
+    if (us_buf)
+        kfree(us_buf);
 
     return STATUS_OBJECT_PATH_INVALID;
 }
