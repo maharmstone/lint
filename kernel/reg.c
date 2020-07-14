@@ -3868,12 +3868,45 @@ static int reboot_callback(struct notifier_block* self, unsigned long val, void*
     return NOTIFY_DONE;
 }
 
-NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
-                    ULONG Length, PULONG ResultLength) {
+static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
+                           ULONG Length, PULONG ResultLength) {
     printk(KERN_INFO "NtQueryKey(%lx, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, KeyInformationClass,
            KeyInformation, Length, ResultLength);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
+                         ULONG Length, PULONG ResultLength) {
+    NTSTATUS Status;
+    ULONG reslen = 0;
+    void* buf;
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        buf = NULL;
+
+    Status = NtQueryKey(KeyHandle, KeyInformationClass, buf, Length, &reslen);
+
+    if (NT_SUCCESS(Status)) {
+        if (buf) {
+            if (copy_to_user(KeyInformation, buf, reslen) != 0)
+                Status = STATUS_INVALID_PARAMETER;
+        }
+
+        if (ResultLength) {
+            if (put_user(reslen, ResultLength) < 0)
+                Status = STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    if (buf)
+        kfree(buf);
+
+    return Status;
 }
