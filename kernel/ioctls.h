@@ -17,5 +17,6 @@
 #define MUWINE_IOCTL_NTUNLOADKEY          MUWINE_IOCTL(10)
 #define MUWINE_IOCTL_NTFLUSHKEY           MUWINE_IOCTL(11)
 #define MUWINE_IOCTL_NTOPENKEYEX          MUWINE_IOCTL(12)
+#define MUWINE_IOCTL_NTQUERYKEY           MUWINE_IOCTL(13)
 
-#define MUWINE_IOCTL_MAX                  12
+#define MUWINE_IOCTL_MAX                  13

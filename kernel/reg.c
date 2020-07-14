@@ -3867,3 +3867,13 @@ static int reboot_callback(struct notifier_block* self, unsigned long val, void*
 
     return NOTIFY_DONE;
 }
+
+NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
+                    ULONG Length, PULONG ResultLength) {
+    printk(KERN_INFO "NtQueryKey(%lx, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, KeyInformationClass,
+           KeyInformation, Length, ResultLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
