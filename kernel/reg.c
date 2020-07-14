@@ -552,11 +552,98 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offs
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS resolve_symlinks(UNICODE_STRING* us, bool* done_alloc) {
+    UNICODE_STRING us2;
+    bool alloc = false;
+    struct list_head* le;
+    unsigned int count = 0;
+
+    us2.Buffer = us->Buffer;
+    us2.Length = us->Length;
+
+    read_lock(&symlink_lock);
+
+    while (true) {
+        bool found = false;
+
+        le = symlink_list.next;
+        while (le != &symlink_list) {
+            symlink* s = list_entry(le, symlink, list);
+
+            if ((us2.Length <= s->source_len || us2.Buffer[s->source_len / sizeof(WCHAR)] != '\\') &&
+                us2.Length != s->source_len) {
+                le = le->next;
+                continue;
+            }
+
+            if (wcsnicmp(us2.Buffer, s->source, s->source_len / sizeof(WCHAR))) {
+                le = le->next;
+                continue;
+            }
+
+            if (us2.Length == s->source_len) {
+                WCHAR* buf = kmalloc(s->destination_len, GFP_KERNEL); // FIXME - handle malloc failure
+
+                memcpy(buf, s->destination, s->destination_len);
+
+                if (alloc)
+                    kfree(us2.Buffer);
+
+                us2.Buffer = buf;
+                us2.Length = s->destination_len;
+
+                alloc = true;
+            } else {
+                unsigned int newlen = s->destination_len + us2.Length - s->source_len;
+                WCHAR* buf = kmalloc(s->destination_len, GFP_KERNEL); // FIXME - handle malloc failure
+
+                memcpy(buf, s->destination, s->destination_len);
+                memcpy(&buf[s->destination_len / sizeof(WCHAR)],
+                       &us2.Buffer[s->source_len / sizeof(WCHAR)], us2.Length - s->source_len);
+
+                if (alloc)
+                    kfree(us2.Buffer);
+
+                us2.Buffer = buf;
+                us2.Length = newlen;
+
+                alloc = true;
+            }
+
+            found = true;
+            break;
+        }
+
+        if (!found)
+            break;
+
+        count++;
+
+        if (count == 20) { // don't loop too many times
+            read_unlock(&symlink_lock);
+            kfree(us2.Buffer);
+            return STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    read_unlock(&symlink_lock);
+
+    *done_alloc = alloc;
+
+    if (alloc) {
+        us->Buffer = us2.Buffer;
+        us->Length = us2.Length;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
     NTSTATUS Status;
     UNICODE_STRING us;
     uint32_t offset;
     struct list_head* le;
+    bool us_alloc;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
@@ -583,6 +670,14 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 
     us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
     us.Length -= sizeof(prefix) - sizeof(WCHAR);
+
+    while (us.Length >= sizeof(WCHAR) && us.Buffer[(us.Length / sizeof(WCHAR)) - 1] == '\\') {
+        us.Length -= sizeof(WCHAR);
+    }
+
+    Status = resolve_symlinks(&us, &us_alloc);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     down_read(&hive_list_sem);
 
@@ -619,6 +714,10 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
             if (!NT_SUCCESS(Status)) {
                 up_read(&h->sem);
                 up_read(&hive_list_sem);
+
+                if (us_alloc)
+                    kfree(us.Buffer);
+
                 return Status;
             }
 
@@ -632,6 +731,10 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
             k = kmalloc(sizeof(key_object), GFP_KERNEL);
             if (!k) {
                 up_read(&hive_list_sem);
+
+                if (us_alloc)
+                    kfree(us.Buffer);
+
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -651,6 +754,9 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
             if (!NT_SUCCESS(Status))
                 kfree(k);
 
+            if (us_alloc)
+                kfree(us.Buffer);
+
             return Status;
         }
 
@@ -658,6 +764,9 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     }
 
     up_read(&hive_list_sem);
+
+    if (us_alloc)
+        kfree(us.Buffer);
 
     return STATUS_OBJECT_PATH_INVALID;
 }
@@ -1571,6 +1680,18 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
     WCHAR* ptr;
     struct list_head* le;
     symlink* s;
+
+    if (value_length != 0) {
+        static const WCHAR prefix[] = L"\\Registry\\";
+
+        if (value_length >= sizeof(prefix) - sizeof(WCHAR) && !wcsnicmp(value, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1)) {
+            value += (sizeof(prefix) / sizeof(WCHAR)) - 1;
+            value_length -= sizeof(prefix) - sizeof(WCHAR);
+        } else {
+            value = NULL;
+            value_length = 0;
+        }
+    }
 
     // construct path to key
     h2 = h;
