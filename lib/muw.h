@@ -144,6 +144,8 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle);
 NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName);
 NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
 NTSTATUS NtFlushKey(HANDLE KeyHandle);
+NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                     ULONG OpenOptions);
 
 #ifdef __cplusplus
 }

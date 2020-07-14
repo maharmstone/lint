@@ -181,3 +181,18 @@ NTSTATUS NtFlushKey(HANDLE KeyHandle) {
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTFLUSHKEY, args);
 }
+
+NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                     ULONG OpenOptions) {
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)OpenOptions
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENKEYEX, args);
+}
