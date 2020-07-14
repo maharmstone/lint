@@ -2776,6 +2776,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     UNICODE_STRING us;
     bool us_alloc;
     struct list_head* le;
+    WCHAR* us_buf = NULL;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
@@ -2811,6 +2812,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     if (!NT_SUCCESS(Status))
         return Status;
 
+    if (us_alloc)
+        us_buf = us.Buffer;
+
     down_read(&hive_list_sem);
 
     le = hive_list.next;
@@ -2844,8 +2848,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             up_write(&h->sem);
             up_read(&hive_list_sem);
 
-            if (us_alloc)
-                kfree(us.Buffer);
+            if (us_buf)
+                kfree(us_buf);
 
             return Status;
         }
@@ -2855,8 +2859,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     up_read(&hive_list_sem);
 
-    if (us_alloc)
-        kfree(us.Buffer);
+    if (us_buf)
+        kfree(us_buf);
 
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
