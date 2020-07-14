@@ -76,13 +76,8 @@ NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POB
 
 #endif
 
-#ifdef _WIN32
 static const char16_t regpath[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs";
-static const char16_t regpath2[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs\\NewSubKey";
-#else
-static const char16_t regpath[] = u"\\Registry\\Machine\\System\\ControlSet001\\Services\\btrfs"; // FIXME
-static const char16_t regpath2[] = u"\\Registry\\Machine\\System\\ControlSet001\\Services\\btrfs\\volatile";
-#endif
+static const char16_t regpath2[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs\\volatile";
 
 static const char16_t key_name[] = u"Start";
 static const char16_t key_name2[] = u"NewName";
