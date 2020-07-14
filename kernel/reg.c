@@ -595,7 +595,7 @@ static NTSTATUS resolve_symlinks(UNICODE_STRING* us, bool* done_alloc) {
                 alloc = true;
             } else {
                 unsigned int newlen = s->destination_len + us2.Length - s->source_len;
-                WCHAR* buf = kmalloc(s->destination_len, GFP_KERNEL); // FIXME - handle malloc failure
+                WCHAR* buf = kmalloc(newlen, GFP_KERNEL); // FIXME - handle malloc failure
 
                 memcpy(buf, s->destination, s->destination_len);
                 memcpy(&buf[s->destination_len / sizeof(WCHAR)],
