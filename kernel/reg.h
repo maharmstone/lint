@@ -25,6 +25,8 @@
 
 #define VALUE_COMP_NAME     0x0001
 
+#define REG_LINK                 6
+
 #pragma pack(push,1)
 
 typedef struct {
@@ -170,6 +172,7 @@ typedef struct _hive {
     struct _hive* parent_hive;
     uint32_t parent_key_offset;
     bool parent_key_volatile;
+    struct list_head symlinks;
 } hive;
 
 typedef struct {
@@ -179,3 +182,11 @@ typedef struct {
     bool is_volatile;
     bool parent_is_volatile;
 } key_object;
+
+typedef struct {
+    struct list_head list;
+    WCHAR* source;
+    ULONG source_len;
+    WCHAR* destination;
+    ULONG destination_len;
+} symlink;
