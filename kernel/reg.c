@@ -2737,6 +2737,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                             PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
     NTSTATUS Status;
     UNICODE_STRING us;
+    bool us_alloc;
     struct list_head* le;
 
     static const WCHAR prefix[] = L"\\Registry\\";
@@ -2764,6 +2765,14 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     us.Buffer += (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR);
     us.Length -= sizeof(prefix) - sizeof(WCHAR);
+
+    while (us.Length >= sizeof(WCHAR) && us.Buffer[(us.Length / sizeof(WCHAR)) - 1] == '\\') {
+        us.Length -= sizeof(WCHAR);
+    }
+
+    Status = resolve_symlinks(&us, &us_alloc);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     down_read(&hive_list_sem);
 
@@ -2798,6 +2807,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             up_write(&h->sem);
             up_read(&hive_list_sem);
 
+            if (us_alloc)
+                kfree(us.Buffer);
+
             return Status;
         }
 
@@ -2805,6 +2817,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     }
 
     up_read(&hive_list_sem);
+
+    if (us_alloc)
+        kfree(us.Buffer);
 
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
