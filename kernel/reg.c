@@ -3187,7 +3187,7 @@ static unsigned int count_backslashes(UNICODE_STRING* us) {
     unsigned int i;
     unsigned int bs = 0;
 
-    for (i = 0; i < us->Length; i++) {
+    for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
         if (us->Buffer[i] == '\\')
             bs++;
     }
