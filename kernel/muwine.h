@@ -155,3 +155,5 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle);
 NTSTATUS user_NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName);
 NTSTATUS user_NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
 NTSTATUS NtFlushKey(HANDLE KeyHandle);
+NTSTATUS user_NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                          ULONG OpenOptions);

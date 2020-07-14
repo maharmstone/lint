@@ -638,7 +638,8 @@ static NTSTATUS resolve_symlinks(UNICODE_STRING* us, bool* done_alloc) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                            ULONG OpenOptions) {
     NTSTATUS Status;
     UNICODE_STRING us;
     uint32_t offset;
@@ -651,7 +652,7 @@ static NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
         return STATUS_INVALID_PARAMETER;
 
     if (ObjectAttributes->RootDirectory) {
-        printk(KERN_ALERT "NtOpenKey: FIXME - support RootDirectory\n"); // FIXME
+        printk(KERN_ALERT "NtOpenKeyEx: FIXME - support RootDirectory\n"); // FIXME
         return STATUS_NOT_IMPLEMENTED;
     }
 
@@ -782,7 +783,38 @@ NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_AT
     if (!get_user_object_attributes(&oa, ObjectAttributes))
         return STATUS_INVALID_PARAMETER;
 
-    Status = NtOpenKey(&h, DesiredAccess, &oa);
+    Status = NtOpenKeyEx(&h, DesiredAccess, &oa, 0);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, KeyHandle) < 0) {
+        if (NT_SUCCESS(Status))
+            NtClose(h);
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    return Status;
+}
+
+NTSTATUS user_NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                          ULONG OpenOptions) {
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    NTSTATUS Status;
+
+    if (!ObjectAttributes || !KeyHandle)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_INVALID_PARAMETER;
+
+    Status = NtOpenKeyEx(&h, DesiredAccess, &oa, OpenOptions);
 
     if (oa.ObjectName) {
         if (oa.ObjectName->Buffer)
