@@ -678,9 +678,12 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         us.Length -= sizeof(WCHAR);
     }
 
-    Status = resolve_symlinks(&us, &us_alloc);
-    if (!NT_SUCCESS(Status))
-        return Status;
+    // FIXME - is this right? What if we're opening a symlink, but there's another symlink in the path?
+    if (!(OpenOptions & REG_OPTION_OPEN_LINK)) {
+        Status = resolve_symlinks(&us, &us_alloc);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
 
     if (us_alloc)
         us_buf = us.Buffer;
