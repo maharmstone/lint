@@ -136,6 +136,27 @@ int main() {
         index++;
     } while (NT_SUCCESS(Status));
 
+    Status = NtQueryKey(h, KeyBasicInformation, buf, sizeof(buf), &len);
+
+    if (!NT_SUCCESS(Status))
+        printf("NtQueryKey returned %08x\n", (int32_t)Status);
+
+    if (NT_SUCCESS(Status)) {
+        char name[255], *s;
+
+        KEY_BASIC_INFORMATION* kbi = (KEY_BASIC_INFORMATION*)buf;
+
+        s = name;
+        for (unsigned int i = 0; i < kbi->NameLength / sizeof(WCHAR); i++) {
+            *s = (char)kbi->Name[i];
+            s++;
+        }
+        *s = 0;
+
+        printf("NtQueryKey kbi: LastWriteTime = %" PRIx64 ", TitleIndex = %x, NameLength = %x, Name = %s\n",
+               (int64_t)kbi->LastWriteTime.QuadPart, (uint32_t)kbi->TitleIndex, (uint32_t)kbi->NameLength, name);
+    }
+
     index = 0;
 
     do {
