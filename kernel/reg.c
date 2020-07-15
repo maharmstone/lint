@@ -919,6 +919,62 @@ static NTSTATUS get_key_item_by_index(hive* h, CM_KEY_NODE* kn, unsigned int ind
         return STATUS_REGISTRY_CORRUPT;
 }
 
+static NTSTATUS query_key_info(KEY_INFORMATION_CLASS KeyInformationClass, void* KeyInformation, CM_KEY_NODE* kn,
+                               ULONG Length, PULONG ResultLength) {
+    switch (KeyInformationClass) {
+        case KeyBasicInformation: {
+            KEY_BASIC_INFORMATION* kbi = KeyInformation;
+            ULONG reqlen = offsetof(KEY_BASIC_INFORMATION, Name[0]);
+
+            if (kn->Flags & KEY_COMP_NAME)
+                reqlen += kn->NameLength * sizeof(WCHAR);
+            else
+                reqlen += kn->NameLength;
+
+            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
+                *ResultLength = reqlen;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+
+            kbi->LastWriteTime.QuadPart = kn->LastWriteTime;
+            kbi->TitleIndex = 0;
+
+            if (kn->Flags & KEY_COMP_NAME) {
+                unsigned int i;
+
+                kbi->NameLength = kn->NameLength * sizeof(WCHAR);
+
+                for (i = 0; i < kn->NameLength; i++) {
+                    kbi->Name[i] = *((char*)kn->Name + i);
+                }
+            } else {
+                kbi->NameLength = kn->NameLength;
+                memcpy(kbi->Name, kn->Name, kn->NameLength);
+            }
+
+            *ResultLength = reqlen;
+
+            break;
+        }
+
+        // FIXME - KeyNodeInformation
+        // FIXME - KeyFullInformation
+        // FIXME - KeyNameInformation
+        // FIXME - KeyCachedInformation
+        // FIXME - KeyFlagsInformation
+        // FIXME - KeyVirtualizationInformation
+        // FIXME - KeyHandleTagsInformation
+        // FIXME - KeyTrustInformation
+        // FIXME - KeyLayerInformation
+
+        default:
+            printk(KERN_INFO "query_key_info: unhandled class %x\n", KeyInformationClass);
+            return STATUS_INVALID_PARAMETER;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                                PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
     NTSTATUS Status;
@@ -1003,54 +1059,12 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    switch (KeyInformationClass) {
-        case KeyBasicInformation: {
-            KEY_BASIC_INFORMATION* kbi = KeyInformation;
-            ULONG reqlen = offsetof(KEY_BASIC_INFORMATION, Name[0]);
-
-            if (kn2->Flags & KEY_COMP_NAME)
-                reqlen += kn2->NameLength * sizeof(WCHAR);
-            else
-                reqlen += kn2->NameLength;
-
-            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
-                *ResultLength = reqlen;
-                up_read(&key->h->sem);
-                return STATUS_BUFFER_TOO_SMALL;
-            }
-
-            kbi->LastWriteTime.QuadPart = kn2->LastWriteTime;
-            kbi->TitleIndex = 0;
-
-            if (kn2->Flags & KEY_COMP_NAME) {
-                unsigned int i;
-
-                kbi->NameLength = kn2->NameLength * sizeof(WCHAR);
-
-                for (i = 0; i < kn2->NameLength; i++) {
-                    kbi->Name[i] = *((char*)kn2->Name + i);
-                }
-            } else {
-                kbi->NameLength = kn2->NameLength;
-                memcpy(kbi->Name, kn2->Name, kn2->NameLength);
-            }
-
-            *ResultLength = reqlen;
-
-            break;
-        }
-
-        // FIXME - KeyFullInformation
-        // FIXME - KeyNodeInformation
-
-        default:
-            up_read(&key->h->sem);
-            return STATUS_INVALID_PARAMETER;
-    }
+    Status = query_key_info(KeyInformationClass, KeyInformation, kn2,
+                            Length, ResultLength);
 
     up_read(&key->h->sem);
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
@@ -1222,6 +1236,7 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
         // FIXME - KeyValueLayerInformation
 
         default:
+            printk(KERN_INFO "query_key_value: unhandled class %x\n", KeyValueInformationClass);
             return STATUS_INVALID_PARAMETER;
     }
 }
@@ -3870,12 +3885,44 @@ static int reboot_callback(struct notifier_block* self, unsigned long val, void*
 
 static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
                            ULONG Length, PULONG ResultLength) {
-    printk(KERN_INFO "NtQueryKey(%lx, %x, %p, %x, %p): stub\n", (uintptr_t)KeyHandle, KeyInformationClass,
-           KeyInformation, Length, ResultLength);
+    NTSTATUS Status;
+    key_object* key;
+    int32_t size;
+    CM_KEY_NODE* kn;
 
-    // FIXME
+    key = (key_object*)get_object_from_handle(KeyHandle);
+    if (!key || key->header.type != muwine_object_key)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME - check access mask of handle for KEY_QUERY_VALUE (unless KeyNameInformation or KeyHandleTagsInformation)
+
+    down_read(&key->h->sem);
+
+    if (key->is_volatile)
+        size = -*(int32_t*)((uint8_t*)key->h->volatile_bins + key->offset);
+    else
+        size = -*(int32_t*)((uint8_t*)key->h->bins + key->offset);
+
+    if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
+        up_read(&key->h->sem);
+        return STATUS_REGISTRY_CORRUPT;
+    }
+
+    if (key->is_volatile)
+        kn = (CM_KEY_NODE*)((uint8_t*)key->h->volatile_bins + key->offset + sizeof(int32_t));
+    else
+        kn = (CM_KEY_NODE*)((uint8_t*)key->h->bins + key->offset + sizeof(int32_t));
+
+    if (kn->Signature != CM_KEY_NODE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn->NameLength) {
+        up_read(&key->h->sem);
+        return STATUS_REGISTRY_CORRUPT;
+    }
+
+    Status = query_key_info(KeyInformationClass, KeyInformation, kn, Length, ResultLength);
+
+    up_read(&key->h->sem);
+
+    return Status;
 }
 
 NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
