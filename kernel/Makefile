@@ -1,5 +1,5 @@
 obj-m += muw.o
-muw-objs += muwine.o reg.o
+muw-objs += muwine.o reg.o sec.o
 
 ccflags-y += -fshort-wchar
 

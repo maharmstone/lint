@@ -159,3 +159,10 @@ NTSTATUS user_NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
                           ULONG OpenOptions);
 NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
                          ULONG Length, PULONG ResultLength);
+
+// sec.c
+typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;
+typedef struct _SID SID;
+
+NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* sd, SID* owner, SID* group,
+                                    SECURITY_DESCRIPTOR** out);
