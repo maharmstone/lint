@@ -142,3 +142,76 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
 
     return STATUS_SUCCESS;
 }
+
+static void uid_to_sid(SID** sid, kuid_t uid) {
+    SID* s;
+
+    // FIXME - allow overrides in Registry
+    // FIXME - map root separately
+
+    // use Samba's S-1-22-1 mappings
+
+    s = kmalloc(offsetof(SID, SubAuthority) + (3 * sizeof(uint32_t)), GFP_KERNEL);
+    // FIXME - handle malloc failure
+
+    s->Revision = 1;
+    s->SubAuthorityCount = 3;
+    s->IdentifierAuthority[0] = 0;
+    s->IdentifierAuthority[1] = 0;
+    s->IdentifierAuthority[2] = 0;
+    s->IdentifierAuthority[3] = 0;
+    s->IdentifierAuthority[4] = 0;
+    s->IdentifierAuthority[5] = 1;
+    s->SubAuthority[0] = 22;
+    s->SubAuthority[1] = 1;
+    s->SubAuthority[2] = (uint32_t)uid.val;
+
+    *sid = s;
+}
+
+static void gid_to_sid(SID** sid, kgid_t gid) {
+    SID* s;
+
+    // FIXME - allow overrides in Registry
+
+    // use Samba's S-1-22-2 mappings
+
+    s = kmalloc(offsetof(SID, SubAuthority) + (3 * sizeof(uint32_t)), GFP_KERNEL);
+    // FIXME - handle malloc failure
+
+    s->Revision = 1;
+    s->SubAuthorityCount = 3;
+    s->IdentifierAuthority[0] = 0;
+    s->IdentifierAuthority[1] = 0;
+    s->IdentifierAuthority[2] = 0;
+    s->IdentifierAuthority[3] = 0;
+    s->IdentifierAuthority[4] = 0;
+    s->IdentifierAuthority[5] = 1;
+    s->SubAuthority[0] = 22;
+    s->SubAuthority[1] = 2;
+    s->SubAuthority[2] = (uint32_t)gid.val;
+
+    *sid = s;
+}
+
+void muwine_make_process_token(token** t) {
+    token* token;
+
+    token = kmalloc(sizeof(token), GFP_KERNEL);
+    // FIXME - handle malloc failure
+
+    uid_to_sid(&token->owner, current_euid());
+    gid_to_sid(&token->group, current_egid());
+
+    *t = token;
+}
+
+void muwine_free_token(token* token) {
+    if (token->owner)
+        kfree(token->owner);
+
+    if (token->group)
+        kfree(token->group);
+
+    kfree(token);
+}

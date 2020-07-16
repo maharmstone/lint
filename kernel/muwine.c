@@ -38,6 +38,7 @@ typedef struct {
     struct list_head handle_list;
     spinlock_t handle_list_lock;
     uintptr_t next_handle_no;
+    token* token;
 } process;
 
 typedef struct {
@@ -313,6 +314,7 @@ static int muwine_open(struct inode* inode, struct file* file) {
     INIT_LIST_HEAD(&p->handle_list);
     spin_lock_init(&p->handle_list_lock);
     p->next_handle_no = 4;
+    muwine_make_process_token(&p->token);
 
     spin_lock(&pid_list_lock);
 
@@ -388,6 +390,8 @@ static int muwine_release(struct inode* inode, struct file* file) {
         }
 
         spin_unlock(&p->handle_list_lock);
+
+        muwine_free_token(p->token);
 
         kfree(p);
     }
