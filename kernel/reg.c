@@ -3852,6 +3852,9 @@ NTSTATUS muwine_init_registry(void) {
     hive* h;
     uint32_t offset;
     CM_KEY_NODE* kn;
+    SECURITY_DESCRIPTOR* sd;
+    unsigned int sdlen;
+    CM_KEY_SECURITY* sk;
 
     h = kmalloc(sizeof(hive), GFP_KERNEL);
     if (!h)
@@ -3874,7 +3877,7 @@ NTSTATUS muwine_init_registry(void) {
     h->parent_hive = NULL;
     h->volatile_sk = 0xffffffff;
 
-    Status = allocate_cell(h, sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]), &offset, true);
+    Status = allocate_cell(h, offsetof(CM_KEY_NODE, Name[0]), &offset, true);
     if (!NT_SUCCESS(Status)) {
         kfree(h);
         return Status;
@@ -3884,7 +3887,7 @@ NTSTATUS muwine_init_registry(void) {
 
     kn->Signature = CM_KEY_NODE_SIGNATURE;
     kn->Flags = KEY_HIVE_ENTRY;
-    kn->LastWriteTime = 0;;
+    kn->LastWriteTime = 0;
     kn->Spare = 0;
     kn->Parent = 0;
     kn->SubKeyCount = 0;
@@ -3905,7 +3908,29 @@ NTSTATUS muwine_init_registry(void) {
 
     h->volatile_root_cell = offset;
 
-    // FIXME - root SD
+    // get root SD
+
+    muwine_registry_root_sd(&sd, &sdlen);
+
+    Status = allocate_cell(h, offsetof(CM_KEY_SECURITY, Descriptor) + sdlen, &kn->Security, true);
+    if (!NT_SUCCESS(Status)) {
+        kfree(h->volatile_bins);
+        kfree(h);
+        kfree(sd);
+        return Status;
+    }
+
+    sk = (CM_KEY_SECURITY*)((uint8_t*)h->volatile_bins + kn->Security + sizeof(int32_t));
+    sk->Signature = CM_KEY_SECURITY_SIGNATURE;
+    sk->Reserved = 0;
+    sk->Flink = sk->Blink = kn->Security;
+    sk->ReferenceCount = 1;
+    sk->DescriptorLength = sdlen;
+    memcpy(sk->Descriptor, sd, sdlen);
+
+    h->volatile_sk = kn->Security;
+
+    kfree(sd);
 
     down_write(&hive_list_sem);
 

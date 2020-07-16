@@ -98,6 +98,18 @@ typedef enum _KEY_VALUE_INFORMATION_CLASS {
 #define REG_OPTION_BACKUP_RESTORE   0x00000004
 #define REG_OPTION_OPEN_LINK        0x00000008
 
+#define DELETE                  0x00010000
+#define READ_CONTROL            0x00020000
+#define WRITE_DAC               0x00040000
+#define WRITE_OWNER             0x00080000
+
+#define KEY_QUERY_VALUE         0x00000001
+#define KEY_SET_VALUE           0x00000002
+#define KEY_CREATE_SUB_KEY      0x00000004
+#define KEY_ENUMERATE_SUB_KEYS  0x00000008
+#define KEY_NOTIFY              0x00000010
+#define KEY_CREATE_LINK         0x00000020
+
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
 typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
@@ -186,3 +198,4 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
                                     token* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
 void muwine_make_process_token(token** t);
 void muwine_free_token(token* token);
+void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);

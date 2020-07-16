@@ -1,6 +1,11 @@
 #include "muwine.h"
 #include "sec.h"
 
+static const uint8_t sid_users[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0, 0, 0x21, 0x2, 0, 0 }; // S-1-5-32-545
+static const uint8_t sid_administrators[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0, 0, 0x20, 0x2, 0, 0 }; // S-1-5-32-544
+static const uint8_t sid_local_system[] = { 1, 1, 0, 0, 0, 0, 0, 5, 0x12, 0, 0, 0 }; // S-1-5-18
+static const uint8_t sid_creator_owner[] = { 1, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0 }; // S-1-3-0
+
 static unsigned int sid_length(SID* sid) {
     return offsetof(SID, SubAuthority[0]) + (sid->SubAuthorityCount * sizeof(uint32_t));
 }
@@ -212,4 +217,89 @@ void muwine_free_token(token* token) {
         kfree(token->group);
 
     kfree(token);
+}
+
+void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen) {
+    SECURITY_DESCRIPTOR* sd;
+    unsigned int len = sizeof(SECURITY_DESCRIPTOR);
+    unsigned int dacl_len;
+    ACL* sacl;
+    ACL* dacl;
+    ACCESS_ALLOWED_ACE* aaa;
+
+    len += sizeof(sid_administrators); // owner
+    len += sizeof(sid_local_system); // group
+    len += sizeof(ACL); // SACL
+
+    // DACL
+    dacl_len = sizeof(ACL);
+    dacl_len += 4 * sizeof(ACCESS_ALLOWED_ACE);
+    dacl_len += sizeof(sid_users);
+    dacl_len += sizeof(sid_administrators);
+    dacl_len += sizeof(sid_local_system);
+    dacl_len += sizeof(sid_creator_owner);
+    len += dacl_len;
+
+    sd = kmalloc(len, GFP_KERNEL);
+    // FIXME - handle malloc failures
+
+    sd->Revision = 1;
+    sd->Sbz1 = 0;
+    sd->Control = SE_SELF_RELATIVE | SE_SACL_PRESENT | SE_DACL_PRESENT;
+    sd->OffsetOwner = sizeof(SECURITY_DESCRIPTOR);
+    sd->OffsetGroup = sd->OffsetOwner + sizeof(sid_administrators);
+    sd->OffsetSacl = sd->OffsetGroup + sizeof(sid_local_system);
+    sd->OffsetDacl = sd->OffsetSacl + sizeof(ACL);
+
+    memcpy((uint8_t*)sd + sd->OffsetOwner, sid_administrators, sizeof(sid_administrators));
+    memcpy((uint8_t*)sd + sd->OffsetGroup, sid_local_system, sizeof(sid_local_system));
+
+    sacl = (ACL*)((uint8_t*)sd + sd->OffsetSacl);
+    dacl = (ACL*)((uint8_t*)sd + sd->OffsetDacl);
+
+    sacl->AclRevision = 2;
+    sacl->Sbz1 = 0;
+    sacl->AclSize = sizeof(ACL);
+    sacl->AceCount = 0;
+    sacl->Sbz2 = 0;
+
+    dacl->AclRevision = 2;
+    dacl->Sbz1 = 0;
+    dacl->AclSize = dacl_len;
+    dacl->AceCount = 4;
+    dacl->Sbz2 = 0;
+
+    aaa = (ACCESS_ALLOWED_ACE*)&dacl[1];
+    aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+    aaa->Header.AceFlags = CONTAINER_INHERIT_ACE;
+    aaa->Header.AceSize = sizeof(ACCESS_ALLOWED_ACE) + sizeof(sid_users);
+    aaa->Mask = READ_CONTROL | KEY_NOTIFY | KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE;
+    memcpy(&aaa[1], sid_users, sizeof(sid_users));
+
+    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa[1] + sizeof(sid_users));
+    aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+    aaa->Header.AceFlags = CONTAINER_INHERIT_ACE;
+    aaa->Header.AceSize = sizeof(ACCESS_ALLOWED_ACE) + sizeof(sid_administrators);
+    aaa->Mask = WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE | KEY_CREATE_LINK | KEY_NOTIFY |
+                KEY_ENUMERATE_SUB_KEYS | KEY_CREATE_SUB_KEY | KEY_SET_VALUE | KEY_QUERY_VALUE;
+    memcpy(&aaa[1], sid_administrators, sizeof(sid_administrators));
+
+    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa[1] + sizeof(sid_administrators));
+    aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+    aaa->Header.AceFlags = CONTAINER_INHERIT_ACE;
+    aaa->Header.AceSize = sizeof(ACCESS_ALLOWED_ACE) + sizeof(sid_local_system);
+    aaa->Mask = WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE | KEY_CREATE_LINK | KEY_NOTIFY |
+                KEY_ENUMERATE_SUB_KEYS | KEY_CREATE_SUB_KEY | KEY_SET_VALUE | KEY_QUERY_VALUE;
+    memcpy(&aaa[1], sid_local_system, sizeof(sid_local_system));
+
+    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa[1] + sizeof(sid_local_system));
+    aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+    aaa->Header.AceFlags = CONTAINER_INHERIT_ACE;
+    aaa->Header.AceSize = sizeof(ACCESS_ALLOWED_ACE) + sizeof(sid_creator_owner);
+    aaa->Mask = WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE | KEY_CREATE_LINK | KEY_NOTIFY |
+                KEY_ENUMERATE_SUB_KEYS | KEY_CREATE_SUB_KEY | KEY_SET_VALUE | KEY_QUERY_VALUE;
+    memcpy(&aaa[1], sid_creator_owner, sizeof(sid_creator_owner));
+
+    *out = sd;
+    *sdlen = len;
 }
