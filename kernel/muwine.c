@@ -140,11 +140,10 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
 }
 
 static process* get_current_process(void) {
-    unsigned long flags;
     struct list_head* le;
     pid_t pid = task_tgid_vnr(current);
 
-    spin_lock_irqsave(&pid_list_lock, flags);
+    spin_lock(&pid_list_lock);
 
     le = pid_list.next;
 
@@ -152,7 +151,7 @@ static process* get_current_process(void) {
         process* p2 = list_entry(le, process, list);
 
         if (p2->pid == pid) {
-            spin_unlock_irqrestore(&pid_list_lock, flags);
+            spin_unlock(&pid_list_lock);
 
             return p2;
         }
@@ -160,13 +159,12 @@ static process* get_current_process(void) {
         le = le->next;
     }
 
-    spin_unlock_irqrestore(&pid_list_lock, flags);
+    spin_unlock(&pid_list_lock);
 
     return NULL;
 }
 
 NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
-    unsigned long flags;
     process* p = get_current_process();
     handle* hand;
 
@@ -181,14 +179,14 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
 
     hand->object = obj;
 
-    spin_lock_irqsave(&p->handle_list_lock, flags);
+    spin_lock(&p->handle_list_lock);
 
     hand->number = p->next_handle_no;
     p->next_handle_no += 4;
 
     list_add_tail(&hand->list, &p->handle_list);
 
-    spin_unlock_irqrestore(&p->handle_list_lock, flags);
+    spin_unlock(&p->handle_list_lock);
 
     *h = (HANDLE)hand->number;
 
@@ -196,7 +194,6 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
 }
 
 object_header* get_object_from_handle(HANDLE h) {
-    unsigned long flags;
     struct list_head* le;
     process* p = get_current_process();
 
@@ -205,7 +202,7 @@ object_header* get_object_from_handle(HANDLE h) {
 
     // get handle from list
 
-    spin_lock_irqsave(&p->handle_list_lock, flags);
+    spin_lock(&p->handle_list_lock);
 
     le = p->handle_list.next;
 
@@ -215,7 +212,7 @@ object_header* get_object_from_handle(HANDLE h) {
         if (h2->number == (uintptr_t)h) {
             object_header* obj = h2->object;
 
-            spin_unlock_irqrestore(&p->handle_list_lock, flags);
+            spin_unlock(&p->handle_list_lock);
 
             return obj;
         }
@@ -223,13 +220,12 @@ object_header* get_object_from_handle(HANDLE h) {
         le = le->next;
     }
 
-    spin_unlock_irqrestore(&p->handle_list_lock, flags);
+    spin_unlock(&p->handle_list_lock);
 
     return NULL;
 }
 
 NTSTATUS NtClose(HANDLE Handle) {
-    unsigned long flags;
     struct list_head* le;
     process* p = get_current_process();
     handle* h = NULL;
@@ -239,7 +235,7 @@ NTSTATUS NtClose(HANDLE Handle) {
 
     // get handle from list
 
-    spin_lock_irqsave(&p->handle_list_lock, flags);
+    spin_lock(&p->handle_list_lock);
 
     le = p->handle_list.next;
 
@@ -255,7 +251,7 @@ NTSTATUS NtClose(HANDLE Handle) {
         le = le->next;
     }
 
-    spin_unlock_irqrestore(&p->handle_list_lock, flags);
+    spin_unlock(&p->handle_list_lock);
 
     if (!h)
         return STATUS_INVALID_HANDLE;
@@ -304,7 +300,6 @@ NTSTATUS muwine_error_to_ntstatus(int err) {
 }
 
 static int muwine_open(struct inode* inode, struct file* file) {
-    unsigned long flags;
     process* p;
     struct list_head* le;
     bool found = false;
@@ -319,7 +314,7 @@ static int muwine_open(struct inode* inode, struct file* file) {
     spin_lock_init(&p->handle_list_lock);
     p->next_handle_no = 4;
 
-    spin_lock_irqsave(&pid_list_lock, flags);
+    spin_lock(&pid_list_lock);
 
     le = pid_list.next;
 
@@ -340,7 +335,7 @@ static int muwine_open(struct inode* inode, struct file* file) {
     else
         kfree(p);
 
-    spin_unlock_irqrestore(&pid_list_lock, flags);
+    spin_unlock(&pid_list_lock);
 
     try_module_get(THIS_MODULE);
 
@@ -348,14 +343,13 @@ static int muwine_open(struct inode* inode, struct file* file) {
 }
 
 static int muwine_release(struct inode* inode, struct file* file) {
-    unsigned long flags;
     pid_t pid = task_tgid_vnr(current);
     struct list_head* le;
     process* p = NULL;
 
     // remove pid from process list
 
-    spin_lock_irqsave(&pid_list_lock, flags);
+    spin_lock(&pid_list_lock);
 
     le = pid_list.next;
 
@@ -376,12 +370,12 @@ static int muwine_release(struct inode* inode, struct file* file) {
         le = le->next;
     }
 
-    spin_unlock_irqrestore(&pid_list_lock, flags);
+    spin_unlock(&pid_list_lock);
 
     if (p) {
         // force close of all open handles
 
-        spin_lock_irqsave(&p->handle_list_lock, flags);
+        spin_lock(&p->handle_list_lock);
 
         while (!list_empty(&p->handle_list)) {
             handle* hand = list_entry(p->handle_list.next, handle, list);
@@ -393,7 +387,7 @@ static int muwine_release(struct inode* inode, struct file* file) {
             kfree(hand);
         }
 
-        spin_unlock_irqrestore(&p->handle_list_lock, flags);
+        spin_unlock(&p->handle_list_lock);
 
         kfree(p);
     }
