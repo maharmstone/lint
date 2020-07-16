@@ -3363,6 +3363,9 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     if (kn->Flags & KEY_SYM_LINK)
         update_symlink_cache(key->h, key->offset, key->is_volatile, NULL, 0);
 
+    if (kn->Security != 0xffffffff)
+        free_sk(key->h, kn->Security, key->is_volatile);
+
     free_cell(key->h, key->offset, key->is_volatile);
 
     // FIXME - update MaxNameLen in parent if necessary
