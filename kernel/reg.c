@@ -213,6 +213,7 @@ static NTSTATUS init_hive(hive* h) {
     h->volatile_bins = NULL;
     h->volatile_size = 0;
     h->size = ((HBASE_BLOCK*)h->data)->Length + BIN_SIZE;
+    h->volatile_sk = 0xffffffff;
 
     off = h->bins;
     while (off < h->bins + ((HBASE_BLOCK*)h->data)->Length) {
@@ -2548,6 +2549,178 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* off, SID* owner, SID* group,
+                                      bool is_volatile, bool parent_is_volatile) {
+    NTSTATUS Status;
+    int32_t size;
+    CM_KEY_SECURITY* sk;
+    SECURITY_DESCRIPTOR* sd;
+    unsigned int sdlen;
+    uint32_t skoff, orig_skoff;
+    void* parent_bins = parent_is_volatile ? h->volatile_bins : h->bins;
+    void* bins = is_volatile ? h->volatile_bins : h->bins;
+
+    size = -*(int32_t*)(parent_bins + parent_off);
+
+    if (size < offsetof(CM_KEY_SECURITY, Descriptor))
+        return STATUS_REGISTRY_CORRUPT;
+
+    sk = (CM_KEY_SECURITY*)(parent_bins + parent_off + sizeof(int32_t));
+
+    if (sk->Signature != CM_KEY_SECURITY_SIGNATURE || size < offsetof(CM_KEY_SECURITY, Descriptor) + sk->DescriptorLength)
+        return STATUS_REGISTRY_CORRUPT;
+
+    Status = muwine_create_inherited_sd((SECURITY_DESCRIPTOR*)sk->Descriptor, sk->DescriptorLength,
+                                        owner, group, &sd, &sdlen);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    if (!is_volatile || h->volatile_sk != 0xffffffff) {
+        // walk through sk list, and increase refcount if already present
+
+        if ((is_volatile && parent_is_volatile) || (!is_volatile && !parent_is_volatile))
+            orig_skoff = parent_off;
+        else
+            orig_skoff = h->volatile_sk;
+
+        skoff = orig_skoff;
+
+        do {
+            size = -*(int32_t*)(bins + skoff);
+
+            if (size < offsetof(CM_KEY_SECURITY, Descriptor))
+                break;
+
+            sk = (CM_KEY_SECURITY*)(bins + skoff + sizeof(int32_t));
+
+            if (sk->Signature != CM_KEY_SECURITY_SIGNATURE || size < offsetof(CM_KEY_SECURITY, Descriptor) + sk->DescriptorLength)
+                break;
+
+            if (sk->DescriptorLength == sdlen && !memcmp(sk->Descriptor, sd, sdlen)) {
+                sk->ReferenceCount++;
+                *off = skoff;
+                kfree(sd);
+                return STATUS_SUCCESS;
+            }
+
+            skoff = sk->Flink;
+        } while (skoff != orig_skoff);
+    }
+
+    // otherwise, allocate new cell and to list
+
+    Status = allocate_cell(h, offsetof(CM_KEY_SECURITY, Descriptor) + sdlen, &skoff, is_volatile);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    sk = (CM_KEY_SECURITY*)(bins + skoff + sizeof(int32_t));
+
+    sk->Signature = CM_KEY_SECURITY_SIGNATURE;
+    sk->Reserved = 0;
+
+    if ((is_volatile && parent_is_volatile) || (!is_volatile && !parent_is_volatile)) { // parent and child have same volatility
+        CM_KEY_SECURITY* parent_sk = (CM_KEY_SECURITY*)(parent_bins + parent_off + sizeof(int32_t));
+
+        if (parent_sk->Flink == parent_off) { // parent SK is only entry
+            parent_sk->Flink = parent_sk->Blink = skoff;
+            sk->Flink = sk->Blink = parent_off;
+        } else {
+            CM_KEY_SECURITY* next_sk = (CM_KEY_SECURITY*)(parent_bins + parent_sk->Flink + sizeof(int32_t));
+
+            sk->Flink = parent_sk->Flink;
+            next_sk->Blink = skoff;
+
+            sk->Blink = parent_off;
+            parent_sk->Flink = skoff;
+        }
+    } else if (h->volatile_sk != 0xffffffff) { // child is volatile, and volatile_sk already set
+        CM_KEY_SECURITY* sk2 = (CM_KEY_SECURITY*)(parent_bins + h->volatile_sk + sizeof(int32_t));
+
+        if (sk2->Flink == h->volatile_sk) { // SK is only entry
+            sk2->Flink = sk2->Blink = skoff;
+            sk->Flink = sk->Blink = h->volatile_sk;
+        } else {
+            CM_KEY_SECURITY* sk3 = (CM_KEY_SECURITY*)(parent_bins + sk2->Flink + sizeof(int32_t));
+
+            sk->Flink = sk2->Flink;
+            sk3->Blink = skoff;
+
+            sk2->Flink = skoff;
+            sk->Blink = h->volatile_sk;
+        }
+    } else { // first volatile key
+        sk->Flink = skoff;
+        sk->Blink = skoff;
+
+        h->volatile_sk = skoff;
+    }
+
+    sk->ReferenceCount = 1;
+    sk->DescriptorLength = sdlen;
+    memcpy(sk->Descriptor, sd, sdlen);
+
+    *off = skoff;
+
+    return STATUS_SUCCESS;
+}
+
+static void free_sk(hive* h, uint32_t off, bool is_volatile) {
+    int32_t size;
+    CM_KEY_SECURITY* sk;
+    void* bins;
+
+    if (is_volatile)
+        bins = h->volatile_bins;
+    else
+        bins = h->bins;
+
+    size = -*(int32_t*)(bins + off);
+
+    if (size < offsetof(CM_KEY_SECURITY, Descriptor))
+        return;
+
+    sk = (CM_KEY_SECURITY*)(bins + off + sizeof(int32_t));
+
+    if (sk->Signature != CM_KEY_SECURITY_SIGNATURE)
+        return;
+
+    if (sk->ReferenceCount > 1) {
+        sk->ReferenceCount--;
+        return;
+    }
+
+    if (is_volatile && off == h->volatile_sk) {
+        if (sk->Flink == off)
+            h->volatile_sk = 0xffffffff;
+        else
+            h->volatile_sk = sk->Flink;
+    }
+
+    // FIXME - check not out of bounds
+    size = -*(int32_t*)(bins + sk->Flink);
+
+    // change sk->Flink->Blink to sk->Blink
+
+    if (size >= offsetof(CM_KEY_SECURITY, Descriptor)) {
+        CM_KEY_SECURITY* sk2 = (CM_KEY_SECURITY*)(bins + sk->Flink + sizeof(int32_t));
+
+        sk2->Blink = sk->Flink;
+    }
+
+    // FIXME - check not out of bounds
+    size = -*(int32_t*)(bins + sk->Blink);
+
+    // change sk->Blink->Flink to sk->Flink
+
+    if (size >= offsetof(CM_KEY_SECURITY, Descriptor)) {
+        CM_KEY_SECURITY* sk2 = (CM_KEY_SECURITY*)(bins + sk->Blink + sizeof(int32_t));
+
+        sk2->Flink = sk->Flink;
+    }
+
+    free_cell(h, off, is_volatile);
+}
+
 static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions, PULONG Disposition) {
     NTSTATUS Status;
     key_object* k;
@@ -2638,7 +2811,7 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     kn2->VolatileSubKeyList = 0;
     kn2->ValuesCount = 0;
     kn2->Values = 0;
-    kn2->Security = 0; // FIXME
+    kn2->Security = 0xffffffff;
     kn2->Class = 0; // FIXME
     kn2->MaxNameLen = 0;
     kn2->MaxClassLen = 0;
@@ -2661,11 +2834,22 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
     hash = calc_subkey_hash(us);
 
+    if (kn->Security != 0xffffffff) {
+        Status = allocate_inherited_sk(h, kn->Security, &kn2->Security, NULL, NULL,
+                                       is_volatile, parent_is_volatile); // FIXME - owner and group
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
+
     // add handle here, to make things easier if we fail later on
 
     k = kmalloc(sizeof(key_object), GFP_KERNEL);
-    if (!k)
+    if (!k) {
+        if (kn2->Security != 0xffffffff)
+            free_sk(h, kn2->Security, is_volatile);
+
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
@@ -2679,6 +2863,10 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
     if (!NT_SUCCESS(Status)) {
         kfree(k);
+
+        if (kn2->Security != 0xffffffff)
+            free_sk(h, kn2->Security, is_volatile);
+
         return Status;
     }
 
@@ -2696,8 +2884,12 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
         Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + sizeof(CM_INDEX), &lh_offset, is_volatile);
         if (!NT_SUCCESS(Status)) {
+            if (kn2->Security != 0xffffffff)
+                free_sk(h, kn2->Security, is_volatile);
+
             free_cell(h, subkey_offset, is_volatile);
             NtClose(*KeyHandle);
+
             return Status;
         }
 
@@ -2728,6 +2920,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
             size = -*(int32_t*)(h->bins + *subkey_list);
 
         if (size < sizeof(int32_t) + sizeof(uint16_t)) {
+            if (kn2->Security != 0xffffffff)
+                free_sk(h, kn2->Security, is_volatile);
+
             free_cell(h, subkey_offset, is_volatile);
             NtClose(*KeyHandle);
             return STATUS_REGISTRY_CORRUPT;
@@ -2753,6 +2948,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
                 old_lh = (CM_KEY_FAST_INDEX*)(h->bins + *subkey_list + sizeof(int32_t));
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
+                if (kn2->Security != 0xffffffff)
+                    free_sk(h, kn2->Security, is_volatile);
+
                 free_cell(h, subkey_offset, is_volatile);
                 NtClose(*KeyHandle);
                 return STATUS_REGISTRY_CORRUPT;
@@ -2760,6 +2958,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
             Status = lh_copy_and_add(h, old_lh, &lh_offset, subkey_offset, hash, us, is_volatile);
             if (!NT_SUCCESS(Status)) {
+                if (kn2->Security != 0xffffffff)
+                    free_sk(h, kn2->Security, is_volatile);
+
                 free_cell(h, subkey_offset, is_volatile);
                 NtClose(*KeyHandle);
                 return Status;
@@ -2774,6 +2975,10 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
                 kn->MaxNameLen = us->Length;
         } else {
             printk(KERN_ALERT "NtCreateKey: unhandled list type %x\n", sig);
+
+            if (kn2->Security != 0xffffffff)
+                free_sk(h, kn2->Security, is_volatile);
+
             NtClose(*KeyHandle);
             return STATUS_NOT_IMPLEMENTED;
         }
@@ -3664,6 +3869,7 @@ NTSTATUS muwine_init_registry(void) {
     INIT_LIST_HEAD(&h->volatile_holes);
     h->fs_path = NULL;
     h->parent_hive = NULL;
+    h->volatile_sk = 0xffffffff;
 
     Status = allocate_cell(h, sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]), &offset, true);
     if (!NT_SUCCESS(Status)) {
@@ -3684,7 +3890,7 @@ NTSTATUS muwine_init_registry(void) {
     kn->VolatileSubKeyList = 0;
     kn->ValuesCount = 0;
     kn->Values = 0;
-    kn->Security = 0; // FIXME
+    kn->Security = 0xffffffff; // FIXME
     kn->Class = 0;
     kn->MaxNameLen = 0;
     kn->MaxClassLen = 0;
@@ -3695,6 +3901,8 @@ NTSTATUS muwine_init_registry(void) {
     kn->ClassLength = 0;
 
     h->volatile_root_cell = offset;
+
+    // FIXME - root SD
 
     down_write(&hive_list_sem);
 

@@ -3,10 +3,11 @@
 #define HV_HBLOCK_SIGNATURE 0x66676572  // "regf"
 #define HV_HBIN_SIGNATURE   0x6e696268  // "hbin"
 
-#define CM_KEY_HASH_LEAF        0x686c  // "lh"
-#define CM_KEY_INDEX_ROOT       0x6972  // "ri"
-#define CM_KEY_NODE_SIGNATURE   0x6b6e  // "nk"
-#define CM_KEY_VALUE_SIGNATURE  0x6b76  // "vk"
+#define CM_KEY_HASH_LEAF            0x686c  // "lh"
+#define CM_KEY_INDEX_ROOT           0x6972  // "ri"
+#define CM_KEY_NODE_SIGNATURE       0x6b6e  // "nk"
+#define CM_KEY_VALUE_SIGNATURE      0x6b76  // "vk"
+#define CM_KEY_SECURITY_SIGNATURE   0x6b73  // "sk"
 
 #define BIN_SIZE 0x1000
 
@@ -115,6 +116,16 @@ typedef struct {
 } CM_KEY_INDEX;
 
 typedef struct {
+    uint16_t Signature;
+    uint16_t Reserved;
+    uint32_t Flink;
+    uint32_t Blink;
+    uint32_t ReferenceCount;
+    uint32_t DescriptorLength;
+    uint8_t Descriptor[1];
+} CM_KEY_SECURITY;
+
+typedef struct {
     LARGE_INTEGER LastWriteTime;
     ULONG TitleIndex;
     ULONG NameLength;
@@ -172,6 +183,7 @@ typedef struct _hive {
     struct _hive* parent_hive;
     uint32_t parent_key_offset;
     bool parent_key_volatile;
+    uint32_t volatile_sk;
 } hive;
 
 typedef struct {
