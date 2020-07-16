@@ -9,6 +9,10 @@
 extern "C" {
 #endif
 
+static_assert(sizeof(wchar_t) == 2, "wchar_t is not 2 bytes. Make sure you pass -fshort-wchar to gcc.");
+
+#ifndef MUW_FUNCS_ONLY
+
 typedef int32_t NTSTATUS;
 typedef void* HANDLE, *PHANDLE;
 typedef uint32_t ULONG, *PULONG;
@@ -20,7 +24,6 @@ typedef wchar_t WCHAR;
 typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
 typedef uint8_t UCHAR;
 
-static_assert(sizeof(wchar_t) == 2, "wchar_t is not 2 bytes. Make sure you pass -fshort-wchar to gcc.");
 
 typedef struct {
     USHORT Length;
@@ -126,6 +129,8 @@ typedef struct {
     ULONG DataLength;
     UCHAR Data[1];
 } KEY_VALUE_PARTIAL_INFORMATION;
+
+#endif
 
 NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtClose(HANDLE Handle);
