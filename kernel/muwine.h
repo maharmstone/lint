@@ -126,6 +126,18 @@ typedef struct _object_header {
     muwine_close_object close;
 } object_header;
 
+typedef struct _token token;
+
+typedef struct {
+    struct list_head list;
+    pid_t pid;
+    int refcount;
+    struct list_head handle_list;
+    spinlock_t handle_list_lock;
+    uintptr_t next_handle_no;
+    token* token;
+} process;
+
 // muwine.c
 NTSTATUS muwine_error_to_ntstatus(int err);
 bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
@@ -134,6 +146,7 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
 NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h);
 object_header* get_object_from_handle(HANDLE h);
+process* muwine_current_process(void);
 
 // reg.c
 NTSTATUS muwine_init_registry(void);
@@ -164,12 +177,12 @@ NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationC
 typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;
 typedef struct _SID SID;
 
-typedef struct {
+typedef struct _token {
     SID* owner;
     SID* group;
 } token;
 
 NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len, bool container,
-                                    SID* owner, SID* group, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
+                                    token* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
 void muwine_make_process_token(token** t);
 void muwine_free_token(token* token);

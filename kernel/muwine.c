@@ -33,16 +33,6 @@ static struct muwine_func funcs[] = {
 
 typedef struct {
     struct list_head list;
-    pid_t pid;
-    int refcount;
-    struct list_head handle_list;
-    spinlock_t handle_list_lock;
-    uintptr_t next_handle_no;
-    token* token;
-} process;
-
-typedef struct {
-    struct list_head list;
     object_header* object;
     uintptr_t number;
 } handle;
@@ -140,7 +130,7 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
     return true;
 }
 
-static process* get_current_process(void) {
+process* muwine_current_process(void) {
     struct list_head* le;
     pid_t pid = task_tgid_vnr(current);
 
@@ -166,7 +156,7 @@ static process* get_current_process(void) {
 }
 
 NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
-    process* p = get_current_process();
+    process* p = muwine_current_process();
     handle* hand;
 
     if (!p)
@@ -196,7 +186,7 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h) {
 
 object_header* get_object_from_handle(HANDLE h) {
     struct list_head* le;
-    process* p = get_current_process();
+    process* p = muwine_current_process();
 
     if (!p)
         return NULL;
@@ -228,7 +218,7 @@ object_header* get_object_from_handle(HANDLE h) {
 
 NTSTATUS NtClose(HANDLE Handle) {
     struct list_head* le;
-    process* p = get_current_process();
+    process* p = muwine_current_process();
     handle* h = NULL;
 
     if (!p)

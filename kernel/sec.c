@@ -58,7 +58,7 @@ static void get_inherited_acl(ACL* src, ACL* dest, bool container) {
 }
 
 NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len, bool container,
-                                    SID* owner, SID* group, SECURITY_DESCRIPTOR** out, unsigned int* outlen) {
+                                    token* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen) {
     unsigned int len = sizeof(SECURITY_DESCRIPTOR);
     SECURITY_DESCRIPTOR* sd;
     uint8_t* ptr;
@@ -66,11 +66,11 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
 
     // FIXME - check parent_sd is valid
 
-    if (owner)
-        len += sid_length(owner);
+    if (tok && tok->owner)
+        len += sid_length(tok->owner);
 
-    if (group)
-        len += sid_length(group);
+    if (tok && tok->group)
+        len += sid_length(tok->group);
 
     if (parent_sd->OffsetSacl != 0) {
         sacl_length = inherited_acl_length((ACL*)((uint8_t*)parent_sd + parent_sd->OffsetSacl), container);
@@ -99,20 +99,20 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
 
     ptr = (uint8_t*)&sd[1];
 
-    if (owner) {
-        unsigned int sidlen = sid_length(owner);
+    if (tok && tok->owner) {
+        unsigned int sidlen = sid_length(tok->owner);
 
         sd->OffsetOwner = (uint32_t)(ptr - (uint8_t*)sd);
-        memcpy(ptr, owner, sidlen);
+        memcpy(ptr, tok->owner, sidlen);
         ptr += sidlen;
     } else
         sd->OffsetOwner = 0;
 
-    if (group) {
-        unsigned int sidlen = sid_length(group);
+    if (tok && tok->group) {
+        unsigned int sidlen = sid_length(tok->group);
 
         sd->OffsetGroup = (uint32_t)(ptr - (uint8_t*)sd);
-        memcpy(ptr, group, sidlen);
+        memcpy(ptr, tok->group, sidlen);
         ptr += sidlen;
     } else
         sd->OffsetGroup = 0;
@@ -151,20 +151,19 @@ static void uid_to_sid(SID** sid, kuid_t uid) {
 
     // use Samba's S-1-22-1 mappings
 
-    s = kmalloc(offsetof(SID, SubAuthority) + (3 * sizeof(uint32_t)), GFP_KERNEL);
+    s = kmalloc(offsetof(SID, SubAuthority) + (2 * sizeof(uint32_t)), GFP_KERNEL);
     // FIXME - handle malloc failure
 
     s->Revision = 1;
-    s->SubAuthorityCount = 3;
+    s->SubAuthorityCount = 2;
     s->IdentifierAuthority[0] = 0;
     s->IdentifierAuthority[1] = 0;
     s->IdentifierAuthority[2] = 0;
     s->IdentifierAuthority[3] = 0;
     s->IdentifierAuthority[4] = 0;
-    s->IdentifierAuthority[5] = 1;
-    s->SubAuthority[0] = 22;
-    s->SubAuthority[1] = 1;
-    s->SubAuthority[2] = (uint32_t)uid.val;
+    s->IdentifierAuthority[5] = 22;
+    s->SubAuthority[0] = 1;
+    s->SubAuthority[1] = (uint32_t)uid.val;
 
     *sid = s;
 }
@@ -176,20 +175,19 @@ static void gid_to_sid(SID** sid, kgid_t gid) {
 
     // use Samba's S-1-22-2 mappings
 
-    s = kmalloc(offsetof(SID, SubAuthority) + (3 * sizeof(uint32_t)), GFP_KERNEL);
+    s = kmalloc(offsetof(SID, SubAuthority) + (2 * sizeof(uint32_t)), GFP_KERNEL);
     // FIXME - handle malloc failure
 
     s->Revision = 1;
-    s->SubAuthorityCount = 3;
+    s->SubAuthorityCount = 2;
     s->IdentifierAuthority[0] = 0;
     s->IdentifierAuthority[1] = 0;
     s->IdentifierAuthority[2] = 0;
     s->IdentifierAuthority[3] = 0;
     s->IdentifierAuthority[4] = 0;
-    s->IdentifierAuthority[5] = 1;
-    s->SubAuthority[0] = 22;
-    s->SubAuthority[1] = 2;
-    s->SubAuthority[2] = (uint32_t)gid.val;
+    s->IdentifierAuthority[5] = 22;
+    s->SubAuthority[0] = 2;
+    s->SubAuthority[1] = (uint32_t)gid.val;
 
     *sid = s;
 }

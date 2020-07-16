@@ -2549,7 +2549,7 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* off, SID* owner, SID* group,
+static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* off, token* tok,
                                       bool is_volatile, bool parent_is_volatile) {
     NTSTATUS Status;
     int32_t size;
@@ -2571,7 +2571,7 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
         return STATUS_REGISTRY_CORRUPT;
 
     Status = muwine_create_inherited_sd((SECURITY_DESCRIPTOR*)sk->Descriptor, sk->DescriptorLength,
-                                        true, owner, group, &sd, &sdlen);
+                                        true, tok, &sd, &sdlen);
     if (!NT_SUCCESS(Status))
         return Status;
 
@@ -2835,7 +2835,7 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     hash = calc_subkey_hash(us);
 
     if (kn->Security != 0xffffffff) {
-        Status = allocate_inherited_sk(h, kn->Security, &kn2->Security, NULL, NULL,
+        Status = allocate_inherited_sk(h, kn->Security, &kn2->Security, muwine_current_process()->token,
                                        is_volatile, parent_is_volatile); // FIXME - owner and group
         if (!NT_SUCCESS(Status))
             return Status;
