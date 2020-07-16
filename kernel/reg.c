@@ -2571,7 +2571,7 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
         return STATUS_REGISTRY_CORRUPT;
 
     Status = muwine_create_inherited_sd((SECURITY_DESCRIPTOR*)sk->Descriptor, sk->DescriptorLength,
-                                        owner, group, &sd, &sdlen);
+                                        true, owner, group, &sd, &sdlen);
     if (!NT_SUCCESS(Status))
         return Status;
 

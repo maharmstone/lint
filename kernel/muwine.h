@@ -164,5 +164,5 @@ NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationC
 typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;
 typedef struct _SID SID;
 
-NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len,
+NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len, bool container,
                                     SID* owner, SID* group, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
