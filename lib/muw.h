@@ -1,17 +1,18 @@
 #pragma once
 
 #include <stdint.h>
-#include <wchar.h>
 #include <stddef.h>
-#include <assert.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-static_assert(sizeof(wchar_t) == 2, "wchar_t is not 2 bytes. Make sure you pass -fshort-wchar to gcc.");
-
 #ifndef MUW_FUNCS_ONLY
+
+#include <wchar.h>
+#include <assert.h>
+
+static_assert(sizeof(wchar_t) == 2, "wchar_t is not 2 bytes. Make sure you pass -fshort-wchar to gcc.");
 
 typedef int32_t NTSTATUS;
 typedef void* HANDLE, *PHANDLE;
