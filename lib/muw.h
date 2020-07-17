@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+#define MUW_FIRST_HANDLE 0x1000000
+
 #ifndef MUW_FUNCS_ONLY
 
 #include <wchar.h>
