@@ -12,7 +12,9 @@ extern "C" {
 #include <wchar.h>
 #include <assert.h>
 
+#ifndef MUW_NO_WCHAR_ASSERT
 static_assert(sizeof(wchar_t) == 2, "wchar_t is not 2 bytes. Make sure you pass -fshort-wchar to gcc.");
+#endif
 
 typedef int32_t NTSTATUS;
 typedef void* HANDLE, *PHANDLE;
