@@ -15,7 +15,7 @@ int muwine_fd = 0;
     muwine_fd = fd; \
 }
 
-NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes) {
     uintptr_t args[] = {
         3,
         (uintptr_t)KeyHandle,
@@ -28,7 +28,7 @@ NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBU
     return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENKEY, args);
 }
 
-NTSTATUS NtClose(HANDLE Handle) {
+NTSTATUS __stdcall NtClose(HANDLE Handle) {
     uintptr_t args[] = {
         1,
         (uintptr_t)Handle
@@ -39,8 +39,8 @@ NTSTATUS NtClose(HANDLE Handle) {
     return ioctl(muwine_fd, MUWINE_IOCTL_NTCLOSE, args);
 }
 
-NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
-                        PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
+NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                                  PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
     uintptr_t args[] = {
         6,
         (uintptr_t)KeyHandle,
@@ -56,8 +56,8 @@ NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS Key
     return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEKEY, args);
 }
 
-NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                             PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+NTSTATUS __stdcall NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                       PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
     uintptr_t args[] = {
         6,
         (uintptr_t)KeyHandle,
@@ -73,8 +73,9 @@ NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATIO
     return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEVALUEKEY, args);
 }
 
-NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                         PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName,
+                                   KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                   PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
     uintptr_t args[] = {
         6,
         (uintptr_t)KeyHandle,
@@ -90,8 +91,8 @@ NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_
     return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYVALUEKEY, args);
 }
 
-NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
-                       ULONG Type, PVOID Data, ULONG DataSize) {
+NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName, ULONG TitleIndex,
+                                 ULONG Type, const void* Data, ULONG DataSize) {
     uintptr_t args[] = {
         6,
         (uintptr_t)KeyHandle,
@@ -107,7 +108,7 @@ NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleI
     return ioctl(muwine_fd, MUWINE_IOCTL_NTSETVALUEKEY, args);
 }
 
-NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
+NTSTATUS __stdcall NtDeleteValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName) {
     uintptr_t args[] = {
         2,
         (uintptr_t)KeyHandle,
@@ -119,8 +120,8 @@ NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEVALUEKEY, args);
 }
 
-NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
-                     PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
+NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
+                               ULONG TitleIndex, const UNICODE_STRING* Class, ULONG CreateOptions, PULONG Disposition) {
     uintptr_t args[] = {
         7,
         (uintptr_t)KeyHandle,
@@ -137,7 +138,7 @@ NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRI
     return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATEKEY, args);
 }
 
-NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
+NTSTATUS __stdcall NtDeleteKey(HANDLE KeyHandle) {
     uintptr_t args[] = {
         1,
         (uintptr_t)KeyHandle
@@ -148,7 +149,7 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEKEY, args);
 }
 
-NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
+NTSTATUS __stdcall NtLoadKey(const OBJECT_ATTRIBUTES* DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
     uintptr_t args[] = {
         2,
         (uintptr_t)DestinationKeyName,
@@ -160,7 +161,7 @@ NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES Hiv
     return ioctl(muwine_fd, MUWINE_IOCTL_NTLOADKEY, args);
 }
 
-NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
+NTSTATUS __stdcall NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
     uintptr_t args[] = {
         1,
         (uintptr_t)DestinationKeyName
@@ -171,7 +172,7 @@ NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
     return ioctl(muwine_fd, MUWINE_IOCTL_NTUNLOADKEY, args);
 }
 
-NTSTATUS NtFlushKey(HANDLE KeyHandle) {
+NTSTATUS __stdcall NtFlushKey(HANDLE KeyHandle) {
     uintptr_t args[] = {
         1,
         (uintptr_t)KeyHandle
@@ -182,8 +183,8 @@ NTSTATUS NtFlushKey(HANDLE KeyHandle) {
     return ioctl(muwine_fd, MUWINE_IOCTL_NTFLUSHKEY, args);
 }
 
-NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
-                     ULONG OpenOptions) {
+NTSTATUS __stdcall NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
+                               ULONG OpenOptions) {
     uintptr_t args[] = {
         4,
         (uintptr_t)KeyHandle,
@@ -197,8 +198,8 @@ NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRI
     return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENKEYEX, args);
 }
 
-NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
-                    ULONG Length, PULONG ResultLength) {
+NTSTATUS __stdcall NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
+                              ULONG Length, PULONG ResultLength) {
     uintptr_t args[] = {
         5,
         (uintptr_t)KeyHandle,

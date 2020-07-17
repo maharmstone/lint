@@ -132,27 +132,29 @@ typedef struct {
 
 #endif
 
-NTSTATUS NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
-NTSTATUS NtClose(HANDLE Handle);
-NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
-                        PVOID KeyInformation, ULONG Length, PULONG ResultLength);
-NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                             PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
-NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                         PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
-NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
-                       ULONG Type, PVOID Data, ULONG DataSize);
-NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName);
-NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
-                     PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition);
-NTSTATUS NtDeleteKey(HANDLE KeyHandle);
-NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName);
-NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
-NTSTATUS NtFlushKey(HANDLE KeyHandle);
-NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
-                     ULONG OpenOptions);
-NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
-                    ULONG Length, PULONG ResultLength);
+#define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
+
+NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes);
+NTSTATUS __stdcall NtClose(HANDLE Handle);
+NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
+                                  PVOID KeyInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS __stdcall NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                       PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
+NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
+                                   void* KeyValueInformation, DWORD Length, DWORD* ResultLength);
+NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName, ULONG TitleIndex,
+                                 ULONG Type, const void* Data, ULONG DataSize);
+NTSTATUS __stdcall NtDeleteValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName);
+NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes, ULONG TitleIndex,
+                               const UNICODE_STRING* Class, ULONG CreateOptions, PULONG Disposition);
+NTSTATUS __stdcall NtDeleteKey(HANDLE KeyHandle);
+NTSTATUS __stdcall NtLoadKey(const OBJECT_ATTRIBUTES* DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName);
+NTSTATUS __stdcall NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
+NTSTATUS __stdcall NtFlushKey(HANDLE KeyHandle);
+NTSTATUS __stdcall NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
+                               ULONG OpenOptions);
+NTSTATUS __stdcall NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
+                              ULONG Length, PULONG ResultLength);
 
 #ifdef __cplusplus
 }
