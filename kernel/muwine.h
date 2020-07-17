@@ -11,6 +11,8 @@
 #define _WIN64
 #endif
 
+#define MUW_FIRST_HANDLE 0x1000000
+
 struct muwine_func {
     void* func;
     unsigned int num_args;

@@ -303,7 +303,7 @@ static int muwine_open(struct inode* inode, struct file* file) {
     p->refcount = 1;
     INIT_LIST_HEAD(&p->handle_list);
     spin_lock_init(&p->handle_list_lock);
-    p->next_handle_no = 4;
+    p->next_handle_no = MUW_FIRST_HANDLE + 4;
     muwine_make_process_token(&p->token);
 
     spin_lock(&pid_list_lock);
