@@ -45,6 +45,7 @@ typedef DWORD ACCESS_MASK;
 typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef uint8_t UCHAR;
+typedef uint8_t BOOLEAN;
 
 typedef struct {
     int64_t QuadPart;
@@ -70,6 +71,17 @@ typedef struct _OBJECT_ATTRIBUTES {
     PVOID SecurityDescriptor;
     PVOID SecurityQualityOfService;
 } OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
+
+typedef struct {
+    union {
+        NTSTATUS Status;
+        PVOID Pointer;
+    } DUMMYUNIONNAME;
+
+    uintptr_t Information;
+} IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
+
+typedef void* PIO_APC_ROUTINE;
 
 typedef enum _KEY_INFORMATION_CLASS {
     KeyBasicInformation,
@@ -124,6 +136,24 @@ typedef NTSTATUS (*muwine_func6arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t ar
 typedef NTSTATUS (*muwine_func7arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
                                     uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
                                     uintptr_t arg7);
+typedef NTSTATUS (*muwine_func8arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                    uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
+                                    uintptr_t arg7, uintptr_t arg8);
+typedef NTSTATUS (*muwine_func9arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                    uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
+                                    uintptr_t arg7, uintptr_t arg8, uintptr_t arg9);
+typedef NTSTATUS (*muwine_func10arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                     uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
+                                     uintptr_t arg7, uintptr_t arg8, uintptr_t arg9,
+                                     uintptr_t arg10);
+typedef NTSTATUS (*muwine_func11arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                     uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
+                                     uintptr_t arg7, uintptr_t arg8, uintptr_t arg9,
+                                     uintptr_t arg10, uintptr_t arg11);
+typedef NTSTATUS (*muwine_func12arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                     uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
+                                     uintptr_t arg7, uintptr_t arg8, uintptr_t arg9,
+                                     uintptr_t arg10, uintptr_t arg11, uintptr_t arg12);
 
 struct _object_header;
 
@@ -187,6 +217,14 @@ NTSTATUS user_NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
                          ULONG Length, PULONG ResultLength);
 NTSTATUS NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle);
+NTSTATUS NtNotifyChangeKey(HANDLE KeyHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                           PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter, BOOLEAN WatchSubtree,
+                           PVOID ChangeBuffer, ULONG Length, BOOLEAN Asynchronous);
+NTSTATUS NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJECT_ATTRIBUTES* SubordinateObjects,
+                                    HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                    PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter,
+                                    BOOLEAN WatchSubtree, PVOID ChangeBuffer, ULONG Length,
+                                    BOOLEAN Asynchronous);
 
 // sec.c
 typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;

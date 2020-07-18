@@ -4201,3 +4201,30 @@ NTSTATUS NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle) {
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS NtNotifyChangeKey(HANDLE KeyHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                           PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter, BOOLEAN WatchSubtree,
+                           PVOID ChangeBuffer, ULONG Length, BOOLEAN Asynchronous) {
+    printk(KERN_INFO "NtNotifyChangeKey(%lx, %lx, %p, %p, %p, %x, %x, %p, %x, %x): stub\n",
+           (uintptr_t)KeyHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           CompletionFilter, WatchSubtree, ChangeBuffer, Length, Asynchronous);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJECT_ATTRIBUTES* SubordinateObjects,
+                                    HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                    PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter,
+                                    BOOLEAN WatchSubtree, PVOID ChangeBuffer, ULONG Length,
+                                    BOOLEAN Asynchronous) {
+    printk(KERN_INFO "NtNotifyChangeMultipleKeys(%lx, %x, %p, %lx, %p, %p, %p, %x, %x, %p, %x, %x): stub\n",
+           (uintptr_t)KeyHandle, Count, SubordinateObjects, (uintptr_t)Event, ApcRoutine,
+           ApcContext, IoStatusBlock, CompletionFilter, WatchSubtree, ChangeBuffer,
+           Length, Asynchronous);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
