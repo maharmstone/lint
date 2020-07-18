@@ -154,6 +154,9 @@ static void uid_to_sid(SID** sid, kuid_t uid) {
     // FIXME - allow overrides in Registry
     // FIXME - map root separately
 
+    // FIXME - create from machine SID
+
+#if 0 // Samba's scheme
     // use Samba's S-1-22-1 mappings
 
     s = kmalloc(offsetof(SID, SubAuthority) + (2 * sizeof(uint32_t)), GFP_KERNEL);
@@ -169,6 +172,39 @@ static void uid_to_sid(SID** sid, kuid_t uid) {
     s->IdentifierAuthority[5] = 22;
     s->SubAuthority[0] = 1;
     s->SubAuthority[1] = (uint32_t)uid.val;
+#else // Wine's scheme
+    if (uid.val == 1000) { // S-1-5-21-0-0-0-1000
+        s = kmalloc(offsetof(SID, SubAuthority) + (5 * sizeof(uint32_t)), GFP_KERNEL);
+        // FIXME - handle malloc failure
+
+        s->Revision = 1;
+        s->SubAuthorityCount = 5;
+        s->IdentifierAuthority[0] = 0;
+        s->IdentifierAuthority[1] = 0;
+        s->IdentifierAuthority[2] = 0;
+        s->IdentifierAuthority[3] = 0;
+        s->IdentifierAuthority[4] = 0;
+        s->IdentifierAuthority[5] = 5;
+        s->SubAuthority[0] = 21;
+        s->SubAuthority[1] = 0;
+        s->SubAuthority[2] = 0;
+        s->SubAuthority[3] = 0;
+        s->SubAuthority[4] = 1000;
+    } else { // S-1-5-7, Anonymous
+        s = kmalloc(offsetof(SID, SubAuthority) + sizeof(uint32_t), GFP_KERNEL);
+        // FIXME - handle malloc failure
+
+        s->Revision = 1;
+        s->SubAuthorityCount = 1;
+        s->IdentifierAuthority[0] = 0;
+        s->IdentifierAuthority[1] = 0;
+        s->IdentifierAuthority[2] = 0;
+        s->IdentifierAuthority[3] = 0;
+        s->IdentifierAuthority[4] = 0;
+        s->IdentifierAuthority[5] = 5;
+        s->SubAuthority[0] = 7;
+    }
+#endif
 
     *sid = s;
 }
