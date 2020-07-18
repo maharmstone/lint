@@ -1,18 +1,99 @@
 #include <muw.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <string>
+#include <iostream>
+
+using namespace std;
 
 #define STATUS_SUCCESS 0x00000000
+
+static u16string utf8_to_utf16(const string_view& s) {
+    u16string ret;
+
+    for (unsigned int i = 0; i < s.length(); i++) {
+        uint32_t cp;
+
+        if (!(s[i] & 0x80))
+            cp = s[i];
+        else if ((s[i] & 0xe0) == 0xc0) {
+            if (i == s.length() - 1 || (s[i+1] & 0xc0) != 0x80)
+                throw runtime_error("Malformed UTF-8.");
+
+            cp = ((s[i] & 0x1f) << 6) | (s[i+1] & 0x3f);
+            i++;
+        } else if ((s[i] & 0xf0) == 0xe0) {
+            if (i >= s.length() - 2 || (s[i+1] & 0xc0) != 0x80 || (s[i+2] & 0xc0) != 0x80)
+                throw runtime_error("Malformed UTF-8.");
+
+            cp = ((s[i] & 0xf) << 12) | ((s[i+1] & 0x3f) << 6) | (s[i+2] & 0x3f);
+            i += 2;
+        } else if ((s[i] & 0xf8) == 0xf0) {
+            if (i >= s.length() - 3 || (s[i+1] & 0xc0) != 0x80 || (s[i+2] & 0xc0) != 0x80 || (s[i+3] & 0xc0) != 0x80)
+                throw runtime_error("Malformed UTF-8.");
+
+            cp = ((s[i] & 0x7) << 18) | ((s[i+1] & 0x3f) << 12) | ((s[i+2] & 0x3f) << 6) | (s[i+3] & 0x3f);
+            i += 3;
+        } else
+            throw runtime_error("Malformed UTF-8.");
+
+        if (cp > 0x10ffff)
+            throw runtime_error("Malformed UTF-8.");
+
+        if (cp <= 0xffff)
+            ret += (char16_t)cp;
+        else {
+            cp -= 0x10000;
+
+            ret += (char16_t)(0xd800 | ((cp & 0xffc00) >> 10));
+            ret += (char16_t)(0xdc00 | (cp & 0x3ff));
+        }
+    }
+
+    return ret;
+}
+
+static u16string get_nt_path(const string& s) {
+    u16string path;
+
+    {
+        auto abs = realpath(s.c_str(), nullptr);
+
+        if (!abs)
+            throw runtime_error("realpath returned NULL.");
+
+        try {
+            path = utf8_to_utf16(abs);
+        } catch (...) {
+            free(abs);
+            throw;
+        }
+
+        free(abs);
+    }
+
+    if (!path.empty() && path[0] == u'/')
+        path = path.substr(1);
+
+    for (auto& c : path) {
+        if (c == u'/')
+            c = u'\\';
+    }
+
+    return u"\\Device\\UnixRoot\\" + path;
+}
 
 static NTSTATUS mount_system_hive() {
     NTSTATUS Status;
     UNICODE_STRING file_us, key_us;
     OBJECT_ATTRIBUTES key, file;
+    auto file_str = get_nt_path("SYSTEM");
 
-    static const WCHAR file_str[] = L"\\Device\\UnixRoot\\root\\temp\\init\\SYSTEM"; // FIXME
     static const WCHAR key_str[] = L"\\Registry\\Machine\\System";
 
-    file_us.Length = file_us.MaximumLength = sizeof(file_str) - sizeof(WCHAR);
-    file_us.Buffer = (WCHAR*)file_str;
+    file_us.Length = file_us.MaximumLength = (USHORT)(file_str.length() * sizeof(char16_t));
+    file_us.Buffer = (WCHAR*)file_str.data();
 
     key.Length = sizeof(key);
     key.RootDirectory = NULL;
@@ -124,19 +205,24 @@ static NTSTATUS create_current_control_set_symlink() {
 }
 
 int main() {
-    NTSTATUS Status;
+    try {
+        NTSTATUS Status;
 
-    Status = create_reg_keys();
-    if (!NT_SUCCESS(Status))
-        return 1;
+        Status = create_reg_keys();
+        if (!NT_SUCCESS(Status))
+            return 1;
 
-    Status = mount_system_hive();
-    if (!NT_SUCCESS(Status))
-        return 1;
+        Status = mount_system_hive();
+        if (!NT_SUCCESS(Status))
+            return 1;
 
-    Status = create_current_control_set_symlink();
-    if (!NT_SUCCESS(Status))
+        Status = create_current_control_set_symlink();
+        if (!NT_SUCCESS(Status))
+            return 1;
+    } catch (const exception& e) {
+        cerr << e.what() << endl;
         return 1;
+    }
 
     return 0;
 }
