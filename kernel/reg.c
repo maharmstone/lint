@@ -1615,7 +1615,7 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset, bool all
         h->data = new_data;
         h->bins = (uint8_t*)h->data + BIN_SIZE;
 
-        hbin = (HBIN*)((uint8_t*)h->bins + h->size);
+        hbin = (HBIN*)((uint8_t*)h->data + h->size);
         hbin->Signature = HV_HBIN_SIGNATURE;
         hbin->FileOffset = (uint8_t*)hbin - (uint8_t*)h->bins;
         hbin->Size = BIN_SIZE;
@@ -1624,7 +1624,7 @@ static NTSTATUS allocate_cell(hive* h, uint32_t size, uint32_t* offset, bool all
         hbin->TimeStamp.QuadPart = 0; // FIXME
         hbin->Spare = 0;
 
-        *offset = h->size + sizeof(HBIN);
+        *offset = hbin->FileOffset + sizeof(HBIN);
         h->size += BIN_SIZE;
 
         if (size < BIN_SIZE - sizeof(HBIN)) { // add hole entry for rest
