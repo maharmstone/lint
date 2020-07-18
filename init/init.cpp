@@ -170,7 +170,7 @@ static void create_reg_keys() {
     create_vol_key(u"\\Registry\\User\\.Default");
 }
 
-static NTSTATUS create_current_control_set_symlink() {
+static void create_current_control_set_symlink() {
     NTSTATUS Status;
     HANDLE h;
     OBJECT_ATTRIBUTES oa;
@@ -192,36 +192,28 @@ static NTSTATUS create_current_control_set_symlink() {
     oa.SecurityQualityOfService = NULL;
 
     Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE | REG_OPTION_CREATE_LINK, &dispos);
-    if (!NT_SUCCESS(Status)) {
-        fprintf(stderr, "NtCreateKey returned %08x\n", (int32_t)Status);
-        return Status;
-    }
+    if (!NT_SUCCESS(Status))
+        throw formatted_error("NtCreateKey returned {:08x}.", (uint32_t)Status);
 
     value_name.Length = value_name.MaximumLength = sizeof(slv) - sizeof(WCHAR);
     value_name.Buffer = (WCHAR*)slv;
 
     Status = NtSetValueKey(h, &value_name, 0, REG_LINK, (void*)target, sizeof(target) - sizeof(WCHAR));
     if (!NT_SUCCESS(Status)) {
-        fprintf(stderr, "NtSetValueKey returned %08x\n", (int32_t)Status);
-        return Status;
+        NtClose(h);
+        throw formatted_error("NtSetValueKey returned {:08x}.", (uint32_t)Status);
     }
 
     NtClose(h);
-
-    return STATUS_SUCCESS;
 }
 
 int main() {
     try {
-        NTSTATUS Status;
-
         create_reg_keys();
 
         mount_hives();
 
-        Status = create_current_control_set_symlink();
-        if (!NT_SUCCESS(Status))
-            return 1;
+        create_current_control_set_symlink();
     } catch (const exception& e) {
         cerr << e.what() << endl;
         return 1;
