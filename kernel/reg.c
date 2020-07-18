@@ -750,6 +750,8 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             k->header.refcount = 1;
             k->header.type = muwine_object_key;
+            k->header.path.Buffer = NULL;
+            k->header.path.Length = k->header.path.MaximumLength = 0;
             k->header.close = key_object_close;
             k->h = h;
             __sync_add_and_fetch(&h->refcount, 1);
@@ -846,6 +848,9 @@ static void key_object_close(object_header* obj) {
     key_object* key = (key_object*)obj;
 
     __sync_sub_and_fetch(&key->h->refcount, 1);
+
+    if (key->header.path.Buffer)
+        kfree(key->header.path.Buffer);
 
     kfree(key);
 }
@@ -2756,6 +2761,8 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
         k->header.refcount = 1;
         k->header.type = muwine_object_key;
+        k->header.path.Buffer = NULL;
+        k->header.path.Length = k->header.path.MaximumLength = 0;
         k->header.close = key_object_close;
         k->h = h;
         __sync_add_and_fetch(&h->refcount, 1);
@@ -2853,6 +2860,8 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
+    k->header.path.Buffer = NULL;
+    k->header.path.Length = k->header.path.MaximumLength = 0;
     k->header.close = key_object_close;
     k->h = h;
     __sync_add_and_fetch(&h->refcount, 1);

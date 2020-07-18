@@ -167,6 +167,7 @@ typedef struct _object_header {
     int refcount;
     struct list_head list;
     object_type type;
+    UNICODE_STRING path;
     muwine_close_object close;
 } object_header;
 
