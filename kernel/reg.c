@@ -2538,6 +2538,7 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
     if (!NT_SUCCESS(Status))
         return Status;
 
+    bins = is_volatile ? h->volatile_bins : h->bins;
     lh = (CM_KEY_FAST_INDEX*)(bins + *offset + sizeof(int32_t));
 
     lh->Signature = CM_KEY_HASH_LEAF;
