@@ -749,8 +749,24 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             k->header.refcount = 1;
             k->header.type = muwine_object_key;
-            k->header.path.Buffer = NULL;
-            k->header.path.Length = k->header.path.MaximumLength = 0;
+
+            k->header.path.Length = k->header.path.MaximumLength = orig_us.Length + sizeof(prefix) - sizeof(WCHAR);
+            k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
+
+            if (!k->header.path.Buffer) {
+                up_read(&hive_list_sem);
+
+                if (us_alloc)
+                    kfree(orig_us.Buffer);
+
+                kfree(k);
+
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
+            memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], orig_us.Buffer, orig_us.Length);
+
             k->header.close = key_object_close;
             k->h = h;
             __sync_add_and_fetch(&h->refcount, 1);
