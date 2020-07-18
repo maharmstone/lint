@@ -234,15 +234,15 @@ static void gid_to_sid(SID** sid, kgid_t gid) {
 }
 
 void muwine_make_process_token(token** t) {
-    token* token;
+    token* tok;
 
-    token = kmalloc(sizeof(token), GFP_KERNEL);
+    tok = kmalloc(sizeof(token), GFP_KERNEL);
     // FIXME - handle malloc failure
 
-    uid_to_sid(&token->owner, current_euid());
-    gid_to_sid(&token->group, current_egid());
+    uid_to_sid(&tok->owner, current_euid());
+    gid_to_sid(&tok->group, current_egid());
 
-    *t = token;
+    *t = tok;
 }
 
 void muwine_free_token(token* token) {
