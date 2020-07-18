@@ -26,7 +26,8 @@ static struct muwine_func funcs[] = {
     { user_NtUnloadKey, 1 },
     { NtFlushKey, 1 },
     { user_NtOpenKeyEx, 4 },
-    { user_NtQueryKey, 5 }
+    { user_NtQueryKey, 5 },
+    { NtSaveKey, 2 }
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system

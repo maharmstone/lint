@@ -186,6 +186,7 @@ NTSTATUS user_NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
                           ULONG OpenOptions);
 NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
                          ULONG Length, PULONG ResultLength);
+NTSTATUS NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle);
 
 // sec.c
 typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;

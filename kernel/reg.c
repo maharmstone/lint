@@ -4193,3 +4193,11 @@ NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationC
 
     return Status;
 }
+
+NTSTATUS NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle) {
+    printk(KERN_INFO "NtSaveKey(%lx, %lx): stub\n", (uintptr_t)KeyHandle, (uintptr_t)FileHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
