@@ -28,7 +28,7 @@ typedef DWORD ACCESS_MASK;
 typedef wchar_t WCHAR;
 typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
 typedef uint8_t UCHAR;
-
+typedef uint8_t BOOLEAN;
 
 typedef struct {
     USHORT Length;
@@ -135,6 +135,17 @@ typedef struct {
     UCHAR Data[1];
 } KEY_VALUE_PARTIAL_INFORMATION;
 
+typedef struct {
+    union {
+        NTSTATUS Status;
+        PVOID Pointer;
+    } DUMMYUNIONNAME;
+
+    uintptr_t Information;
+} IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
+
+typedef void* PIO_APC_ROUTINE;
+
 #endif
 
 #define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
@@ -161,6 +172,14 @@ NTSTATUS __stdcall NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, con
 NTSTATUS __stdcall NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
                               ULONG Length, PULONG ResultLength);
 NTSTATUS __stdcall NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle);
+NTSTATUS __stdcall NtNotifyChangeKey(HANDLE KeyHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                     PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter, BOOLEAN WatchSubtree,
+                                     PVOID ChangeBuffer, ULONG Length, BOOLEAN Asynchronous);
+NTSTATUS __stdcall NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJECT_ATTRIBUTES* SubordinateObjects,
+                                              HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                              PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter,
+                                              BOOLEAN WatchSubtree, PVOID ChangeBuffer, ULONG Length,
+                                              BOOLEAN Asynchronous);
 
 #ifdef __cplusplus
 }

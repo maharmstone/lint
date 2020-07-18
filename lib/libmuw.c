@@ -225,3 +225,51 @@ NTSTATUS __stdcall NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle) {
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTSAVEKEY, args);
 }
+
+NTSTATUS __stdcall NtNotifyChangeKey(HANDLE KeyHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                     PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter, BOOLEAN WatchSubtree,
+                                     PVOID ChangeBuffer, ULONG Length, BOOLEAN Asynchronous) {
+    uintptr_t args[] = {
+        10,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)Event,
+        (uintptr_t)ApcRoutine,
+        (uintptr_t)ApcContext,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)CompletionFilter,
+        (uintptr_t)WatchSubtree,
+        (uintptr_t)ChangeBuffer,
+        (uintptr_t)Length,
+        (uintptr_t)Asynchronous
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTNOTIFYCHANGEKEY, args);
+}
+
+NTSTATUS __stdcall NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJECT_ATTRIBUTES* SubordinateObjects,
+                                              HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                              PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter,
+                                              BOOLEAN WatchSubtree, PVOID ChangeBuffer, ULONG Length,
+                                              BOOLEAN Asynchronous) {
+    uintptr_t args[] = {
+        12,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)Count,
+        (uintptr_t)SubordinateObjects,
+        (uintptr_t)Event,
+        (uintptr_t)ApcRoutine,
+        (uintptr_t)ApcContext,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)CompletionFilter,
+        (uintptr_t)WatchSubtree,
+        (uintptr_t)ChangeBuffer,
+        (uintptr_t)Length,
+        (uintptr_t)Asynchronous
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTNOTIFYCHANGEMULTIPLEKEYS, args);
+}
