@@ -2751,7 +2751,8 @@ static void free_sk(hive* h, uint32_t off, bool is_volatile) {
     free_cell(h, off, is_volatile);
 }
 
-static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions, PULONG Disposition) {
+static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions, PULONG Disposition,
+                                   const UNICODE_STRING* orig_us) {
     NTSTATUS Status;
     key_object* k;
     CM_KEY_NODE* kn;
@@ -2762,6 +2763,8 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     bool parent_is_volatile;
     uint32_t* subkey_count;
     uint32_t* subkey_list;
+
+    static const WCHAR prefix[] = L"\\Registry\\";
 
     // get offset for kn of parent
 
@@ -2786,8 +2789,18 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
         k->header.refcount = 1;
         k->header.type = muwine_object_key;
-        k->header.path.Buffer = NULL;
-        k->header.path.Length = k->header.path.MaximumLength = 0;
+
+        k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + orig_us->Length;
+        k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
+
+        if (!k->header.path.Buffer) {
+            kfree(k);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
+        memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], orig_us->Buffer, orig_us->Length);
+
         k->header.close = key_object_close;
         k->h = h;
         __sync_add_and_fetch(&h->refcount, 1);
@@ -2885,8 +2898,21 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
-    k->header.path.Buffer = NULL;
-    k->header.path.Length = k->header.path.MaximumLength = 0;
+
+    k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + orig_us->Length;
+    k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
+
+    if (!k->header.path.Buffer) {
+        if (kn2->Security != 0xffffffff)
+            free_sk(h, kn2->Security, is_volatile);
+
+        kfree(k);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
+    memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], orig_us->Buffer, orig_us->Length);
+
     k->header.close = key_object_close;
     k->h = h;
     __sync_add_and_fetch(&h->refcount, 1);
@@ -3033,7 +3059,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     UNICODE_STRING us;
     bool us_alloc;
     struct list_head* le;
-    WCHAR* us_buf = NULL;
+    UNICODE_STRING orig_us;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
@@ -3069,8 +3095,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     if (!NT_SUCCESS(Status))
         return Status;
 
-    if (us_alloc)
-        us_buf = us.Buffer;
+    orig_us = us;
 
     down_read(&hive_list_sem);
 
@@ -3100,13 +3125,13 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             down_write(&h->sem);
 
-            Status = create_key_in_hive(h, &us, KeyHandle, CreateOptions, Disposition);
+            Status = create_key_in_hive(h, &us, KeyHandle, CreateOptions, Disposition, &orig_us);
 
             up_write(&h->sem);
             up_read(&hive_list_sem);
 
-            if (us_buf)
-                kfree(us_buf);
+            if (us_alloc)
+                kfree(orig_us.Buffer);
 
             return Status;
         }
@@ -3116,8 +3141,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     up_read(&hive_list_sem);
 
-    if (us_buf)
-        kfree(us_buf);
+    if (us_alloc)
+        kfree(orig_us.Buffer);
 
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
