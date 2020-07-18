@@ -2365,6 +2365,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
                     if (!NT_SUCCESS(Status))
                         goto end;
 
+                    bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
                     new_values_list = (uint32_t*)((uint8_t*)bins + values_list_offset + sizeof(int32_t));
 
                     memcpy(new_values_list, values_list, i * sizeof(uint32_t));
