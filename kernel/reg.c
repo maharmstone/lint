@@ -2038,6 +2038,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                         if (!NT_SUCCESS(Status))
                             goto end;
 
+                        bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
                         memcpy(bins + cell + sizeof(int32_t), Data, DataSize);
 
                         vk->Data = cell;
@@ -2070,6 +2071,8 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                             Status = allocate_cell(key->h, DataSize, &cell, key->is_volatile);
                             if (!NT_SUCCESS(Status))
                                 goto end;
+
+                            bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
 
                             free_cell(key->h, vk->Data, key->is_volatile);
 
@@ -2104,6 +2107,8 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     if (!NT_SUCCESS(Status))
         goto end;
 
+    bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+
     vk = (CM_KEY_VALUE*)(bins + vk_offset + sizeof(int32_t));
     vk->Signature = CM_KEY_VALUE_SIGNATURE;
     vk->NameLength = ValueName ? ValueName->Length : 0;
@@ -2123,6 +2128,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
             goto end;
         }
 
+        bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
         memcpy(bins + vk->Data + sizeof(int32_t), Data, DataSize);
     } else {
         vk->DataLength = DataSize == 0 ? 0 : (CM_KEY_VALUE_SPECIAL_SIZE | DataSize);
@@ -2165,6 +2171,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
         goto end;
     }
 
+    bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
     values_list = (uint32_t*)((uint8_t*)bins + values_list_offset + sizeof(int32_t));
 
     if (kn->ValuesCount > 0) {
