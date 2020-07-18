@@ -160,6 +160,7 @@ NTSTATUS __stdcall NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, con
                                ULONG OpenOptions);
 NTSTATUS __stdcall NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
                               ULONG Length, PULONG ResultLength);
+NTSTATUS __stdcall NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle);
 
 #ifdef __cplusplus
 }

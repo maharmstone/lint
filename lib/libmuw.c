@@ -213,3 +213,15 @@ NTSTATUS __stdcall NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInforma
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYKEY, args);
 }
+
+NTSTATUS __stdcall NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle) {
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)KeyHandle,
+        (uintptr_t)FileHandle
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTSAVEKEY, args);
+}
