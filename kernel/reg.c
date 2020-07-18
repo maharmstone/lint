@@ -2618,6 +2618,7 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
     if (!NT_SUCCESS(Status))
         return Status;
 
+    bins = is_volatile ? h->volatile_bins : h->bins;
     sk = (CM_KEY_SECURITY*)(bins + skoff + sizeof(int32_t));
 
     sk->Signature = CM_KEY_SECURITY_SIGNATURE;
