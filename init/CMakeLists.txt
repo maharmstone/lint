@@ -11,7 +11,10 @@ set(SRC_FILES
 
 add_executable(muwine-init ${SRC_FILES})
 
+find_package(fmt REQUIRED)
+
 target_link_libraries(muwine-init muw)
+target_link_libraries(muwine-init fmt::fmt-header-only)
 
 target_compile_options(muwine-init PUBLIC -fshort-wchar)
 target_compile_options(muwine-init PUBLIC -Wall -Werror=cast-function-type -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra -Wconversion)

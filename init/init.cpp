@@ -4,10 +4,26 @@
 #include <limits.h>
 #include <string>
 #include <iostream>
+#include <fmt/format.h>
 
 using namespace std;
 
 #define STATUS_SUCCESS 0x00000000
+
+class formatted_error : public exception {
+public:
+    template<typename... Args>
+    formatted_error(const string_view& s, Args&&... args) {
+        msg = fmt::format(s, forward<Args>(args)...);
+    }
+
+    const char* what() const noexcept {
+        return msg.c_str();
+    }
+
+private:
+    string msg;
+};
 
 static u16string utf8_to_utf16(const string_view& s) {
     u16string ret;
@@ -84,41 +100,38 @@ static u16string get_nt_path(const string& s) {
     return u"\\Device\\UnixRoot\\" + path;
 }
 
-static NTSTATUS mount_system_hive() {
+static void mount_hive(const u16string_view& key, const u16string_view& file) {
     NTSTATUS Status;
     UNICODE_STRING file_us, key_us;
-    OBJECT_ATTRIBUTES key, file;
-    auto file_str = get_nt_path("SYSTEM");
+    OBJECT_ATTRIBUTES key_oa, file_oa;
 
-    static const WCHAR key_str[] = L"\\Registry\\Machine\\System";
+    file_us.Length = file_us.MaximumLength = (USHORT)(file.length() * sizeof(char16_t));
+    file_us.Buffer = (WCHAR*)file.data();
 
-    file_us.Length = file_us.MaximumLength = (USHORT)(file_str.length() * sizeof(char16_t));
-    file_us.Buffer = (WCHAR*)file_str.data();
+    key_oa.Length = sizeof(key_oa);
+    key_oa.RootDirectory = nullptr;
+    key_oa.ObjectName = &key_us;
+    key_oa.Attributes = 0;
+    key_oa.SecurityDescriptor = nullptr;
+    key_oa.SecurityQualityOfService = nullptr;
 
-    key.Length = sizeof(key);
-    key.RootDirectory = NULL;
-    key.ObjectName = &key_us;
-    key.Attributes = 0;
-    key.SecurityDescriptor = NULL;
-    key.SecurityQualityOfService = NULL;
+    key_us.Length = key_us.MaximumLength = (USHORT)(key.length() * sizeof(char16_t));
+    key_us.Buffer = (WCHAR*)key.data();
 
-    key_us.Length = key_us.MaximumLength = sizeof(key_str) - sizeof(WCHAR);
-    key_us.Buffer = (WCHAR*)key_str;
+    file_oa.Length = sizeof(file);
+    file_oa.RootDirectory = nullptr;
+    file_oa.ObjectName = &file_us;
+    file_oa.Attributes = 0;
+    file_oa.SecurityDescriptor = nullptr;
+    file_oa.SecurityQualityOfService = nullptr;
 
-    file.Length = sizeof(file);
-    file.RootDirectory = NULL;
-    file.ObjectName = &file_us;
-    file.Attributes = 0;
-    file.SecurityDescriptor = NULL;
-    file.SecurityQualityOfService = NULL;
+    Status = NtLoadKey(&key_oa, &file_oa);
+    if (!NT_SUCCESS(Status))
+        throw formatted_error("NtLoadKey returned {:08x}.\n", (int32_t)Status);
+}
 
-    Status = NtLoadKey(&key, &file);
-    if (!NT_SUCCESS(Status)) {
-        fprintf(stderr, "NtLoadKey returned %08x.\n", (int32_t)Status);
-        return Status;
-    }
-
-    return Status;
+static void mount_hives() {
+    mount_hive(u"\\Registry\\Machine\\System", get_nt_path("SYSTEM"));
 }
 
 static NTSTATUS create_reg_keys() {
@@ -212,9 +225,7 @@ int main() {
         if (!NT_SUCCESS(Status))
             return 1;
 
-        Status = mount_system_hive();
-        if (!NT_SUCCESS(Status))
-            return 1;
+        mount_hives();
 
         Status = create_current_control_set_symlink();
         if (!NT_SUCCESS(Status))
