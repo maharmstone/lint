@@ -70,11 +70,12 @@ static u16string utf8_to_utf16(const string_view& s) {
     return ret;
 }
 
-static u16string get_nt_path(const string& s) {
+static u16string get_nt_path(const string_view& s) {
     u16string path;
 
     {
-        auto abs = realpath(s.c_str(), nullptr);
+        auto str = string(s);
+        auto abs = realpath(str.c_str(), nullptr);
 
         if (!abs)
             throw runtime_error("realpath returned NULL.");
@@ -136,7 +137,7 @@ static void mount_hives() {
     mount_hive(u"\\Registry\\User\\.Default", get_nt_path("DEFAULT"));
 }
 
-static void create_vol_key(const u16string_view& key) {
+static void create_reg_key(const u16string_view& key, bool is_volatile) {
     NTSTATUS Status;
     HANDLE h;
     OBJECT_ATTRIBUTES oa;
@@ -153,7 +154,7 @@ static void create_vol_key(const u16string_view& key) {
     oa.SecurityDescriptor = nullptr;
     oa.SecurityQualityOfService = nullptr;
 
-    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE, &dispos);
+    Status = NtCreateKey(&h, 0, &oa, 0, NULL, is_volatile ? REG_OPTION_VOLATILE : REG_OPTION_NON_VOLATILE, &dispos);
     if (!NT_SUCCESS(Status)) {
         NtClose(h);
         throw formatted_error("NtCreateKey returned {:08x}.", (uint32_t)Status);
@@ -163,26 +164,24 @@ static void create_vol_key(const u16string_view& key) {
 }
 
 static void create_reg_keys() {
-    create_vol_key(u"\\Registry\\Machine");
-    create_vol_key(u"\\Registry\\Machine\\System");
-    create_vol_key(u"\\Registry\\Machine\\Software");
-    create_vol_key(u"\\Registry\\User");
-    create_vol_key(u"\\Registry\\User\\.Default");
+    create_reg_key(u"\\Registry\\Machine", true);
+    create_reg_key(u"\\Registry\\Machine\\System", true);
+    create_reg_key(u"\\Registry\\Machine\\Software", true);
+    create_reg_key(u"\\Registry\\User", true);
+    create_reg_key(u"\\Registry\\User\\.Default", true);
 }
 
-static void create_current_control_set_symlink() {
+static void create_reg_symlink(const u16string_view& src, const u16string_view& dest) {
     NTSTATUS Status;
     HANDLE h;
     OBJECT_ATTRIBUTES oa;
     UNICODE_STRING symlink, value_name;
     ULONG dispos;
 
-    static const WCHAR ccs[] = L"\\Registry\\Machine\\System\\CurrentControlSet";
     static const WCHAR slv[] = L"SymbolicLinkValue";
-    static const WCHAR target[] = L"\\Registry\\Machine\\System\\ControlSet001";
 
-    symlink.Length = symlink.MaximumLength = sizeof(ccs) - sizeof(WCHAR);
-    symlink.Buffer = (WCHAR*)ccs;
+    symlink.Length = symlink.MaximumLength = (USHORT)(src.length() * sizeof(char16_t));
+    symlink.Buffer = (WCHAR*)src.data();
 
     oa.Length = sizeof(oa);
     oa.RootDirectory = NULL;
@@ -198,13 +197,33 @@ static void create_current_control_set_symlink() {
     value_name.Length = value_name.MaximumLength = sizeof(slv) - sizeof(WCHAR);
     value_name.Buffer = (WCHAR*)slv;
 
-    Status = NtSetValueKey(h, &value_name, 0, REG_LINK, (void*)target, sizeof(target) - sizeof(WCHAR));
+    Status = NtSetValueKey(h, &value_name, 0, REG_LINK, (void*)dest.data(), (ULONG)(dest.length() * sizeof(char16_t)));
     if (!NT_SUCCESS(Status)) {
         NtClose(h);
         throw formatted_error("NtSetValueKey returned {:08x}.", (uint32_t)Status);
     }
 
     NtClose(h);
+}
+
+static void create_current_control_set_symlink() {
+    create_reg_symlink(u"\\Registry\\Machine\\System\\CurrentControlSet",
+                       u"\\Registry\\Machine\\System\\ControlSet001");
+}
+
+static void mount_user_hive(const u16string_view& sid, const string_view& user_hive,
+                            const string_view& classes_hive) {
+    auto sidstr = u16string(sid);
+
+    create_reg_key(u"\\Registry\\User\\" + sidstr, true);
+    mount_hive(u"\\Registry\\User\\" + sidstr, get_nt_path(user_hive));
+
+    create_reg_key(u"\\Registry\\User\\" + sidstr + u"_Classes", true);
+    mount_hive(u"\\Registry\\User\\" + sidstr + u"_Classes", get_nt_path(classes_hive));
+
+    create_reg_key(u"\\Registry\\User\\" + sidstr + u"\\Software", false); // should already exist
+    create_reg_symlink(u"\\Registry\\User\\" + sidstr + u"\\Software\\Classes",
+                       u"\\Registry\\User\\" + sidstr + u"_Classes");
 }
 
 int main() {
@@ -214,6 +233,9 @@ int main() {
         mount_hives();
 
         create_current_control_set_symlink();
+
+        // FIXME - this should be done in PAM module on login
+        mount_user_hive(u"S-1-5-21-0-0-0-1000", "NTUSER.DAT", "UsrClass.dat");
     } catch (const exception& e) {
         cerr << e.what() << endl;
         return 1;
