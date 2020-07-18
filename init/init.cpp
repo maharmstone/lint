@@ -127,53 +127,42 @@ static void mount_hive(const u16string_view& key, const u16string_view& file) {
 
     Status = NtLoadKey(&key_oa, &file_oa);
     if (!NT_SUCCESS(Status))
-        throw formatted_error("NtLoadKey returned {:08x}.\n", (int32_t)Status);
+        throw formatted_error("NtLoadKey returned {:08x}.", (uint32_t)Status);
 }
 
 static void mount_hives() {
     mount_hive(u"\\Registry\\Machine\\System", get_nt_path("SYSTEM"));
 }
 
-static NTSTATUS create_reg_keys() {
+static void create_vol_key(const u16string_view& key) {
     NTSTATUS Status;
     HANDLE h;
     OBJECT_ATTRIBUTES oa;
     UNICODE_STRING us;
     ULONG dispos;
 
-    static const WCHAR machine[] = L"\\Registry\\Machine";
-    static const WCHAR system[] = L"\\Registry\\Machine\\System";
-
-    us.Length = us.MaximumLength = sizeof(machine) - sizeof(WCHAR);
-    us.Buffer = (WCHAR*)machine;
+    us.Length = us.MaximumLength = (USHORT)(key.length() * sizeof(char16_t));
+    us.Buffer = (WCHAR*)key.data();
 
     oa.Length = sizeof(oa);
-    oa.RootDirectory = NULL;
+    oa.RootDirectory = nullptr;
     oa.ObjectName = &us;
     oa.Attributes = 0;
-    oa.SecurityDescriptor = NULL;
-    oa.SecurityQualityOfService = NULL;
+    oa.SecurityDescriptor = nullptr;
+    oa.SecurityQualityOfService = nullptr;
 
     Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE, &dispos);
     if (!NT_SUCCESS(Status)) {
-        fprintf(stderr, "NtCreateKey returned %08x\n", (int32_t)Status);
-        return Status;
+        NtClose(h);
+        throw formatted_error("NtCreateKey returned {:08x}.", (uint32_t)Status);
     }
 
     NtClose(h);
+}
 
-    us.Length = us.MaximumLength = sizeof(system) - sizeof(WCHAR);
-    us.Buffer = (WCHAR*)system;
-
-    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE, &dispos);
-    if (!NT_SUCCESS(Status)) {
-        fprintf(stderr, "NtCreateKey returned %08x\n", (int32_t)Status);
-        return Status;
-    }
-
-    NtClose(h);
-
-    return STATUS_SUCCESS;
+static void create_reg_keys() {
+    create_vol_key(u"\\Registry\\Machine");
+    create_vol_key(u"\\Registry\\Machine\\System");
 }
 
 static NTSTATUS create_current_control_set_symlink() {
@@ -221,9 +210,7 @@ int main() {
     try {
         NTSTATUS Status;
 
-        Status = create_reg_keys();
-        if (!NT_SUCCESS(Status))
-            return 1;
+        create_reg_keys();
 
         mount_hives();
 
