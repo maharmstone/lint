@@ -132,6 +132,8 @@ static void mount_hive(const u16string_view& key, const u16string_view& file) {
 
 static void mount_hives() {
     mount_hive(u"\\Registry\\Machine\\System", get_nt_path("SYSTEM"));
+    mount_hive(u"\\Registry\\Machine\\Software", get_nt_path("SOFTWARE"));
+    mount_hive(u"\\Registry\\User\\.Default", get_nt_path("DEFAULT"));
 }
 
 static void create_vol_key(const u16string_view& key) {
@@ -163,6 +165,9 @@ static void create_vol_key(const u16string_view& key) {
 static void create_reg_keys() {
     create_vol_key(u"\\Registry\\Machine");
     create_vol_key(u"\\Registry\\Machine\\System");
+    create_vol_key(u"\\Registry\\Machine\\Software");
+    create_vol_key(u"\\Registry\\User");
+    create_vol_key(u"\\Registry\\User\\.Default");
 }
 
 static NTSTATUS create_current_control_set_symlink() {
