@@ -1007,10 +1007,50 @@ static NTSTATUS query_key_info(KEY_INFORMATION_CLASS KeyInformationClass, void* 
             break;
         }
 
-        // FIXME - KeyNodeInformation
-        // FIXME - KeyFullInformation
-        // FIXME - KeyNameInformation
-        // FIXME - KeyCachedInformation
+        case KeyNodeInformation: {
+            printk(KERN_INFO "query_key_info: unhandled class KeyNodeInformation\n");
+            // FIXME
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        case KeyFullInformation: {
+            KEY_FULL_INFORMATION* kfi = KeyInformation;
+            ULONG reqlen = offsetof(KEY_FULL_INFORMATION, Class[0]);
+
+            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
+                *ResultLength = reqlen;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+
+            kfi->LastWriteTime.QuadPart = kn->LastWriteTime;
+            kfi->TitleIndex = 0;
+            kfi->ClassOffset = 0; // FIXME?
+            kfi->ClassLength = 0; // FIXME?
+            kfi->SubKeys = kn->SubKeyCount + kn->VolatileSubKeyCount;
+            kfi->MaxNameLen = kn->MaxNameLen;
+            kfi->MaxClassLen = kn->MaxClassLen;
+            kfi->Values = kn->ValuesCount;
+            kfi->MaxValueNameLen = kn->MaxValueNameLen;
+            kfi->MaxValueDataLen = kn->MaxValueDataLen;
+
+            *ResultLength = reqlen;
+
+            break;
+        }
+
+        case KeyNameInformation: {
+            printk(KERN_INFO "query_key_info: unhandled class KeyNameInformation\n");
+            // FIXME
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        case KeyCachedInformation: {
+            printk(KERN_INFO "query_key_info: unhandled class KeyCachedInformation\n");
+            // FIXME
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        // FIXME - other classes not in Wine:
         // FIXME - KeyFlagsInformation
         // FIXME - KeyVirtualizationInformation
         // FIXME - KeyHandleTagsInformation

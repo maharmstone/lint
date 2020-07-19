@@ -133,6 +133,20 @@ typedef struct {
 } KEY_BASIC_INFORMATION;
 
 typedef struct {
+    LARGE_INTEGER LastWriteTime;
+    ULONG TitleIndex;
+    ULONG ClassOffset;
+    ULONG ClassLength;
+    ULONG SubKeys;
+    ULONG MaxNameLen;
+    ULONG MaxClassLen;
+    ULONG Values;
+    ULONG MaxValueNameLen;
+    ULONG MaxValueDataLen;
+    WCHAR Class[1];
+} KEY_FULL_INFORMATION;
+
+typedef struct {
     ULONG TitleIndex;
     ULONG Type;
     ULONG DataLength;
