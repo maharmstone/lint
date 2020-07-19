@@ -3401,7 +3401,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             continue;
         }
 
-        if (h->depth != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
+        if (h->depth != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
             le = le->next;
             continue;
         }
