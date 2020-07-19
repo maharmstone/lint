@@ -3225,21 +3225,30 @@ NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     return Status;
 }
 
-static NTSTATUS lh_remove(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t key, bool is_volatile, uint32_t* addr) {
+static NTSTATUS lh_remove(hive* h, uint32_t old_lh_offset, uint32_t key, bool is_volatile, uint32_t* addr) {
     NTSTATUS Status;
     uint32_t offset;
+    CM_KEY_FAST_INDEX* old_lh;
     CM_KEY_FAST_INDEX* lh;
     unsigned int i;
+
+    if (is_volatile)
+        old_lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->volatile_bins + old_lh_offset + sizeof(int32_t));
+    else
+        old_lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + old_lh_offset + sizeof(int32_t));
 
     Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * (old_lh->Count - 1)),
                            &offset, is_volatile);
     if (!NT_SUCCESS(Status))
         return Status;
 
-    if (is_volatile)
+    if (is_volatile) {
+        old_lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->volatile_bins + old_lh_offset + sizeof(int32_t));
         lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
-    else
+    } else {
+        old_lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + old_lh_offset + sizeof(int32_t));
         lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+    }
 
     lh->Signature = CM_KEY_HASH_LEAF;
     lh->Count = old_lh->Count - 1;
@@ -3247,7 +3256,7 @@ static NTSTATUS lh_remove(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t key, bool
     for (i = 0; i < old_lh->Count; i++) {
         if (old_lh->List[i].Cell == key) {
             memcpy(lh->List, old_lh->List, i * sizeof(CM_INDEX));
-            memcpy(&lh->List[i], &old_lh->List[i + 1], old_lh->Count - i - 1);
+            memcpy(&lh->List[i], &old_lh->List[i + 1], (old_lh->Count - i - 1) * sizeof(CM_INDEX));
 
             *addr = offset;
             return STATUS_SUCCESS;
@@ -3364,12 +3373,16 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
         sig = *(uint16_t*)((uint8_t*)key->h->bins + kn2->SubKeyList + sizeof(int32_t));
 
     if (sig == CM_KEY_HASH_LEAF) {
+        uint32_t old_lh_offset;
         CM_KEY_FAST_INDEX* old_lh;
 
-        if (key->is_volatile)
+        if (key->is_volatile) {
             old_lh = (CM_KEY_FAST_INDEX*)(key->h->volatile_bins + kn2->VolatileSubKeyList + sizeof(int32_t));
-        else
+            old_lh_offset = kn2->VolatileSubKeyList;
+        } else {
             old_lh = (CM_KEY_FAST_INDEX*)(key->h->bins + kn2->SubKeyList + sizeof(int32_t));
+            old_lh_offset = kn2->SubKeyList;
+        }
 
         if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) ||
             size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
@@ -3385,9 +3398,17 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
         } else {
             uint32_t new_list;
 
-            Status = lh_remove(key->h, old_lh, key->offset, key->is_volatile, &new_list);
+            Status = lh_remove(key->h, old_lh_offset, key->offset, key->is_volatile, &new_list);
             if (!NT_SUCCESS(Status))
                 goto end;
+
+            if (key->is_volatile) {
+                subkey_count = &kn2->VolatileSubKeyCount;
+                subkey_list = &kn2->VolatileSubKeyList;
+            } else {
+                subkey_count = &kn2->SubKeyCount;
+                subkey_list = &kn2->SubKeyList;
+            }
 
             free_cell(key->h, *subkey_list, key->is_volatile);
 
