@@ -2530,6 +2530,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
             if (kn->ValuesCount == 1) {
                 free_cell(key->h, kn->Values, key->is_volatile);
                 kn->Values = 0;
+                kn->MaxValueNameLen = 0;
             } else {
                 int32_t old_size = -*(int32_t*)((uint8_t*)bins + kn->Values);
                 int32_t new_size = ((kn->ValuesCount - 1) * sizeof(uint32_t)) + sizeof(int32_t);
@@ -2548,12 +2549,43 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
                         goto end;
 
                     bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+                    kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
+                    values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
+
                     new_values_list = (uint32_t*)((uint8_t*)bins + values_list_offset + sizeof(int32_t));
 
                     memcpy(new_values_list, values_list, i * sizeof(uint32_t));
                     memcpy(&new_values_list[i], &values_list[i+1], (kn->ValuesCount - i - 1) * sizeof(uint32_t));
 
                     kn->Values = values_list_offset;
+                }
+
+                if (ValueName->Length == kn->MaxValueNameLen) {
+                    unsigned int j;
+
+                    kn->MaxValueNameLen = 0;
+
+                    for (j = 0; j < kn->ValuesCount; j++) {
+                        if (j != i) {
+                            CM_KEY_VALUE* vk2 = (CM_KEY_VALUE*)((uint8_t*)bins + values_list[j] + sizeof(int32_t));
+
+                            // FIXME - check not out of bounds
+
+                            size = -*(int32_t*)((uint8_t*)bins + values_list[i]);
+
+                            if (vk2->Signature == CM_KEY_VALUE_SIGNATURE || size >= sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk2->NameLength) {
+                                uint32_t len;
+
+                                if (vk2->Flags & VALUE_COMP_NAME)
+                                    len = vk2->NameLength * sizeof(WCHAR);
+                                else
+                                    len = vk2->NameLength;
+
+                                if (len > kn->MaxValueNameLen)
+                                    kn->MaxValueNameLen = len;
+                            }
+                        }
+                    }
                 }
             }
 
