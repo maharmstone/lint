@@ -2685,13 +2685,13 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
     sk->Reserved = 0;
 
     if ((is_volatile && parent_is_volatile) || (!is_volatile && !parent_is_volatile)) { // parent and child have same volatility
-        CM_KEY_SECURITY* parent_sk = (CM_KEY_SECURITY*)(parent_bins + parent_off + sizeof(int32_t));
+        CM_KEY_SECURITY* parent_sk = (CM_KEY_SECURITY*)(bins + parent_off + sizeof(int32_t));
 
         if (parent_sk->Flink == parent_off) { // parent SK is only entry
             parent_sk->Flink = parent_sk->Blink = skoff;
             sk->Flink = sk->Blink = parent_off;
         } else {
-            CM_KEY_SECURITY* next_sk = (CM_KEY_SECURITY*)(parent_bins + parent_sk->Flink + sizeof(int32_t));
+            CM_KEY_SECURITY* next_sk = (CM_KEY_SECURITY*)(bins + parent_sk->Flink + sizeof(int32_t));
 
             sk->Flink = parent_sk->Flink;
             next_sk->Blink = skoff;
@@ -2700,13 +2700,13 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
             parent_sk->Flink = skoff;
         }
     } else if (h->volatile_sk != 0xffffffff) { // child is volatile, and volatile_sk already set
-        CM_KEY_SECURITY* sk2 = (CM_KEY_SECURITY*)(parent_bins + h->volatile_sk + sizeof(int32_t));
+        CM_KEY_SECURITY* sk2 = (CM_KEY_SECURITY*)(h->volatile_bins + h->volatile_sk + sizeof(int32_t));
 
         if (sk2->Flink == h->volatile_sk) { // SK is only entry
             sk2->Flink = sk2->Blink = skoff;
             sk->Flink = sk->Blink = h->volatile_sk;
         } else {
-            CM_KEY_SECURITY* sk3 = (CM_KEY_SECURITY*)(parent_bins + sk2->Flink + sizeof(int32_t));
+            CM_KEY_SECURITY* sk3 = (CM_KEY_SECURITY*)(h->volatile_bins + sk2->Flink + sizeof(int32_t));
 
             sk->Flink = sk2->Flink;
             sk3->Blink = skoff;
