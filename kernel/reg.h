@@ -147,6 +147,15 @@ typedef struct {
 } KEY_FULL_INFORMATION;
 
 typedef struct {
+    LARGE_INTEGER LastWriteTime;
+    ULONG TitleIndex;
+    ULONG ClassOffset;
+    ULONG ClassLength;
+    ULONG NameLength;
+    WCHAR Name[1];
+} KEY_NODE_INFORMATION;
+
+typedef struct {
     ULONG TitleIndex;
     ULONG Type;
     ULONG DataLength;

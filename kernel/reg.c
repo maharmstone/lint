@@ -1008,9 +1008,40 @@ static NTSTATUS query_key_info(KEY_INFORMATION_CLASS KeyInformationClass, void* 
         }
 
         case KeyNodeInformation: {
-            printk(KERN_INFO "query_key_info: unhandled class KeyNodeInformation\n");
-            // FIXME
-            return STATUS_INVALID_PARAMETER;
+            KEY_NODE_INFORMATION* kni = KeyInformation;
+            ULONG reqlen = offsetof(KEY_NODE_INFORMATION, Name[0]);
+
+            if (kn->Flags & KEY_COMP_NAME)
+                reqlen += kn->NameLength * sizeof(WCHAR);
+            else
+                reqlen += kn->NameLength;
+
+            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
+                *ResultLength = reqlen;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+
+            kni->LastWriteTime.QuadPart = kn->LastWriteTime;
+            kni->TitleIndex = 0;
+            kni->ClassOffset = 0; // FIXME?
+            kni->ClassLength = 0;
+
+            if (kn->Flags & KEY_COMP_NAME) {
+                unsigned int i;
+
+                kni->NameLength = kn->NameLength * sizeof(WCHAR);
+
+                for (i = 0; i < kn->NameLength; i++) {
+                    kni->Name[i] = *((char*)kn->Name + i);
+                }
+            } else {
+                kni->NameLength = kn->NameLength;
+                memcpy(kni->Name, kn->Name, kn->NameLength);
+            }
+
+            *ResultLength = reqlen;
+
+            break;
         }
 
         case KeyFullInformation: {
