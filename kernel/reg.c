@@ -2446,7 +2446,7 @@ NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     return Status;
 }
 
-static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* offset, uint32_t cell, uint32_t hash,
+static NTSTATUS lh_copy_and_add(hive* h, uint32_t old_lh_offset, uint32_t* offset, uint32_t cell, uint32_t hash,
                                 UNICODE_STRING* us, bool is_volatile) {
     NTSTATUS Status;
     CM_KEY_FAST_INDEX* lh;
@@ -2454,6 +2454,7 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
     uint32_t pos;
     bool found = false;
     void* bins = is_volatile ? h->volatile_bins : h->bins;
+    CM_KEY_FAST_INDEX* old_lh = (CM_KEY_FAST_INDEX*)(bins + old_lh_offset + sizeof(int32_t));
 
     for (i = 0; i < old_lh->Count; i++) {
         int32_t size = -*(int32_t*)(bins + old_lh->List[i].Cell);
@@ -2563,6 +2564,7 @@ static NTSTATUS lh_copy_and_add(hive* h, CM_KEY_FAST_INDEX* old_lh, uint32_t* of
         return Status;
 
     bins = is_volatile ? h->volatile_bins : h->bins;
+    old_lh = (CM_KEY_FAST_INDEX*)(bins + old_lh_offset + sizeof(int32_t));
     lh = (CM_KEY_FAST_INDEX*)(bins + *offset + sizeof(int32_t));
 
     lh->Signature = CM_KEY_HASH_LEAF;
@@ -2761,8 +2763,8 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     bool is_volatile = false;
     uint32_t offset, subkey_offset;
     bool parent_is_volatile;
-    uint32_t* subkey_count;
-    uint32_t* subkey_list;
+    uint32_t subkey_count;
+    uint32_t subkey_list;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
@@ -2884,6 +2886,11 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
                                        is_volatile, parent_is_volatile); // FIXME - owner and group
         if (!NT_SUCCESS(Status))
             return Status;
+
+        if (parent_is_volatile)
+            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+        else
+            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
     }
 
     // add handle here, to make things easier if we fail later on
@@ -2931,14 +2938,14 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     }
 
     if (is_volatile) {
-        subkey_count = &kn->VolatileSubKeyCount;
-        subkey_list = &kn->VolatileSubKeyList;
+        subkey_count = kn->VolatileSubKeyCount;
+        subkey_list = kn->VolatileSubKeyList;
     } else {
-        subkey_count = &kn->SubKeyCount;
-        subkey_list = &kn->SubKeyList;
+        subkey_count = kn->SubKeyCount;
+        subkey_list = kn->SubKeyList;
     }
 
-    if (*subkey_count == 0) {
+    if (subkey_count == 0) {
         CM_KEY_FAST_INDEX* lh;
         uint32_t lh_offset;
 
@@ -2953,6 +2960,11 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
             return Status;
         }
 
+        if (parent_is_volatile)
+            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+        else
+            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
         if (is_volatile)
             lh = (CM_KEY_FAST_INDEX*)(h->volatile_bins + lh_offset + sizeof(int32_t));
         else
@@ -2966,8 +2978,13 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
         if (us->Length > kn->MaxNameLen)
             kn->MaxNameLen = us->Length;
 
-        *subkey_count = 1;
-        *subkey_list = lh_offset;
+        if (is_volatile) {
+            kn->VolatileSubKeyCount = 1;
+            kn->VolatileSubKeyList = lh_offset;
+        } else {
+            kn->SubKeyCount = 1;
+            kn->SubKeyList = lh_offset;
+        }
 
         k->offset = subkey_offset;
     } else {
@@ -2975,9 +2992,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
         int32_t size;
 
         if (is_volatile)
-            size = -*(int32_t*)(h->volatile_bins + *subkey_list);
+            size = -*(int32_t*)(h->volatile_bins + subkey_list);
         else
-            size = -*(int32_t*)(h->bins + *subkey_list);
+            size = -*(int32_t*)(h->bins + subkey_list);
 
         if (size < sizeof(int32_t) + sizeof(uint16_t)) {
             if (kn2->Security != 0xffffffff)
@@ -2989,9 +3006,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
         }
 
         if (is_volatile)
-            sig = *(uint16_t*)(h->volatile_bins + *subkey_list + sizeof(int32_t));
+            sig = *(uint16_t*)(h->volatile_bins + subkey_list + sizeof(int32_t));
         else
-            sig = *(uint16_t*)(h->bins + *subkey_list + sizeof(int32_t));
+            sig = *(uint16_t*)(h->bins + subkey_list + sizeof(int32_t));
 
         // FIXME - dealing with existing ri rather than lh
         // FIXME - creating new ri if lh gets too large
@@ -3003,9 +3020,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
             uint32_t lh_offset;
 
             if (is_volatile)
-                old_lh = (CM_KEY_FAST_INDEX*)(h->volatile_bins + *subkey_list + sizeof(int32_t));
+                old_lh = (CM_KEY_FAST_INDEX*)(h->volatile_bins + subkey_list + sizeof(int32_t));
             else
-                old_lh = (CM_KEY_FAST_INDEX*)(h->bins + *subkey_list + sizeof(int32_t));
+                old_lh = (CM_KEY_FAST_INDEX*)(h->bins + subkey_list + sizeof(int32_t));
 
             if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
                 if (kn2->Security != 0xffffffff)
@@ -3016,7 +3033,7 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
                 return STATUS_REGISTRY_CORRUPT;
             }
 
-            Status = lh_copy_and_add(h, old_lh, &lh_offset, subkey_offset, hash, us, is_volatile);
+            Status = lh_copy_and_add(h, subkey_list, &lh_offset, subkey_offset, hash, us, is_volatile);
             if (!NT_SUCCESS(Status)) {
                 if (kn2->Security != 0xffffffff)
                     free_sk(h, kn2->Security, is_volatile);
@@ -3026,10 +3043,20 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
                 return Status;
             }
 
-            free_cell(h, *subkey_list, is_volatile);
+            if (parent_is_volatile)
+                kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+            else
+                kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
-            (*subkey_count)++;
-            *subkey_list = lh_offset;
+            free_cell(h, subkey_list, is_volatile);
+
+            if (is_volatile) {
+                kn->VolatileSubKeyCount++;
+                kn->VolatileSubKeyList = lh_offset;
+            } else {
+                kn->SubKeyCount++;
+                kn->SubKeyList = lh_offset;
+            }
 
             if (us->Length > kn->MaxNameLen)
                 kn->MaxNameLen = us->Length;
