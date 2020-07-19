@@ -1223,6 +1223,7 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
 
 static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                 PVOID KeyValueInformation, ULONG Length, PULONG ResultLength, bool is_volatile) {
+    uint8_t* bins = is_volatile ? h->volatile_bins : h->bins;
 
     switch (KeyValueInformationClass) {
         case KeyValueBasicInformation: {
@@ -1340,8 +1341,7 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
             } else {
                 // FIXME - check not out of bounds
 
-                int32_t size = -*(int32_t*)((uint8_t*)h->bins + vk->Data);
-                uint8_t* bins = is_volatile ? h->volatile_bins : h->bins;
+                int32_t size = -*(int32_t*)((uint8_t*)bins + vk->Data);
 
                 if (size < datalen + sizeof(int32_t))
                     return STATUS_REGISTRY_CORRUPT;
@@ -1378,12 +1378,12 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
             else {
                 // FIXME - check not out of bounds
 
-                int32_t size = -*(int32_t*)((uint8_t*)h->bins + vk->Data);
+                int32_t size = -*(int32_t*)((uint8_t*)bins + vk->Data);
 
                 if (size < len + sizeof(int32_t))
                     return STATUS_REGISTRY_CORRUPT;
 
-                memcpy(kvpi->Data, h->bins + vk->Data + sizeof(int32_t), len);
+                memcpy(kvpi->Data, bins + vk->Data + sizeof(int32_t), len);
             }
 
             *ResultLength = reqlen;
