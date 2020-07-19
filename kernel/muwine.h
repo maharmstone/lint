@@ -19,6 +19,7 @@ struct muwine_func {
 };
 
 #define STATUS_SUCCESS                      0x00000000
+#define STATUS_BUFFER_OVERFLOW              0x80000005
 #define STATUS_NO_MORE_ENTRIES              0x8000001a
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
 #define STATUS_INVALID_HANDLE               0xc0000008

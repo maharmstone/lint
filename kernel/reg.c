@@ -1222,7 +1222,7 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
 }
 
 static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                                PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+                                PVOID KeyValueInformation, ULONG Length, PULONG ResultLength, bool is_volatile) {
 
     switch (KeyValueInformationClass) {
         case KeyValueBasicInformation: {
@@ -1261,59 +1261,98 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
         }
 
         case KeyValueFullInformation: {
-            KEY_VALUE_FULL_INFORMATION* kvfi = KeyValueInformation;
+            KEY_VALUE_FULL_INFORMATION kvfi;
             ULONG datalen = vk->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
             ULONG reqlen = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + datalen;
             uint8_t* data;
+            WCHAR* name;
+            ULONG left;
+
+            memset(&kvfi, 0, offsetof(KEY_VALUE_FULL_INFORMATION, Name));
 
             if (vk->Flags & VALUE_COMP_NAME)
                 reqlen += vk->NameLength * sizeof(WCHAR);
             else
                 reqlen += vk->NameLength;
 
-            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
-                *ResultLength = reqlen;
-                return STATUS_BUFFER_TOO_SMALL;
-            }
+            *ResultLength = reqlen;
 
-            kvfi->TitleIndex = 0;
-            kvfi->Type = vk->Type;
+            kvfi.TitleIndex = 0;
+            kvfi.Type = vk->Type;
 
             if (vk->Flags & VALUE_COMP_NAME)
-                kvfi->NameLength = vk->NameLength * sizeof(WCHAR);
+                kvfi.NameLength = vk->NameLength * sizeof(WCHAR);
             else
-                kvfi->NameLength = vk->NameLength;
+                kvfi.NameLength = vk->NameLength;
 
-            kvfi->DataOffset = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + kvfi->NameLength;
-            kvfi->DataLength = datalen;
+            kvfi.DataOffset = offsetof(KEY_VALUE_FULL_INFORMATION, Name[0]) + kvfi.NameLength;
+            kvfi.DataLength = datalen;
+
+            if (Length < offsetof(KEY_VALUE_FULL_INFORMATION, Name)) {
+                memcpy(KeyValueInformation, &kvfi, Length);
+                return STATUS_BUFFER_OVERFLOW;
+            }
+
+            memcpy(KeyValueInformation, &kvfi, offsetof(KEY_VALUE_FULL_INFORMATION, Name));
+
+            name = (WCHAR*)((uint8_t*)KeyValueInformation + offsetof(KEY_VALUE_FULL_INFORMATION, Name));
+            left = Length - offsetof(KEY_VALUE_FULL_INFORMATION, Name);
 
             if (vk->Flags & VALUE_COMP_NAME) {
                 unsigned int i;
+                ULONG namelen = vk->NameLength * sizeof(WCHAR);
 
-                for (i = 0; i < vk->NameLength; i++) {
-                    kvfi->Name[i] = *((char*)vk->Name + i);
+                if (namelen > left)
+                    namelen = left;
+
+                for (i = 0; i < namelen / sizeof(WCHAR); i++) {
+                    name[i] = *((char*)vk->Name + i);
                 }
-            } else
-                memcpy(kvfi->Name, vk->Name, vk->NameLength);
 
-            data = (uint8_t*)kvfi + kvfi->DataOffset;
+                if (vk->NameLength * sizeof(WCHAR) > left)
+                    return STATUS_BUFFER_OVERFLOW;
 
-            if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) // stored in cell
+                left -= vk->NameLength * sizeof(WCHAR);
+            } else {
+                if (left < vk->NameLength) {
+                    memcpy(name, vk->Name, left);
+                    return STATUS_BUFFER_OVERFLOW;
+                }
+
+                memcpy(name, vk->Name, vk->NameLength);
+                left -= vk->NameLength;
+            }
+
+            if (kvfi.DataLength == 0)
+                return STATUS_SUCCESS;
+
+            data = (uint8_t*)KeyValueInformation + kvfi.DataOffset;
+
+            if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) { // stored in cell
                 // FIXME - make sure not more than 4 bytes
 
+                if (datalen > left) {
+                    memcpy(data, &vk->Data, left);
+                    return STATUS_BUFFER_OVERFLOW;
+                }
+
                 memcpy(data, &vk->Data, datalen);
-            else {
+            } else {
                 // FIXME - check not out of bounds
 
                 int32_t size = -*(int32_t*)((uint8_t*)h->bins + vk->Data);
+                uint8_t* bins = is_volatile ? h->volatile_bins : h->bins;
 
                 if (size < datalen + sizeof(int32_t))
                     return STATUS_REGISTRY_CORRUPT;
 
-                memcpy(data, h->bins + vk->Data + sizeof(int32_t), datalen);
-            }
+                if (datalen > left) {
+                    memcpy(data, bins + vk->Data + sizeof(int32_t), left);
+                    return STATUS_BUFFER_OVERFLOW;
+                }
 
-            *ResultLength = reqlen;
+                memcpy(data, bins + vk->Data + sizeof(int32_t), datalen);
+            }
 
             return STATUS_SUCCESS;
         }
@@ -1422,7 +1461,8 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
         return STATUS_REGISTRY_CORRUPT;
     }
 
-    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length,
+                             ResultLength, key->is_volatile);
 
     up_read(&key->h->sem);
 
@@ -1550,7 +1590,8 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
                 }
 
                 if (found) {
-                    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+                    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length,
+                                             ResultLength, key->is_volatile);
                     up_read(&key->h->sem);
                     return Status;
                 }
@@ -1577,7 +1618,8 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
                 }
 
                 if (found) {
-                    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length, ResultLength);
+                    Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length,
+                                             ResultLength, key->is_volatile);
                     up_read(&key->h->sem);
                     return Status;
                 }
