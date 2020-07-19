@@ -3305,13 +3305,11 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     }
 
     if (kn->Flags & (KEY_HIVE_EXIT | KEY_HIVE_ENTRY | KEY_NO_DELETE)) {
-        printk("kn->Flags = %x\n", kn->Flags);
         Status = STATUS_CANNOT_DELETE;
         goto end;
     }
 
     if (kn->SubKeyCount != 0 || kn->VolatileSubKeyCount != 0) {
-        printk("kn->SubKeyCount = %x, kn->VolatileSubKeyCount = %x\n", kn->SubKeyCount, kn->VolatileSubKeyCount);
         Status = STATUS_CANNOT_DELETE;
         goto end;
     }
