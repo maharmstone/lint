@@ -3116,27 +3116,40 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     bool us_alloc;
     struct list_head* le;
     UNICODE_STRING orig_us;
+    WCHAR* oa_us_alloc = NULL;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
-    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES))
+    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES) || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
 
     if (ObjectAttributes->RootDirectory) {
-        printk(KERN_ALERT "NtCreateKey: FIXME - support RootDirectory\n"); // FIXME
-        return STATUS_NOT_IMPLEMENTED;
-    }
+        key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory);
+        if (!key || key->header.type != muwine_object_key)
+            return STATUS_INVALID_HANDLE;
 
-    if (!ObjectAttributes->ObjectName)
-        return STATUS_INVALID_PARAMETER;
+        us.Length = key->header.path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
+        us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
+
+        if (!us.Buffer)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        memcpy(us.Buffer, key->header.path.Buffer, key->header.path.Length);
+        us.Buffer[key->header.path.Length / sizeof(WCHAR)] = '\\';
+        memcpy(&us.Buffer[(key->header.path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
+               ObjectAttributes->ObjectName->Length);
+    } else {
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+    }
 
     // fail if ObjectAttributes->ObjectName doesn't begin with "\\Registry\\";
 
-    us.Length = ObjectAttributes->ObjectName->Length;
-    us.Buffer = ObjectAttributes->ObjectName->Buffer;
-
     if (us.Length < sizeof(prefix) - sizeof(WCHAR) ||
         wcsnicmp(us.Buffer, prefix, (sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR))) {
+        if (oa_us_alloc)
+            kfree(oa_us_alloc);
+
         return STATUS_OBJECT_PATH_INVALID;
     }
 
@@ -3148,8 +3161,12 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     }
 
     Status = resolve_symlinks(&us, &us_alloc);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
+        if (oa_us_alloc)
+            kfree(oa_us_alloc);
+
         return Status;
+    }
 
     orig_us = us;
 
@@ -3189,6 +3206,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             if (us_alloc)
                 kfree(orig_us.Buffer);
 
+            if (oa_us_alloc)
+                kfree(oa_us_alloc);
+
             return Status;
         }
 
@@ -3199,6 +3219,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     if (us_alloc)
         kfree(orig_us.Buffer);
+
+    if (oa_us_alloc)
+        kfree(oa_us_alloc);
 
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
