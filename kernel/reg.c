@@ -2359,6 +2359,9 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     kn->Values = values_list_offset;
     kn->ValuesCount++;
 
+    if (ValueName && ValueName->Length > kn->MaxValueNameLen)
+        kn->MaxValueNameLen = ValueName->Length;
+
     Status = STATUS_SUCCESS;
 
 end:
