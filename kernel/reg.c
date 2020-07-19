@@ -1428,6 +1428,11 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
         return STATUS_REGISTRY_CORRUPT;
     }
 
+    if (kn->ValuesCount == 0) {
+        up_read(&key->h->sem);
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
     // FIXME - check not out of bounds
 
     size = -*(int32_t*)((uint8_t*)bins + kn->Values);
