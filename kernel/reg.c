@@ -2013,11 +2013,13 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
         for (i = 0; i < kn->ValuesCount; i++) {
             bool found = false;
 
-            vk = (CM_KEY_VALUE*)((uint8_t*)bins + values_list[i] + sizeof(int32_t));
+            vk_offset = values_list[i];
+
+            vk = (CM_KEY_VALUE*)((uint8_t*)bins + vk_offset + sizeof(int32_t));
 
             // FIXME - check not out of bounds
 
-            size = -*(int32_t*)((uint8_t*)bins + values_list[i]);
+            size = -*(int32_t*)((uint8_t*)bins + vk_offset);
 
             if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
                 Status = STATUS_REGISTRY_CORRUPT;
@@ -2089,6 +2091,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                             goto end;
 
                         bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+                        vk = (CM_KEY_VALUE*)((uint8_t*)bins + vk_offset + sizeof(int32_t));
                         memcpy(bins + cell + sizeof(int32_t), Data, DataSize);
 
                         vk->Data = cell;
@@ -2123,6 +2126,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                                 goto end;
 
                             bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+                            vk = (CM_KEY_VALUE*)((uint8_t*)bins + vk_offset + sizeof(int32_t));
 
                             free_cell(key->h, vk->Data, key->is_volatile);
 
@@ -2158,6 +2162,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
         goto end;
 
     bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+    kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     vk = (CM_KEY_VALUE*)(bins + vk_offset + sizeof(int32_t));
     vk->Signature = CM_KEY_VALUE_SIGNATURE;
@@ -2179,6 +2184,9 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
         }
 
         bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+        vk = (CM_KEY_VALUE*)(bins + vk_offset + sizeof(int32_t));
+        kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
+
         memcpy(bins + vk->Data + sizeof(int32_t), Data, DataSize);
     } else {
         vk->DataLength = DataSize == 0 ? 0 : (CM_KEY_VALUE_SPECIAL_SIZE | DataSize);
@@ -2222,6 +2230,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     }
 
     bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
+    kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
     values_list = (uint32_t*)((uint8_t*)bins + values_list_offset + sizeof(int32_t));
 
     if (kn->ValuesCount > 0) {
