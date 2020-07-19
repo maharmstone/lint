@@ -2191,6 +2191,8 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
             }
 
             if (found) {
+                ULONG orig_data_len = vk->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
+
                 if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE || vk->DataLength == 0) {
                     if (DataSize <= sizeof(uint32_t)) { // if was resident and still would be resident, write into vk
                         memcpy(&vk->Data, Data, DataSize);
@@ -2258,6 +2260,33 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                         update_symlink_cache(key->h, key->offset, key->is_volatile, Data, DataSize);
                     else
                         update_symlink_cache(key->h, key->offset, key->is_volatile, NULL, 0);
+                }
+
+                if (DataSize >= kn->MaxValueDataLen || kn->ValuesCount == 1)
+                    kn->MaxValueDataLen = DataSize;
+                else if (kn->MaxValueDataLen == orig_data_len) {
+                    unsigned int j;
+
+                    values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
+
+                    kn->MaxValueDataLen = 0;
+
+                    for (j = 0; j < kn->ValuesCount; j++) {
+                        if (j != i) {
+                            CM_KEY_VALUE* vk2 = (CM_KEY_VALUE*)((uint8_t*)bins + values_list[j] + sizeof(int32_t));
+
+                            // FIXME - check not out of bounds
+
+                            size = -*(int32_t*)((uint8_t*)bins + values_list[j]);
+
+                            if (vk2->Signature == CM_KEY_VALUE_SIGNATURE && size >= sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk2->NameLength) {
+                                uint32_t len = vk2->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
+
+                                if (len > kn->MaxValueDataLen)
+                                    kn->MaxValueDataLen = len;
+                            }
+                        }
+                    }
                 }
 
                 Status = STATUS_SUCCESS;
@@ -2361,6 +2390,9 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
     if (ValueName && ValueName->Length > kn->MaxValueNameLen)
         kn->MaxValueNameLen = ValueName->Length;
+
+    if (DataSize > kn->MaxValueDataLen)
+        kn->MaxValueDataLen = DataSize;
 
     Status = STATUS_SUCCESS;
 
