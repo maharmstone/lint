@@ -714,7 +714,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             continue;
         }
 
-        if (us.Buffer[h->path.Length / sizeof(WCHAR)] != 0 && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
+        if (h->path.Length > us.Length && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
             le = le->next;
             continue;
         }
