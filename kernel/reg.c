@@ -1484,7 +1484,7 @@ NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFOR
 
     Status = NtEnumerateValueKey(KeyHandle, Index, KeyValueInformationClass, buf, Length, &reslen);
 
-    if (NT_SUCCESS(Status)) {
+    if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
         if (buf) {
             if (copy_to_user(KeyValueInformation, buf, reslen) != 0)
                 Status = STATUS_INVALID_PARAMETER;
