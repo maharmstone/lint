@@ -1205,7 +1205,7 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
 
     if (NT_SUCCESS(Status)) {
         if (buf) {
-            if (copy_to_user(KeyInformation, buf, reslen) != 0)
+            if (copy_to_user(KeyInformation, buf, min(Length, reslen)) != 0)
                 Status = STATUS_INVALID_PARAMETER;
         }
 
@@ -1486,7 +1486,7 @@ NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFOR
 
     if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
         if (buf) {
-            if (copy_to_user(KeyValueInformation, buf, reslen) != 0)
+            if (copy_to_user(KeyValueInformation, buf, min(Length, reslen)) != 0)
                 Status = STATUS_INVALID_PARAMETER;
         }
 
@@ -1662,7 +1662,7 @@ NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_V
 
     if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
         if (buf) {
-            if (copy_to_user(KeyValueInformation, buf, reslen) != 0)
+            if (copy_to_user(KeyValueInformation, buf, min(Length, reslen)) != 0)
                 Status = STATUS_INVALID_PARAMETER;
         }
 
@@ -4553,7 +4553,7 @@ NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationC
 
     if (NT_SUCCESS(Status)) {
         if (buf) {
-            if (copy_to_user(KeyInformation, buf, reslen) != 0)
+            if (copy_to_user(KeyInformation, buf, min(Length, reslen)) != 0)
                 Status = STATUS_INVALID_PARAMETER;
         }
 
