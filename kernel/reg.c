@@ -3942,8 +3942,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
             continue;
         }
 
-        if (parent_hive->depth != 0 && h->path.Buffer[parent_hive->path.Length / sizeof(WCHAR)] != 0 &&
-            h->path.Buffer[parent_hive->path.Length / sizeof(WCHAR)] != '\\') {
+        if (parent_hive->depth != 0 && h->path.Buffer[parent_hive->path.Length / sizeof(WCHAR)] != '\\') {
             le = le->next;
             continue;
         }
