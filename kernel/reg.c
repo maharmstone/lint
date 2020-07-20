@@ -1227,36 +1227,59 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
 
     switch (KeyValueInformationClass) {
         case KeyValueBasicInformation: {
-            KEY_VALUE_BASIC_INFORMATION* kvbi = KeyValueInformation;
-            ULONG reqlen = offsetof(KEY_VALUE_BASIC_INFORMATION, Name[0]);
+            KEY_VALUE_BASIC_INFORMATION kvbi;
+            ULONG reqlen = offsetof(KEY_VALUE_BASIC_INFORMATION, Name);
+            ULONG left;
+            WCHAR* name;
 
             if (vk->Flags & VALUE_COMP_NAME)
                 reqlen += vk->NameLength * sizeof(WCHAR);
             else
                 reqlen += vk->NameLength;
 
-            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
-                *ResultLength = reqlen;
-                return STATUS_BUFFER_TOO_SMALL;
+            *ResultLength = reqlen;
+
+            memset(&kvbi, 0, offsetof(KEY_VALUE_BASIC_INFORMATION, Name));
+
+            kvbi.TitleIndex = 0;
+            kvbi.Type = vk->Type;
+
+            if (vk->Flags & VALUE_COMP_NAME)
+                kvbi.NameLength = vk->NameLength * sizeof(WCHAR);
+            else
+                kvbi.NameLength = vk->NameLength;
+
+            if (Length < offsetof(KEY_VALUE_BASIC_INFORMATION, Name)) {
+                memcpy(KeyValueInformation, &kvbi, Length);
+                return STATUS_BUFFER_OVERFLOW;
             }
 
-            kvbi->TitleIndex = 0;
-            kvbi->Type = vk->Type;
+            memcpy(KeyValueInformation, &kvbi, offsetof(KEY_VALUE_BASIC_INFORMATION, Name));
+            left = Length - offsetof(KEY_VALUE_BASIC_INFORMATION, Name);
+
+            name = (WCHAR*)((uint8_t*)KeyValueInformation + offsetof(KEY_VALUE_BASIC_INFORMATION, Name));
 
             if (vk->Flags & VALUE_COMP_NAME) {
                 unsigned int i;
+                ULONG namelen = vk->NameLength * sizeof(WCHAR);
 
-                kvbi->NameLength = vk->NameLength * sizeof(WCHAR);
+                if (namelen > left)
+                    namelen = left;
 
-                for (i = 0; i < vk->NameLength; i++) {
-                    kvbi->Name[i] = *((char*)vk->Name + i);
+                for (i = 0; i < namelen / sizeof(WCHAR); i++) {
+                    name[i] = *((char*)vk->Name + i);
                 }
-            } else {
-                kvbi->NameLength = vk->NameLength;
-                memcpy(kvbi->Name, vk->Name, vk->NameLength);
-            }
 
-            *ResultLength = reqlen;
+                if (vk->NameLength * sizeof(WCHAR) > left)
+                    return STATUS_BUFFER_OVERFLOW;
+            } else {
+                if (left < vk->NameLength) {
+                    memcpy(name, vk->Name, left);
+                    return STATUS_BUFFER_OVERFLOW;
+                }
+
+                memcpy(name, vk->Name, vk->NameLength);
+            }
 
             return STATUS_SUCCESS;
         }
