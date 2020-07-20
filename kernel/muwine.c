@@ -265,10 +265,10 @@ int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count) {
         WCHAR c2 = *string2;
 
         if (c1 >= 'A' && c1 <= 'Z')
-            c1 -= 'A' + 'a';
+            c1 = c1 - 'A' + 'a';
 
         if (c2 >= 'A' && c2 <= 'Z')
-            c2 -= 'A' + 'a';
+            c2 = c2 - 'A' + 'a';
 
         if (c1 < c2)
             return -1;
