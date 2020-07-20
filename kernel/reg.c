@@ -973,98 +973,143 @@ static NTSTATUS query_key_info(KEY_INFORMATION_CLASS KeyInformationClass, void* 
                                ULONG Length, PULONG ResultLength) {
     switch (KeyInformationClass) {
         case KeyBasicInformation: {
-            KEY_BASIC_INFORMATION* kbi = KeyInformation;
-            ULONG reqlen = offsetof(KEY_BASIC_INFORMATION, Name[0]);
+            KEY_BASIC_INFORMATION kbi;
+            ULONG reqlen = offsetof(KEY_BASIC_INFORMATION, Name);
+            ULONG left;
+            WCHAR* name;
 
             if (kn->Flags & KEY_COMP_NAME)
                 reqlen += kn->NameLength * sizeof(WCHAR);
             else
                 reqlen += kn->NameLength;
 
-            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
-                *ResultLength = reqlen;
-                return STATUS_BUFFER_TOO_SMALL;
+            *ResultLength = reqlen;
+
+            memset(&kbi, 0, offsetof(KEY_BASIC_INFORMATION, Name));
+
+            kbi.LastWriteTime.QuadPart = kn->LastWriteTime;
+
+            if (kn->Flags & KEY_COMP_NAME)
+                kbi.NameLength = kn->NameLength * sizeof(WCHAR);
+            else
+                kbi.NameLength = kn->NameLength;
+
+            if (Length < offsetof(KEY_BASIC_INFORMATION, Name)) {
+                memcpy(KeyInformation, &kbi, Length);
+                return STATUS_BUFFER_OVERFLOW;
             }
 
-            kbi->LastWriteTime.QuadPart = kn->LastWriteTime;
-            kbi->TitleIndex = 0;
+            memcpy(KeyInformation, &kbi, offsetof(KEY_BASIC_INFORMATION, Name));
+            left = Length - offsetof(KEY_BASIC_INFORMATION, Name);
+
+            name = (WCHAR*)((uint8_t*)KeyInformation + offsetof(KEY_BASIC_INFORMATION, Name));
 
             if (kn->Flags & KEY_COMP_NAME) {
                 unsigned int i;
+                ULONG namelen = kn->NameLength * sizeof(WCHAR);
 
-                kbi->NameLength = kn->NameLength * sizeof(WCHAR);
+                if (namelen > left)
+                    namelen = left;
 
-                for (i = 0; i < kn->NameLength; i++) {
-                    kbi->Name[i] = *((char*)kn->Name + i);
+                for (i = 0; i < namelen / sizeof(WCHAR); i++) {
+                    name[i] = *((char*)kn->Name + i);
                 }
-            } else {
-                kbi->NameLength = kn->NameLength;
-                memcpy(kbi->Name, kn->Name, kn->NameLength);
-            }
 
-            *ResultLength = reqlen;
+                if (kn->NameLength * sizeof(WCHAR) > left)
+                    return STATUS_BUFFER_OVERFLOW;
+            } else {
+                if (left < kn->NameLength) {
+                    memcpy(name, kn->Name, left);
+                    return STATUS_BUFFER_OVERFLOW;
+                }
+
+                memcpy(name, kn->Name, kn->NameLength);
+            }
 
             break;
         }
 
         case KeyNodeInformation: {
-            KEY_NODE_INFORMATION* kni = KeyInformation;
-            ULONG reqlen = offsetof(KEY_NODE_INFORMATION, Name[0]);
+            KEY_NODE_INFORMATION kni;
+            ULONG reqlen = offsetof(KEY_NODE_INFORMATION, Name);
+            ULONG left;
+            WCHAR* name;
 
             if (kn->Flags & KEY_COMP_NAME)
                 reqlen += kn->NameLength * sizeof(WCHAR);
             else
                 reqlen += kn->NameLength;
 
-            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
-                *ResultLength = reqlen;
-                return STATUS_BUFFER_TOO_SMALL;
+            *ResultLength = reqlen;
+
+            memset(&kni, 0, offsetof(KEY_NODE_INFORMATION, Name));
+
+            kni.LastWriteTime.QuadPart = kn->LastWriteTime;
+            // FIXME - ClassOffset and ClassLength
+
+            if (kn->Flags & KEY_COMP_NAME)
+                kni.NameLength = kn->NameLength * sizeof(WCHAR);
+            else
+                kni.NameLength = kn->NameLength;
+
+            if (Length < offsetof(KEY_NODE_INFORMATION, Name)) {
+                memcpy(KeyInformation, &kni, Length);
+                return STATUS_BUFFER_OVERFLOW;
             }
 
-            kni->LastWriteTime.QuadPart = kn->LastWriteTime;
-            kni->TitleIndex = 0;
-            kni->ClassOffset = 0; // FIXME?
-            kni->ClassLength = 0;
+            memcpy(KeyInformation, &kni, offsetof(KEY_NODE_INFORMATION, Name));
+            left = Length - offsetof(KEY_NODE_INFORMATION, Name);
+
+            name = (WCHAR*)((uint8_t*)KeyInformation + offsetof(KEY_NODE_INFORMATION, Name));
 
             if (kn->Flags & KEY_COMP_NAME) {
                 unsigned int i;
+                ULONG namelen = kn->NameLength * sizeof(WCHAR);
 
-                kni->NameLength = kn->NameLength * sizeof(WCHAR);
+                if (namelen > left)
+                    namelen = left;
 
-                for (i = 0; i < kn->NameLength; i++) {
-                    kni->Name[i] = *((char*)kn->Name + i);
+                for (i = 0; i < namelen / sizeof(WCHAR); i++) {
+                    name[i] = *((char*)kn->Name + i);
                 }
-            } else {
-                kni->NameLength = kn->NameLength;
-                memcpy(kni->Name, kn->Name, kn->NameLength);
-            }
 
-            *ResultLength = reqlen;
+                if (kn->NameLength * sizeof(WCHAR) > left)
+                    return STATUS_BUFFER_OVERFLOW;
+            } else {
+                if (left < kn->NameLength) {
+                    memcpy(name, kn->Name, left);
+                    return STATUS_BUFFER_OVERFLOW;
+                }
+
+                memcpy(name, kn->Name, kn->NameLength);
+            }
 
             break;
         }
 
         case KeyFullInformation: {
-            KEY_FULL_INFORMATION* kfi = KeyInformation;
-            ULONG reqlen = offsetof(KEY_FULL_INFORMATION, Class[0]);
-
-            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
-                *ResultLength = reqlen;
-                return STATUS_BUFFER_TOO_SMALL;
-            }
-
-            kfi->LastWriteTime.QuadPart = kn->LastWriteTime;
-            kfi->TitleIndex = 0;
-            kfi->ClassOffset = 0; // FIXME?
-            kfi->ClassLength = 0; // FIXME?
-            kfi->SubKeys = kn->SubKeyCount + kn->VolatileSubKeyCount;
-            kfi->MaxNameLen = kn->MaxNameLen;
-            kfi->MaxClassLen = kn->MaxClassLen;
-            kfi->Values = kn->ValuesCount;
-            kfi->MaxValueNameLen = kn->MaxValueNameLen;
-            kfi->MaxValueDataLen = kn->MaxValueDataLen;
+            KEY_FULL_INFORMATION kfi;
+            ULONG reqlen = offsetof(KEY_FULL_INFORMATION, Class);
 
             *ResultLength = reqlen;
+
+            kfi.LastWriteTime.QuadPart = kn->LastWriteTime;
+            kfi.TitleIndex = 0;
+            kfi.ClassOffset = 0; // FIXME?
+            kfi.ClassLength = 0; // FIXME?
+            kfi.SubKeys = kn->SubKeyCount + kn->VolatileSubKeyCount;
+            kfi.MaxNameLen = kn->MaxNameLen;
+            kfi.MaxClassLen = kn->MaxClassLen;
+            kfi.Values = kn->ValuesCount;
+            kfi.MaxValueNameLen = kn->MaxValueNameLen;
+            kfi.MaxValueDataLen = kn->MaxValueDataLen;
+
+            if (Length < offsetof(KEY_FULL_INFORMATION, Class)) {
+                memcpy(KeyInformation, &kfi, Length);
+                return STATUS_BUFFER_OVERFLOW;
+            }
+
+            memcpy(KeyInformation, &kfi, offsetof(KEY_FULL_INFORMATION, Class));
 
             break;
         }
@@ -1203,7 +1248,7 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
 
     Status = NtEnumerateKey(KeyHandle, Index, KeyInformationClass, buf, Length, &reslen);
 
-    if (NT_SUCCESS(Status)) {
+    if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
         if (buf) {
             if (copy_to_user(KeyInformation, buf, min(Length, reslen)) != 0)
                 Status = STATUS_INVALID_PARAMETER;
@@ -4593,7 +4638,7 @@ NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationC
 
     Status = NtQueryKey(KeyHandle, KeyInformationClass, buf, Length, &reslen);
 
-    if (NT_SUCCESS(Status)) {
+    if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
         if (buf) {
             if (copy_to_user(KeyInformation, buf, min(Length, reslen)) != 0)
                 Status = STATUS_INVALID_PARAMETER;
