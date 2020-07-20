@@ -1358,24 +1358,40 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
         }
 
         case KeyValuePartialInformation: {
-            KEY_VALUE_PARTIAL_INFORMATION* kvpi = KeyValueInformation;
-            ULONG len = vk->DataLength & 0x7fffffff;
+            KEY_VALUE_PARTIAL_INFORMATION kvpi;
+            ULONG len = vk->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
             ULONG reqlen = offsetof(KEY_VALUE_PARTIAL_INFORMATION, Data[0]) + len;
+            ULONG left;
+            uint8_t* data;
 
-            if (Length < reqlen) { // FIXME - should we be writing partial data, and returning STATUS_BUFFER_OVERFLOW?
-                *ResultLength = reqlen;
-                return STATUS_BUFFER_TOO_SMALL;
+            *ResultLength = reqlen;
+
+            memset(&kvpi, 0, offsetof(KEY_VALUE_PARTIAL_INFORMATION, Data));
+
+            kvpi.TitleIndex = 0;
+            kvpi.Type = vk->Type;
+            kvpi.DataLength = len;
+
+            if (Length < offsetof(KEY_VALUE_PARTIAL_INFORMATION, Data)) {
+                memcpy(KeyValueInformation, &kvpi, Length);
+                return STATUS_BUFFER_OVERFLOW;
             }
 
-            kvpi->TitleIndex = 0;
-            kvpi->Type = vk->Type;
-            kvpi->DataLength = len;
+            memcpy(KeyValueInformation, &kvpi, offsetof(KEY_VALUE_PARTIAL_INFORMATION, Data));
+            left = Length - offsetof(KEY_VALUE_PARTIAL_INFORMATION, Data);
 
-            if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) // stored in cell
+            data = (uint8_t*)KeyValueInformation + offsetof(KEY_VALUE_PARTIAL_INFORMATION, Data);
+
+            if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) { // stored in cell
                 // FIXME - make sure not more than 4 bytes
 
-                memcpy(kvpi->Data, &vk->Data, len);
-            else {
+                if (left < len) {
+                    memcpy(data, &vk->Data, left);
+                    return STATUS_BUFFER_OVERFLOW;
+                }
+
+                memcpy(data, &vk->Data, len);
+            } else {
                 // FIXME - check not out of bounds
 
                 int32_t size = -*(int32_t*)((uint8_t*)bins + vk->Data);
@@ -1383,10 +1399,13 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
                 if (size < len + sizeof(int32_t))
                     return STATUS_REGISTRY_CORRUPT;
 
-                memcpy(kvpi->Data, bins + vk->Data + sizeof(int32_t), len);
-            }
+                if (left < len) {
+                    memcpy(data, bins + vk->Data + sizeof(int32_t), left);
+                    return STATUS_BUFFER_OVERFLOW;
+                }
 
-            *ResultLength = reqlen;
+                memcpy(data, bins + vk->Data + sizeof(int32_t), len);
+            }
 
             return STATUS_SUCCESS;
         }
