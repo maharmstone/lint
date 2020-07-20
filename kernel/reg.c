@@ -1660,7 +1660,7 @@ NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_V
 
     Status = NtQueryValueKey(KeyHandle, &us, KeyValueInformationClass, buf, Length, &reslen);
 
-    if (NT_SUCCESS(Status)) {
+    if (NT_SUCCESS(Status) || Status == STATUS_BUFFER_OVERFLOW) {
         if (buf) {
             if (copy_to_user(KeyValueInformation, buf, reslen) != 0)
                 Status = STATUS_INVALID_PARAMETER;
