@@ -3165,9 +3165,6 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
     kn2->ClassLength = 0; // FIXME
     memcpy(kn2->Name, us->Buffer, us->Length);
 
-    if (CreateOptions & REG_OPTION_CREATE_LINK)
-        kn2->Flags |= KEY_SYM_LINK;
-
     // open kn of parent (checking already done in open_key_in_hive)
 
     if (parent_is_volatile)
@@ -3383,6 +3380,17 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     if (!is_volatile)
         h->dirty = true;
+
+    if (CreateOptions & REG_OPTION_CREATE_LINK) {
+        CM_KEY_NODE* kn;
+
+        if (is_volatile)
+            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+        else
+            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
+        kn->Flags |= KEY_SYM_LINK;
+    }
 
     // create handle
 
