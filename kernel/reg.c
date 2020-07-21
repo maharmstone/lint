@@ -3266,41 +3266,43 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
         is_volatile = parent_is_volatile = false;
     }
 
-    do {
-        unsigned int i;
+    if (us->Length > 0) {
+        do {
+            unsigned int i;
 
-        Status = create_sub_key(h, offset, is_volatile, &part, &offset, &is_volatile, CreateOptions, &created);
-        if (!NT_SUCCESS(Status))
-            return Status;
+            Status = create_sub_key(h, offset, is_volatile, &part, &offset, &is_volatile, CreateOptions, &created);
+            if (!NT_SUCCESS(Status))
+                return Status;
 
-        if (part.Buffer + (part.Length / sizeof(WCHAR)) == us->Buffer + (us->Length / sizeof(WCHAR)))
-            break;
-
-        part.Buffer += part.Length / sizeof(WCHAR);
-        part.Length = (us->Buffer + (us->Length / sizeof(WCHAR)) - part.Buffer) * sizeof(WCHAR);
-
-        while (part.Length >= sizeof(WCHAR) && part.Buffer[0] == '\\') {
-            part.Buffer++;
-            part.Length -= sizeof(WCHAR);
-        }
-
-        if (part.Length < sizeof(WCHAR))
-            break;
-
-        for (i = 0; i < part.Length / sizeof(WCHAR); i++) {
-            if (part.Buffer[i] == '\\') {
-                part.Length = i * sizeof(WCHAR);
+            if (part.Buffer + (part.Length / sizeof(WCHAR)) == us->Buffer + (us->Length / sizeof(WCHAR)))
                 break;
+
+            part.Buffer += part.Length / sizeof(WCHAR);
+            part.Length = (us->Buffer + (us->Length / sizeof(WCHAR)) - part.Buffer) * sizeof(WCHAR);
+
+            while (part.Length >= sizeof(WCHAR) && part.Buffer[0] == '\\') {
+                part.Buffer++;
+                part.Length -= sizeof(WCHAR);
             }
-        }
 
-        parent_is_volatile = is_volatile;
-    } while (true);
+            if (part.Length < sizeof(WCHAR))
+                break;
 
-    if (!is_volatile)
+            for (i = 0; i < part.Length / sizeof(WCHAR); i++) {
+                if (part.Buffer[i] == '\\') {
+                    part.Length = i * sizeof(WCHAR);
+                    break;
+                }
+            }
+
+            parent_is_volatile = is_volatile;
+        } while (true);
+    }
+
+    if (!is_volatile && created)
         h->dirty = true;
 
-    if (CreateOptions & REG_OPTION_CREATE_LINK) {
+    if (CreateOptions & REG_OPTION_CREATE_LINK && created) {
         CM_KEY_NODE* kn;
 
         if (is_volatile)
