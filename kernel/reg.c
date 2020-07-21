@@ -3322,7 +3322,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + h->path.Length + us->Length;
 
-    if (h->depth != 0)
+    if (h->depth != 0 && us->Length > 0)
         k->header.path.Length += sizeof(WCHAR);
 
     k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
@@ -3338,7 +3338,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     memcpy(ptr, h->path.Buffer, h->path.Length);
     ptr += h->path.Length / sizeof(WCHAR);
 
-    if (h->depth != 0) {
+    if (h->depth != 0 && us->Length > 0) {
         *ptr = '\\';
         ptr++;
     }
@@ -3448,6 +3448,10 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             while (us2.Length >= sizeof(WCHAR) && us2.Buffer[0] == '\\') {
                 us2.Buffer++;
+                us2.Length -= sizeof(WCHAR);
+            }
+
+            while (us2.Length >= sizeof(WCHAR) && us2.Buffer[(us2.Length / sizeof(WCHAR)) - 1] == '\\') {
                 us2.Length -= sizeof(WCHAR);
             }
 
