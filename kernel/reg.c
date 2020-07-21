@@ -3126,7 +3126,7 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
     // don't allow non-volatile keys to be created under volatile parent
 
     if (!is_volatile && parent_is_volatile)
-        return STATUS_INVALID_PARAMETER;
+        return STATUS_CHILD_MUST_BE_VOLATILE;
 
     // allocate space for new kn
 

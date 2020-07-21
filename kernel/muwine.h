@@ -33,6 +33,7 @@ struct muwine_func {
 #define STATUS_INTERNAL_ERROR               0xc00000e5
 #define STATUS_CANNOT_DELETE                0xc0000121
 #define STATUS_REGISTRY_CORRUPT             0xc000014c
+#define STATUS_CHILD_MUST_BE_VOLATILE       0xc0000181
 
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
