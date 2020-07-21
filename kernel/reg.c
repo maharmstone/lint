@@ -286,7 +286,7 @@ void muwine_free_reg(void) {
     unregister_reboot_notifier(&reboot_notifier);
 }
 
-static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
+static uint32_t calc_subkey_hash(const UNICODE_STRING* us) {
     uint32_t h = 0;
     unsigned int i;
 
@@ -308,7 +308,8 @@ static uint32_t calc_subkey_hash(UNICODE_STRING* us) {
     return h;
 }
 
-static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE_STRING* us, bool is_volatile, uint32_t* offset_out) {
+static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, const UNICODE_STRING* us,
+                          bool is_volatile, uint32_t* offset_out) {
     unsigned int i, uslen;
 
     uslen = 0;
@@ -404,7 +405,8 @@ static NTSTATUS search_lh(hive* h, CM_KEY_FAST_INDEX* lh, uint32_t hash, UNICODE
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
 
-static NTSTATUS search_index(hive* h, uint32_t offset, UNICODE_STRING* us, uint32_t hash, bool is_volatile, uint32_t* offset_out) {
+static NTSTATUS search_index(hive* h, uint32_t offset, const UNICODE_STRING* us, uint32_t hash, bool is_volatile,
+                             uint32_t* offset_out) {
     uint16_t sig;
     int32_t size;
     void* bins = is_volatile ? h->volatile_bins : h->bins;
@@ -447,7 +449,7 @@ static NTSTATUS search_index(hive* h, uint32_t offset, UNICODE_STRING* us, uint3
         return STATUS_REGISTRY_CORRUPT;
 }
 
-static NTSTATUS find_subkey(hive* h, uint32_t offset, UNICODE_STRING* us, uint32_t* offset_out, bool* is_volatile) {
+static NTSTATUS find_subkey(hive* h, uint32_t offset, const UNICODE_STRING* us, uint32_t* offset_out, bool* is_volatile) {
     NTSTATUS Status;
     uint32_t hash = calc_subkey_hash(us);
     int32_t size;
@@ -3090,77 +3092,36 @@ static void free_sk(hive* h, uint32_t off, bool is_volatile) {
     free_cell(h, off, is_volatile);
 }
 
-static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions, PULONG Disposition,
-                                   const UNICODE_STRING* orig_us) {
+static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_volatile, UNICODE_STRING* us,
+                               uint32_t* subkey_offset, bool* subkey_is_volatile, ULONG CreateOptions,
+                               bool* created) {
     NTSTATUS Status;
-    key_object* k;
     CM_KEY_NODE* kn;
     CM_KEY_NODE* kn2;
     uint32_t hash;
-    bool is_volatile = false;
-    uint32_t offset, subkey_offset;
-    bool parent_is_volatile;
+    uint32_t offset, subkey_list;
     uint32_t subkey_count;
-    uint32_t subkey_list;
+    bool is_volatile;
 
-    static const WCHAR prefix[] = L"\\Registry\\";
+    if (parent_is_volatile)
+        kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + parent_offset + sizeof(int32_t));
+    else
+        kn = (CM_KEY_NODE*)((uint8_t*)h->bins + parent_offset + sizeof(int32_t));
 
-    // get offset for kn of parent
-
-    Status = open_key_in_hive(h, us, &offset, true, &parent_is_volatile, NULL);
-    if (!NT_SUCCESS(Status))
-        return Status;
-
-    if (us->Length < sizeof(WCHAR))
-        return STATUS_OBJECT_NAME_INVALID;
+    // open if already exists, and return
 
     is_volatile = parent_is_volatile;
+    Status = find_subkey(h, parent_offset, us, subkey_offset, &is_volatile);
 
-    // FIXME - make sure SD allows us to create subkeys
-
-    // if already exists, set Disposition to REG_OPENED_EXISTING_KEY, create handle, and return
-
-    Status = find_subkey(h, offset, us, &subkey_offset, &is_volatile);
     if (NT_SUCCESS(Status)) {
-        k = kmalloc(sizeof(key_object), GFP_KERNEL);
-        if (!k)
-            return STATUS_INSUFFICIENT_RESOURCES;
-
-        k->header.refcount = 1;
-        k->header.type = muwine_object_key;
-
-        k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + orig_us->Length;
-        k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
-
-        if (!k->header.path.Buffer) {
-            kfree(k);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
-        memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], orig_us->Buffer, orig_us->Length);
-
-        k->header.close = key_object_close;
-        k->h = h;
-        __sync_add_and_fetch(&h->refcount, 1);
-        k->offset = subkey_offset;
-        k->is_volatile = is_volatile;
-        k->parent_is_volatile = parent_is_volatile;
-
-        Status = muwine_add_handle(&k->header, KeyHandle);
-
-        if (!NT_SUCCESS(Status))
-            kfree(k);
-
-        if (Disposition)
-            *Disposition = REG_OPENED_EXISTING_KEY;
-
+        *subkey_is_volatile = is_volatile;
+        *created = false;
         return Status;
-    } else if (Status != STATUS_OBJECT_PATH_NOT_FOUND)
-        return Status;
+    }
 
-    if (CreateOptions & REG_OPTION_VOLATILE)
-        is_volatile = true;
+    // FIXME - check SD of kn, and that we would have permission to create subkey
+
+    is_volatile = CreateOptions & REG_OPTION_VOLATILE;
 
     // don't allow non-volatile keys to be created under volatile parent
 
@@ -3169,22 +3130,20 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
     // allocate space for new kn
 
-    Status = allocate_cell(h, offsetof(CM_KEY_NODE, Name) + us->Length, &subkey_offset, is_volatile);
+    Status = allocate_cell(h, offsetof(CM_KEY_NODE, Name) + us->Length, &offset, is_volatile);
     if (!NT_SUCCESS(Status))
         return Status;
 
-    // FIXME - compute SD and allocate or find cell for it
-
     if (is_volatile)
-        kn2 = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + subkey_offset + sizeof(int32_t));
+        kn2 = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
     else
-        kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + subkey_offset + sizeof(int32_t));
+        kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
     kn2->Signature = CM_KEY_NODE_SIGNATURE;
     kn2->Flags = 0;
     kn2->LastWriteTime = 0; // FIXME
     kn2->Spare = 0;
-    kn2->Parent = offset;
+    kn2->Parent = parent_offset;
 
     if (parent_is_volatile)
         kn2->Parent |= 0x80000000;
@@ -3212,9 +3171,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
     // open kn of parent (checking already done in open_key_in_hive)
 
     if (parent_is_volatile)
-        kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+        kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + parent_offset + sizeof(int32_t));
     else
-        kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+        kn = (CM_KEY_NODE*)((uint8_t*)h->bins + parent_offset + sizeof(int32_t));
 
     hash = calc_subkey_hash(us);
 
@@ -3225,53 +3184,9 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
             return Status;
 
         if (parent_is_volatile)
-            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + parent_offset + sizeof(int32_t));
         else
-            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
-    }
-
-    // add handle here, to make things easier if we fail later on
-
-    k = kmalloc(sizeof(key_object), GFP_KERNEL);
-    if (!k) {
-        if (kn2->Security != 0xffffffff)
-            free_sk(h, kn2->Security, is_volatile);
-
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    k->header.refcount = 1;
-    k->header.type = muwine_object_key;
-
-    k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + orig_us->Length;
-    k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
-
-    if (!k->header.path.Buffer) {
-        if (kn2->Security != 0xffffffff)
-            free_sk(h, kn2->Security, is_volatile);
-
-        kfree(k);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
-    memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], orig_us->Buffer, orig_us->Length);
-
-    k->header.close = key_object_close;
-    k->h = h;
-    __sync_add_and_fetch(&h->refcount, 1);
-    k->is_volatile = is_volatile;
-    k->parent_is_volatile = parent_is_volatile;
-
-    Status = muwine_add_handle(&k->header, KeyHandle);
-
-    if (!NT_SUCCESS(Status)) {
-        kfree(k);
-
-        if (kn2->Security != 0xffffffff)
-            free_sk(h, kn2->Security, is_volatile);
-
-        return Status;
+            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + parent_offset + sizeof(int32_t));
     }
 
     if (is_volatile) {
@@ -3291,16 +3206,15 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
             if (kn2->Security != 0xffffffff)
                 free_sk(h, kn2->Security, is_volatile);
 
-            free_cell(h, subkey_offset, is_volatile);
-            NtClose(*KeyHandle);
+            free_cell(h, offset, is_volatile);
 
             return Status;
         }
 
         if (parent_is_volatile)
-            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + parent_offset + sizeof(int32_t));
         else
-            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + parent_offset + sizeof(int32_t));
 
         if (is_volatile)
             lh = (CM_KEY_FAST_INDEX*)(h->volatile_bins + lh_offset + sizeof(int32_t));
@@ -3309,7 +3223,7 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
         lh->Signature = CM_KEY_HASH_LEAF;
         lh->Count = 1;
-        lh->List[0].Cell = subkey_offset;
+        lh->List[0].Cell = offset;
         lh->List[0].HashKey = hash;
 
         if (us->Length > kn->MaxNameLen)
@@ -3322,8 +3236,6 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
             kn->SubKeyCount = 1;
             kn->SubKeyList = lh_offset;
         }
-
-        k->offset = subkey_offset;
     } else {
         uint16_t sig;
         int32_t size;
@@ -3337,8 +3249,7 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
             if (kn2->Security != 0xffffffff)
                 free_sk(h, kn2->Security, is_volatile);
 
-            free_cell(h, subkey_offset, is_volatile);
-            NtClose(*KeyHandle);
+            free_cell(h, offset, is_volatile);
             return STATUS_REGISTRY_CORRUPT;
         }
 
@@ -3349,8 +3260,6 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
 
         // FIXME - dealing with existing ri rather than lh
         // FIXME - creating new ri if lh gets too large
-
-        k->offset = subkey_offset;
 
         if (sig == CM_KEY_HASH_LEAF) {
             CM_KEY_FAST_INDEX* old_lh;
@@ -3365,25 +3274,23 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
                 if (kn2->Security != 0xffffffff)
                     free_sk(h, kn2->Security, is_volatile);
 
-                free_cell(h, subkey_offset, is_volatile);
-                NtClose(*KeyHandle);
+                free_cell(h, offset, is_volatile);
                 return STATUS_REGISTRY_CORRUPT;
             }
 
-            Status = lh_copy_and_add(h, subkey_list, &lh_offset, subkey_offset, hash, us, is_volatile);
+            Status = lh_copy_and_add(h, subkey_list, &lh_offset, offset, hash, us, is_volatile);
             if (!NT_SUCCESS(Status)) {
                 if (kn2->Security != 0xffffffff)
                     free_sk(h, kn2->Security, is_volatile);
 
-                free_cell(h, subkey_offset, is_volatile);
-                NtClose(*KeyHandle);
+                free_cell(h, offset, is_volatile);
                 return Status;
             }
 
             if (parent_is_volatile)
-                kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+                kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + parent_offset + sizeof(int32_t));
             else
-                kn = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+                kn = (CM_KEY_NODE*)((uint8_t*)h->bins + parent_offset + sizeof(int32_t));
 
             free_cell(h, subkey_list, is_volatile);
 
@@ -3403,18 +3310,118 @@ static NTSTATUS create_key_in_hive(hive* h, UNICODE_STRING* us, PHANDLE KeyHandl
             if (kn2->Security != 0xffffffff)
                 free_sk(h, kn2->Security, is_volatile);
 
-            NtClose(*KeyHandle);
             return STATUS_NOT_IMPLEMENTED;
         }
     }
 
-    if (Disposition)
-        *Disposition = REG_CREATED_NEW_KEY;
-
-    if (!is_volatile)
-        k->h->dirty = true;
+    *subkey_offset = offset;
+    *subkey_is_volatile = is_volatile;
+    *created = true;
 
     return STATUS_SUCCESS;
+}
+
+static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions, PULONG Disposition) {
+    NTSTATUS Status;
+    key_object* k;
+    bool is_volatile, created;
+    uint32_t offset;
+    bool parent_is_volatile;
+    UNICODE_STRING part;
+    unsigned int i;
+
+    static const WCHAR prefix[] = L"\\Registry\\";
+
+    part.Buffer = us->Buffer;
+    part.Length = us->Length;
+
+    for (i = 0; i < us->Length / sizeof(WCHAR); i++) {
+        if (us->Buffer[i] == '\\') {
+            part.Length = i * sizeof(WCHAR);
+            break;
+        }
+    }
+
+    if (h->depth == 0) {
+        offset = h->volatile_root_cell;
+        is_volatile = parent_is_volatile = true;
+    } else {
+        offset = ((HBASE_BLOCK*)h->data)->RootCell;
+        is_volatile = parent_is_volatile = false;
+    }
+
+    do {
+        unsigned int i;
+
+        Status = create_sub_key(h, offset, is_volatile, &part, &offset, &is_volatile, CreateOptions, &created);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        if (part.Buffer + (part.Length / sizeof(WCHAR)) == us->Buffer + (us->Length / sizeof(WCHAR)))
+            break;
+
+        part.Buffer += part.Length / sizeof(WCHAR);
+        part.Length = (us->Buffer + (us->Length / sizeof(WCHAR)) - part.Buffer) * sizeof(WCHAR);
+
+        while (part.Length >= sizeof(WCHAR) && part.Buffer[0] == '\\') {
+            part.Buffer++;
+            part.Length -= sizeof(WCHAR);
+        }
+
+        if (part.Length < sizeof(WCHAR))
+            break;
+
+        for (i = 0; i < part.Length / sizeof(WCHAR); i++) {
+            if (part.Buffer[i] == '\\') {
+                part.Length = i * sizeof(WCHAR);
+                break;
+            }
+        }
+
+        parent_is_volatile = is_volatile;
+    } while (true);
+
+    if (!is_volatile)
+        h->dirty = true;
+
+    // create handle
+
+    k = kmalloc(sizeof(key_object), GFP_KERNEL);
+    if (!k)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    k->header.refcount = 1;
+    k->header.type = muwine_object_key;
+
+    k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + us->Length;
+    k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
+
+    if (!k->header.path.Buffer) {
+        kfree(k);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
+    memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], us->Buffer, us->Length);
+
+    k->header.close = key_object_close;
+    k->h = h;
+    __sync_add_and_fetch(&h->refcount, 1);
+    k->offset = offset;
+    k->is_volatile = is_volatile;
+    k->parent_is_volatile = parent_is_volatile;
+
+    Status = muwine_add_handle(&k->header, KeyHandle);
+
+    if (!NT_SUCCESS(Status)) {
+        kfree(k);
+        return Status;
+    }
+
+    if (Disposition)
+        *Disposition = created ? REG_CREATED_NEW_KEY : REG_OPENED_EXISTING_KEY;
+
+    return Status;
 }
 
 static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, ULONG TitleIndex,
@@ -3423,7 +3430,6 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     UNICODE_STRING us;
     bool us_alloc;
     struct list_head* le;
-    UNICODE_STRING orig_us;
     WCHAR* oa_us_alloc = NULL;
 
     static const WCHAR prefix[] = L"\\Registry\\";
@@ -3476,8 +3482,6 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         return Status;
     }
 
-    orig_us = us;
-
     down_read(&hive_list_sem);
 
     le = hive_list.next;
@@ -3496,23 +3500,25 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         }
 
         if (h->depth == 0 || !wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
-            us.Buffer += h->path.Length / sizeof(WCHAR);
-            us.Length -= h->path.Length;
+            UNICODE_STRING us2;
 
-            while (us.Length >= sizeof(WCHAR) && us.Buffer[0] == '\\') {
-                us.Buffer++;
-                us.Length -= sizeof(WCHAR);
+            us2.Buffer = us.Buffer + (h->path.Length / sizeof(WCHAR));
+            us2.Length = us.Length -= h->path.Length;
+
+            while (us2.Length >= sizeof(WCHAR) && us.Buffer[0] == '\\') {
+                us2.Buffer++;
+                us2.Length -= sizeof(WCHAR);
             }
 
             down_write(&h->sem);
 
-            Status = create_key_in_hive(h, &us, KeyHandle, CreateOptions, Disposition, &orig_us);
+            Status = create_key_in_hive(h, &us2, KeyHandle, CreateOptions, Disposition);
 
             up_write(&h->sem);
             up_read(&hive_list_sem);
 
             if (us_alloc)
-                kfree(orig_us.Buffer);
+                kfree(us.Buffer);
 
             if (oa_us_alloc)
                 kfree(oa_us_alloc);
@@ -3526,7 +3532,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     up_read(&hive_list_sem);
 
     if (us_alloc)
-        kfree(orig_us.Buffer);
+        kfree(us.Buffer);
 
     if (oa_us_alloc)
         kfree(oa_us_alloc);
