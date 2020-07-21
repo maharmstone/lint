@@ -3315,7 +3315,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
 
-    k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + h->path.Length + us->Length;
+    k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) + h->path.Length + us->Length;
     k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
     if (!k->header.path.Buffer) {
@@ -3326,7 +3326,8 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
     memcpy(&k->header.path.Buffer[(sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR)],
                                    h->path.Buffer, h->path.Length);
-    memcpy(&k->header.path.Buffer[(sizeof(prefix) - sizeof(WCHAR) + h->path.Length) / sizeof(WCHAR)],
+    k->header.path.Buffer[(sizeof(prefix) + h->path.Length) / sizeof(WCHAR)] = '\\';
+    memcpy(&k->header.path.Buffer[(sizeof(prefix) + h->path.Length) / sizeof(WCHAR)],
                                    us->Buffer, us->Length);
 
     k->header.close = key_object_close;
