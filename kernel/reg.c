@@ -2322,9 +2322,11 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
         memcpy(vk->Name, ValueName->Buffer, vk->NameLength);
 
     if (DataSize > sizeof(uint32_t)) {
+        uint32_t addr;
+
         vk->DataLength = DataSize;
 
-        Status = allocate_cell(key->h, DataSize, &vk->Data, key->is_volatile);
+        Status = allocate_cell(key->h, DataSize, &addr, key->is_volatile);
         if (!NT_SUCCESS(Status)) {
             free_cell(key->h, vk_offset, key->is_volatile);
             goto end;
@@ -2333,6 +2335,8 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
         bins = key->is_volatile ? key->h->volatile_bins : key->h->bins;
         vk = (CM_KEY_VALUE*)(bins + vk_offset + sizeof(int32_t));
         kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
+
+        vk->Data = addr;
 
         memcpy(bins + vk->Data + sizeof(int32_t), Data, DataSize);
     } else {
