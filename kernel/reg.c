@@ -3430,7 +3430,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             us2.Buffer = us.Buffer + (h->path.Length / sizeof(WCHAR));
             us2.Length = us.Length -= h->path.Length;
 
-            while (us2.Length >= sizeof(WCHAR) && us.Buffer[0] == '\\') {
+            while (us2.Length >= sizeof(WCHAR) && us2.Buffer[0] == '\\') {
                 us2.Buffer++;
                 us2.Length -= sizeof(WCHAR);
             }
