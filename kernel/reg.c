@@ -3240,6 +3240,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     bool parent_is_volatile;
     UNICODE_STRING part;
     unsigned int i;
+    WCHAR* ptr;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
@@ -3315,7 +3316,11 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
 
-    k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) + h->path.Length + us->Length;
+    k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + h->path.Length + us->Length;
+
+    if (h->depth != 0)
+        k->header.path.Length += sizeof(WCHAR);
+
     k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
     if (!k->header.path.Buffer) {
@@ -3324,11 +3329,17 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     }
 
     memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
-    memcpy(&k->header.path.Buffer[(sizeof(prefix) - sizeof(WCHAR)) / sizeof(WCHAR)],
-                                   h->path.Buffer, h->path.Length);
-    k->header.path.Buffer[(sizeof(prefix) + h->path.Length) / sizeof(WCHAR)] = '\\';
-    memcpy(&k->header.path.Buffer[(sizeof(prefix) + h->path.Length) / sizeof(WCHAR)],
-                                   us->Buffer, us->Length);
+    ptr = &k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1];
+
+    memcpy(ptr, h->path.Buffer, h->path.Length);
+    ptr += h->path.Length / sizeof(WCHAR);
+
+    if (h->depth != 0) {
+        *ptr = '\\';
+        ptr++;
+    }
+
+    memcpy(ptr, us->Buffer, us->Length);
 
     k->header.close = key_object_close;
     k->h = h;
