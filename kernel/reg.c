@@ -1984,119 +1984,35 @@ static void free_cell(hive* h, uint32_t offset, bool is_volatile) {
         *(int32_t*)(h->bins + offset) = -*(int32_t*)(h->bins + offset);
 }
 
-static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCHAR* value, ULONG value_length) {
-    CM_KEY_NODE* kn;
-    hive* h2;
-    unsigned int len = 0, depth = 0, level;
-    WCHAR* name;
-    WCHAR* ptr;
+static void update_symlink_cache(const UNICODE_STRING* path, WCHAR* value, ULONG value_length) {
+    UNICODE_STRING src, dest;
     struct list_head* le;
     symlink* s;
+    unsigned int i, depth;
 
-    if (value_length != 0) {
-        static const WCHAR prefix[] = L"\\Registry\\";
+    static const WCHAR prefix[] = L"\\Registry\\";
 
-        if (value_length >= sizeof(prefix) - sizeof(WCHAR) && !wcsnicmp(value, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1)) {
-            value += (sizeof(prefix) / sizeof(WCHAR)) - 1;
-            value_length -= sizeof(prefix) - sizeof(WCHAR);
-        } else {
-            value = NULL;
-            value_length = 0;
-        }
+    src.Buffer = path->Buffer;
+    src.Length = path->Length;
+
+    if (src.Length >= sizeof(prefix) - sizeof(WCHAR) && !wcsnicmp(src.Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1)) {
+        src.Buffer += (sizeof(prefix) / sizeof(WCHAR)) - 1;
+        src.Length -= sizeof(prefix) - sizeof(WCHAR);
     }
 
-    // construct path to key
-    h2 = h;
+    dest.Buffer = value;
+    dest.Length = value_length;
 
-    if (is_volatile)
-        kn = (CM_KEY_NODE*)((uint8_t*)h2->volatile_bins + offset + sizeof(int32_t));
-    else
-        kn = (CM_KEY_NODE*)((uint8_t*)h2->bins + offset + sizeof(int32_t));
+    if (dest.Length >= sizeof(prefix) - sizeof(WCHAR) && !wcsnicmp(dest.Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1)) {
+        dest.Buffer += (sizeof(prefix) / sizeof(WCHAR)) - 1;
+        dest.Length -= sizeof(prefix) - sizeof(WCHAR);
+    }
 
-    do {
-        if (kn->Flags & KEY_HIVE_ENTRY) {
-            if (h2->depth == 0)
-                break;
-
-            if (h2->parent_key_volatile)
-                kn = (CM_KEY_NODE*)((uint8_t*)h2->parent_hive->volatile_bins + h2->parent_key_offset + sizeof(int32_t));
-            else
-                kn = (CM_KEY_NODE*)((uint8_t*)h2->parent_hive->bins + h2->parent_key_offset + sizeof(int32_t));
-
-            h2 = h2->parent_hive;
-        }
-
-        if (kn->Flags & KEY_COMP_NAME)
-            len += kn->NameLength * sizeof(WCHAR);
-        else
-            len += kn->NameLength;
-
-        len += sizeof(WCHAR);
-        depth++;
-
-        if (kn->Parent & 0x80000000)
-            kn = (CM_KEY_NODE*)((uint8_t*)h2->volatile_bins + (kn->Parent & 0x7fffffff) + sizeof(int32_t));
-        else
-            kn = (CM_KEY_NODE*)((uint8_t*)h2->bins + kn->Parent + sizeof(int32_t));
-    } while (true);
-
-    if (len == 0)
-        return;
-
-    len -= sizeof(WCHAR); // rm initial backslash
-
-    name = kmalloc(len, GFP_KERNEL);
-    // FIXME - check for malloc failure
-
-    ptr = &name[len / sizeof(WCHAR)];
-
-    h2 = h;
-
-    if (is_volatile)
-        kn = (CM_KEY_NODE*)((uint8_t*)h2->volatile_bins + offset + sizeof(int32_t));
-    else
-        kn = (CM_KEY_NODE*)((uint8_t*)h2->bins + offset + sizeof(int32_t));
-
-    level = 0;
-
-    do {
-        if (kn->Flags & KEY_HIVE_ENTRY) {
-            if (h2->depth == 0)
-                break;
-
-            if (h2->parent_key_volatile)
-                kn = (CM_KEY_NODE*)((uint8_t*)h2->parent_hive->volatile_bins + h2->parent_key_offset + sizeof(int32_t));
-            else
-                kn = (CM_KEY_NODE*)((uint8_t*)h2->parent_hive->bins + h2->parent_key_offset + sizeof(int32_t));
-
-            h2 = h2->parent_hive;
-        }
-
-        if (kn->Flags & KEY_COMP_NAME) {
-            unsigned int i;
-
-            ptr -= kn->NameLength;
-
-            for (i = 0; i < kn->NameLength; i++) {
-                ptr[i] = ((char*)kn->Name)[i];
-            }
-        } else {
-            ptr -= kn->NameLength / sizeof(WCHAR);
-            memcpy(ptr, kn->Name, kn->NameLength);
-        }
-
-        if (level != depth - 1){
-            ptr--;
-            *ptr = '\\';
-        }
-
-        if (kn->Parent & 0x80000000)
-            kn = (CM_KEY_NODE*)((uint8_t*)h2->volatile_bins + (kn->Parent & 0x7fffffff) + sizeof(int32_t));
-        else
-            kn = (CM_KEY_NODE*)((uint8_t*)h2->bins + kn->Parent + sizeof(int32_t));
-
-        level++;
-    } while (true);
+    depth = 1;
+    for (i = 0; i < src.Length / sizeof(WCHAR); i++) {
+        if (src.Buffer[i] == '\\')
+            depth++;
+    }
 
     // check if already exists
 
@@ -2106,10 +2022,8 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
     while (le != &symlink_list) {
         symlink* s = list_entry(le, symlink, list);
 
-        if (s->depth == depth && s->source_len == len && !wcsnicmp(s->source, name, len / sizeof(WCHAR))) {
-            kfree(name);
-
-            if (value_length == 0) {
+        if (s->depth == depth && s->source_len == src.Length && !wcsnicmp(s->source, src.Buffer, src.Length / sizeof(WCHAR))) {
+            if (dest.Length == 0) {
                 list_del(&s->list);
                 write_unlock(&symlink_lock);
                 return;
@@ -2117,12 +2031,12 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
 
             kfree(s->destination);
 
-            s->destination = kmalloc(value_length, GFP_KERNEL);
+            s->destination = kmalloc(dest.Length, GFP_KERNEL);
             // FIXME - handle malloc failure
 
-            memcpy(s->destination, value, value_length);
+            memcpy(s->destination, dest.Buffer, dest.Length);
 
-            s->destination_len = value_length;
+            s->destination_len = dest.Length;
             write_unlock(&symlink_lock);
 
             return;
@@ -2134,7 +2048,6 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
 
     if (value_length == 0) {
         write_unlock(&symlink_lock);
-        kfree(name);
         return;
     }
 
@@ -2142,12 +2055,13 @@ static void update_symlink_cache(hive* h, uint32_t offset, bool is_volatile, WCH
 
     s = kmalloc(sizeof(symlink), GFP_KERNEL); // FIXME - handle malloc failure
 
-    s->source = name;
-    s->source_len = len;
+    s->source = kmalloc(src.Length, GFP_KERNEL); // FIXME - handle malloc failure
+    memcpy(s->source, src.Buffer, src.Length);
+    s->source_len = src.Length;
 
-    s->destination = kmalloc(value_length, GFP_KERNEL); // FIXME - handle malloc failure
-    memcpy(s->destination, value, value_length);
-    s->destination_len = value_length;
+    s->destination = kmalloc(dest.Length, GFP_KERNEL); // FIXME - handle malloc failure
+    memcpy(s->destination, dest.Buffer, dest.Length);
+    s->destination_len = dest.Length;
     s->depth = depth;
 
     // insert into symlink list, reverse-ordered by depth
@@ -2348,9 +2262,9 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
                 if (kn->Flags & KEY_SYM_LINK && ValueName->Length == sizeof(symlinkval) - sizeof(WCHAR) &&
                     !wcsnicmp(ValueName->Buffer, symlinkval, (sizeof(symlinkval) / sizeof(WCHAR)) - 1)) {
                     if (Type == REG_LINK)
-                        update_symlink_cache(key->h, key->offset, key->is_volatile, Data, DataSize);
+                        update_symlink_cache(&key->header.path, Data, DataSize);
                     else
-                        update_symlink_cache(key->h, key->offset, key->is_volatile, NULL, 0);
+                        update_symlink_cache(&key->header.path, NULL, 0);
                 }
 
                 if (DataSize >= kn->MaxValueDataLen || kn->ValuesCount == 1)
@@ -2429,9 +2343,9 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     if (kn->Flags & KEY_SYM_LINK && ValueName->Length == sizeof(symlinkval) - sizeof(WCHAR) &&
         !wcsnicmp(ValueName->Buffer, symlinkval, (sizeof(symlinkval) / sizeof(WCHAR)) - 1)) {
         if (Type == REG_LINK)
-            update_symlink_cache(key->h, key->offset, key->is_volatile, Data, DataSize);
+            update_symlink_cache(&key->header.path, Data, DataSize);
         else
-            update_symlink_cache(key->h, key->offset, key->is_volatile, NULL, 0);
+            update_symlink_cache(&key->header.path, NULL, 0);
     }
 
     if (kn->ValuesCount > 0) {
@@ -2742,7 +2656,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
 
             if (kn->Flags & KEY_SYM_LINK && vk->Type == REG_LINK && ValueName->Length == sizeof(symlinkval) - sizeof(WCHAR) &&
                 !wcsnicmp(ValueName->Buffer, symlinkval, (sizeof(symlinkval) / sizeof(WCHAR)) - 1)) {
-                update_symlink_cache(key->h, key->offset, key->is_volatile, NULL, 0);
+                update_symlink_cache(&key->header.path, NULL, 0);
             }
 
             free_cell(key->h, vk_offset, key->is_volatile);
@@ -3843,7 +3757,7 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     }
 
     if (kn->Flags & KEY_SYM_LINK)
-        update_symlink_cache(key->h, key->offset, key->is_volatile, NULL, 0);
+        update_symlink_cache(&key->header.path, NULL, 0);
 
     if (kn->Security != 0xffffffff)
         free_sk(key->h, kn->Security, key->is_volatile);
