@@ -276,6 +276,8 @@ NTSTATUS __stdcall NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJ
 }
 
 void close_muwine() {
-    if (muwine_fd != 0)
+    if (muwine_fd != 0) {
         close(muwine_fd);
+        muwine_fd = 0;
+    }
 }
