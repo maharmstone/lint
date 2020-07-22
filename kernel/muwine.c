@@ -339,57 +339,6 @@ static int muwine_open(struct inode* inode, struct file* file) {
 }
 
 static int muwine_release(struct inode* inode, struct file* file) {
-    pid_t pid = task_tgid_vnr(current);
-    struct list_head* le;
-    process* p = NULL;
-
-    // remove pid from process list
-
-    spin_lock(&pid_list_lock);
-
-    le = pid_list.next;
-
-    while (le != &pid_list) {
-        process* p2 = list_entry(le, process, list);
-
-        if (p2->pid == pid) {
-            p2->refcount--;
-
-            if (p2->refcount == 0) {
-                list_del(&p2->list);
-                p = p2;
-            }
-
-            break;
-        }
-
-        le = le->next;
-    }
-
-    spin_unlock(&pid_list_lock);
-
-    if (p) {
-        // force close of all open handles
-
-        spin_lock(&p->handle_list_lock);
-
-        while (!list_empty(&p->handle_list)) {
-            handle* hand = list_entry(p->handle_list.next, handle, list);
-
-            list_del(&hand->list);
-
-            hand->object->close(hand->object);
-
-            kfree(hand);
-        }
-
-        spin_unlock(&p->handle_list_lock);
-
-        muwine_free_token(p->token);
-
-        kfree(p);
-    }
-
     module_put(THIS_MODULE);
 
     return 0;
@@ -844,17 +793,70 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 }
 
 static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
-    printk(KERN_INFO "exit_handler\n");
+    pid_t pid = task_tgid_vnr(current);
+    struct list_head* le;
+    process* p = NULL;
+    bool found = false;
 
     // skip kernel threads
     if (!current->mm)
         return 1;
 
+    // remove pid from process list
+
+    spin_lock(&pid_list_lock);
+
+    le = pid_list.next;
+
+    while (le != &pid_list) {
+        process* p2 = list_entry(le, process, list);
+
+        if (p2->pid == pid) {
+            p2->refcount--;
+            found = true;
+
+            if (p2->refcount == 0) {
+                list_del(&p2->list);
+                p = p2;
+            }
+
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock(&pid_list_lock);
+
+    if (p) {
+        // force close of all open handles
+
+        spin_lock(&p->handle_list_lock);
+
+        while (!list_empty(&p->handle_list)) {
+            handle* hand = list_entry(p->handle_list.next, handle, list);
+
+            list_del(&hand->list);
+
+            hand->object->close(hand->object);
+
+            kfree(hand);
+        }
+
+        spin_unlock(&p->handle_list_lock);
+
+        muwine_free_token(p->token);
+
+        kfree(p);
+    }
+
     return 0;
 }
 
 static int fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
-    printk(KERN_INFO "fork_handler\n");
+    pid_t pid = task_tgid_vnr(current);
+
+    printk(KERN_INFO "fork_handler (pid %u)\n", pid);
 
     return 0;
 }
