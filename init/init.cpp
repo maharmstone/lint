@@ -211,21 +211,6 @@ static void create_current_control_set_symlink() {
                        u"\\Registry\\Machine\\System\\ControlSet001");
 }
 
-static void mount_user_hive(const u16string_view& sid, const string_view& user_hive,
-                            const string_view& classes_hive) {
-    auto sidstr = u16string(sid);
-
-    create_reg_key(u"\\Registry\\User\\" + sidstr, true);
-    mount_hive(u"\\Registry\\User\\" + sidstr, get_nt_path(user_hive));
-
-    create_reg_key(u"\\Registry\\User\\" + sidstr + u"_Classes", true);
-    mount_hive(u"\\Registry\\User\\" + sidstr + u"_Classes", get_nt_path(classes_hive));
-
-    create_reg_key(u"\\Registry\\User\\" + sidstr + u"\\Software", false); // should already exist
-    create_reg_symlink(u"\\Registry\\User\\" + sidstr + u"\\Software\\Classes",
-                       u"\\Registry\\User\\" + sidstr + u"_Classes");
-}
-
 int main() {
     try {
         create_reg_keys();
@@ -233,9 +218,6 @@ int main() {
         mount_hives();
 
         create_current_control_set_symlink();
-
-        // FIXME - this should be done in PAM module on login
-        mount_user_hive(u"S-1-5-21-0-0-0-1000", "NTUSER.DAT", "UsrClass.dat");
     } catch (const exception& e) {
         cerr << e.what() << endl;
         return 1;
