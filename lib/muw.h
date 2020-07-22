@@ -62,6 +62,12 @@ typedef struct _LARGE_INTEGER {
 #define KEY_NOTIFY             0x0010
 #define KEY_CREATE_LINK        0x0020
 
+#define DELETE                 0x00010000
+#define READ_CONTROL           0x00020000
+#define WRITE_DAC              0x00040000
+#define WRITE_OWNER            0x00080000
+#define SYNCHRONIZE            0x00100000
+
 #define REG_OPTION_NON_VOLATILE     0x00000000
 #define REG_OPTION_VOLATILE         0x00000001
 #define REG_OPTION_CREATE_LINK      0x00000002
