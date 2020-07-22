@@ -716,12 +716,12 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             continue;
         }
 
-        if (h->path.Length > us.Length && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
+        if (h->depth != 0 && us.Length > h->path.Length && us.Buffer[h->path.Length / sizeof(WCHAR)] != '\\') {
             le = le->next;
             continue;
         }
 
-        if (!wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
+        if (h->depth == 0 || !wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
             key_object* k;
             bool is_volatile, parent_is_volatile;
 
