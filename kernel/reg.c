@@ -648,7 +648,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     UNICODE_STRING us;
     uint32_t offset;
     struct list_head* le;
-    bool us_alloc;
+    bool us_alloc = false;
     UNICODE_STRING orig_us;
     WCHAR* oa_us_alloc = NULL;
 
@@ -3371,7 +3371,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                             PUNICODE_STRING Class, ULONG CreateOptions, PULONG Disposition) {
     NTSTATUS Status;
     UNICODE_STRING us;
-    bool us_alloc;
+    bool us_alloc = false;
     struct list_head* le;
     WCHAR* oa_us_alloc = NULL;
 
@@ -3417,12 +3417,15 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         us.Length -= sizeof(WCHAR);
     }
 
-    Status = resolve_symlinks(&us, &us_alloc);
-    if (!NT_SUCCESS(Status)) {
-        if (oa_us_alloc)
-            kfree(oa_us_alloc);
+    // FIXME - is this right? What if we're opening a symlink, but there's another symlink in the path?
+    if (!(CreateOptions & REG_OPTION_CREATE_LINK)) {
+        Status = resolve_symlinks(&us, &us_alloc);
+        if (!NT_SUCCESS(Status)) {
+            if (oa_us_alloc)
+                kfree(oa_us_alloc);
 
-        return Status;
+            return Status;
+        }
     }
 
     down_read(&hive_list_sem);
