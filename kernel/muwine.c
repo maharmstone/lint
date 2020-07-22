@@ -1,5 +1,6 @@
 #include "ioctls.h"
 #include "muwine.h"
+#include <linux/kprobes.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Mark Harmstone");
@@ -842,8 +843,60 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
     }
 }
 
+static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
+    printk(KERN_INFO "exit_handler\n");
+
+    // skip kernel threads
+    if (!current->mm)
+        return 1;
+
+    return 0;
+}
+
+static int fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
+    printk(KERN_INFO "fork_handler\n");
+
+    return 0;
+}
+
+static struct kretprobe fork_kretprobe = {
+    .handler    = fork_handler,
+    .maxactive  = 20,
+};
+
+static struct kretprobe exit_kretprobe = {
+    .entry_handler  = exit_handler,
+    .maxactive      = 20,
+};
+
+static int init_kretprobes(void) {
+    int ret;
+
+    fork_kretprobe.kp.symbol_name = "_do_fork";
+
+    ret = register_kretprobe(&fork_kretprobe);
+
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe failed, returned %d\n", ret);
+        return ret;
+    }
+
+    exit_kretprobe.kp.symbol_name = "do_group_exit";
+
+    ret = register_kretprobe(&exit_kretprobe);
+
+    if (ret < 0) {
+        unregister_kretprobe(&exit_kretprobe);
+        printk(KERN_ERR "register_kretprobe failed, returned %d\n", ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 static int __init muwine_init(void) {
     NTSTATUS Status;
+    int ret;
 
     major_num = register_chrdev(0, "muwine", &file_ops);
 
@@ -851,6 +904,10 @@ static int __init muwine_init(void) {
         printk(KERN_ALERT "Could not register device: %d\n", major_num);
         return major_num;
     }
+
+    ret = init_kretprobes();
+    if (ret < 0)
+        return ret;
 
     Status = muwine_init_registry();
     if (!NT_SUCCESS(Status)) {
@@ -865,6 +922,9 @@ static int __init muwine_init(void) {
 
 static void __exit muwine_exit(void) {
     unregister_chrdev(major_num, "muwine");
+
+    unregister_kretprobe(&fork_kretprobe);
+    unregister_kretprobe(&exit_kretprobe);
 
     muwine_free_reg();
 
