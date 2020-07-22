@@ -12,7 +12,8 @@
 #include <stdint.h>
 
 typedef struct {
-    uint32_t lock;
+    _Atomic uint32_t ticket;
+    uint32_t turn;
     uint32_t num_sessions;
 } shared;
 
@@ -71,6 +72,16 @@ static void release_shared(shared* sh) {
     munmap(sh, 4096);
 }
 
+static void get_spinlock(shared* sh) {
+    uint32_t turn = sh->ticket++;
+
+    while (turn != sh->turn) { }
+}
+
+static void release_spinlock(shared* sh) {
+    sh->turn++;
+}
+
 __attribute__ ((visibility ("default")))
 int pam_sm_open_session(pam_handle_t* pamh, __attribute__((unused)) int flags,
                         __attribute__((unused)) int argc, __attribute__((unused)) const char** argv) {
@@ -95,11 +106,15 @@ int pam_sm_open_session(pam_handle_t* pamh, __attribute__((unused)) int flags,
     if (!sh)
         return PAM_SESSION_ERR;
 
+    get_spinlock(sh);
+
     sh->num_sessions++;
 
     pam_syslog(pamh, LOG_INFO, "num_sessions = %u\n", sh->num_sessions);
 
     // FIXME
+
+    release_spinlock(sh);
 
     release_shared(sh);
 
@@ -116,9 +131,13 @@ int pam_sm_close_session(__attribute__((unused)) pam_handle_t* pamh, __attribute
     if (!sh)
         return PAM_SESSION_ERR;
 
+    get_spinlock(sh);
+
     sh->num_sessions--;
 
     pam_syslog(pamh, LOG_INFO, "pam_sm_close_session stub (num_sessions = %u)\n", sh->num_sessions);
+
+    release_spinlock(sh);
 
     release_shared(sh);
 
