@@ -10,11 +10,19 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+
+typedef struct {
+    uid_t uid;
+    unsigned int num_sessions;
+} entry;
 
 typedef struct {
     _Atomic uint32_t ticket;
     uint32_t turn;
-    uint32_t num_sessions;
+    uint32_t num_entries;
+    entry entries[1];
 } shared;
 
 __attribute__ ((visibility ("default")))
@@ -82,6 +90,11 @@ static void release_spinlock(shared* sh) {
     sh->turn++;
 }
 
+static void first_session(pam_handle_t* pamh, entry* ent) {
+    // FIXME - call NtLoadKey etc.
+    pam_syslog(pamh, LOG_INFO, "pam_sm_open_session: FIXME, call NtLoadKey for uid %u\n", ent->uid);
+}
+
 __attribute__ ((visibility ("default")))
 int pam_sm_open_session(pam_handle_t* pamh, __attribute__((unused)) int flags,
                         __attribute__((unused)) int argc, __attribute__((unused)) const char** argv) {
@@ -89,6 +102,7 @@ int pam_sm_open_session(pam_handle_t* pamh, __attribute__((unused)) int flags,
     int ret;
     struct passwd* pwd;
     shared* sh;
+    bool found = false;
 
     ret = pam_get_item(pamh, PAM_USER, (const void**)&user_name);
     if (ret != PAM_SUCCESS || !user_name || *user_name == '\0') {
@@ -108,34 +122,83 @@ int pam_sm_open_session(pam_handle_t* pamh, __attribute__((unused)) int flags,
 
     get_spinlock(sh);
 
-    sh->num_sessions++;
+    for (unsigned int i = 0; i < sh->num_entries; i++) {
+        if (sh->entries[i].uid == pwd->pw_uid) {
+            sh->entries[i].num_sessions++;
+            found = true;
+        }
+    }
 
-    pam_syslog(pamh, LOG_INFO, "num_sessions = %u\n", sh->num_sessions);
+    if (!found) {
+        entry* ent = &sh->entries[sh->num_entries];
 
-    // FIXME
+        ent->uid = pwd->pw_uid;
+        ent->num_sessions = 1;
+
+        first_session(pamh, ent);
+
+        sh->num_entries++;
+    }
+
+    // FIXME - better if we have per-user locks as well, so that NtLoadKey doesn't block everybody?
 
     release_spinlock(sh);
 
     release_shared(sh);
 
-    pam_syslog(pamh, LOG_INFO, "pam_sm_open_session stub (uid = %u)\n", pwd->pw_uid);
-
     return PAM_IGNORE;
+}
+
+static void last_session(pam_handle_t* pamh, entry* ent) {
+    // FIXME - call NtUnloadKey etc.
+    pam_syslog(pamh, LOG_INFO, "pam_sm_close_session: FIXME, call NtUnloadKey for uid %u\n", ent->uid);
 }
 
 __attribute__ ((visibility ("default")))
 int pam_sm_close_session(__attribute__((unused)) pam_handle_t* pamh, __attribute__((unused)) int flags,
                          __attribute__((unused)) int argc, __attribute__((unused)) const char** argv) {
-    shared* sh = get_shared(pamh);
+    const char* user_name;
+    struct passwd* pwd;
+    shared* sh;
+    int ret;
 
+    ret = pam_get_item(pamh, PAM_USER, (const void**)&user_name);
+    if (ret != PAM_SUCCESS || !user_name || *user_name == '\0') {
+        pam_syslog(pamh, LOG_ERR, "close_session - error recovering username");
+        return PAM_SESSION_ERR;
+    }
+
+    pwd = pam_modutil_getpwnam(pamh, user_name);
+    if (!pwd) {
+        pam_syslog(pamh, LOG_ERR, "close_session - error recovering uid");
+        return PAM_SESSION_ERR;
+    }
+
+    sh = get_shared(pamh);
     if (!sh)
         return PAM_SESSION_ERR;
 
     get_spinlock(sh);
 
-    sh->num_sessions--;
+    for (unsigned int i = 0; i < sh->num_entries; i++) {
+        if (sh->entries[i].uid == pwd->pw_uid) {
+            sh->entries[i].num_sessions--;
 
-    pam_syslog(pamh, LOG_INFO, "pam_sm_close_session stub (num_sessions = %u)\n", sh->num_sessions);
+            if (sh->entries[i].num_sessions == 0) {
+                entry ent;
+
+                memcpy(&ent, &sh->entries[i], sizeof(entry));
+
+                // remove from list
+                memcpy(&sh->entries[i], &sh->entries[i+1], sizeof(entry) * (sh->num_entries - i - 1));
+                sh->num_entries--;
+
+                last_session(pamh, &ent);
+            }
+
+            break;
+        }
+    }
 
     release_spinlock(sh);
 
