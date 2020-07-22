@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #define STATUS_NOT_IMPLEMENTED              (NTSTATUS)0xc0000002
 
@@ -272,4 +273,9 @@ NTSTATUS __stdcall NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJ
     init_muwine();
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTNOTIFYCHANGEMULTIPLEKEYS, args);
+}
+
+void close_muwine() {
+    if (muwine_fd != 0)
+        close(muwine_fd);
 }

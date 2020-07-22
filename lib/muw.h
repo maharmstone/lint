@@ -150,6 +150,8 @@ typedef void* PIO_APC_ROUTINE;
 
 #define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
 
+void close_muwine();
+
 NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes);
 NTSTATUS __stdcall NtClose(HANDLE Handle);
 NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
