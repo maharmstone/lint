@@ -2913,6 +2913,61 @@ static NTSTATUS extract_subkey_list(hive* h, bool is_volatile, uint32_t offset, 
         memcpy(*list, lh->List, count * sizeof(CM_INDEX));
 
         return STATUS_SUCCESS;
+    } else if (sig == CM_KEY_INDEX_ROOT) {
+        CM_KEY_INDEX* ri;
+        CM_INDEX* l;
+        unsigned int i;
+
+        if (is_volatile)
+            ri = (CM_KEY_INDEX*)(h->volatile_bins + offset + sizeof(int32_t));
+        else
+            ri = (CM_KEY_INDEX*)(h->bins + offset + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_INDEX, List) + (ri->Count * sizeof(uint32_t)))
+            return STATUS_REGISTRY_CORRUPT;
+
+        *list = l = kmalloc(count * sizeof(CM_INDEX), GFP_KERNEL);
+
+        for (i = 0; i < ri->Count; i++) {
+            CM_KEY_FAST_INDEX* lh;
+
+            if (is_volatile)
+                size = -*(int32_t*)(h->volatile_bins + ri->List[i]);
+            else
+                size = -*(int32_t*)(h->bins + ri->List[i]);
+
+            if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List)) {
+                kfree(*list);
+                return STATUS_REGISTRY_CORRUPT;
+            }
+
+            if (is_volatile)
+                lh = (CM_KEY_FAST_INDEX*)(h->volatile_bins + ri->List[i] + sizeof(int32_t));
+            else
+                lh = (CM_KEY_FAST_INDEX*)(h->bins + ri->List[i] + sizeof(int32_t));
+
+            if (lh->Signature != CM_KEY_HASH_LEAF) {
+                kfree(*list);
+                return STATUS_REGISTRY_CORRUPT;
+            }
+
+            if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List) + (lh->Count * sizeof(CM_INDEX))) {
+                kfree(*list);
+                return STATUS_REGISTRY_CORRUPT;
+            }
+
+            if (lh->Count > count) {
+                kfree(*list);
+                return STATUS_REGISTRY_CORRUPT;
+            }
+
+            memcpy(l, lh->List, lh->Count * sizeof(CM_INDEX));
+
+            l += lh->Count;
+            count -= lh->Count;
+        }
+
+        return STATUS_SUCCESS;
     } else {
         printk(KERN_INFO "extract_subkey_list: unexpected list type %04x\n", sig);
         return STATUS_INVALID_PARAMETER;
@@ -3263,7 +3318,6 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
         uint16_t sig;
         int32_t size;
         CM_INDEX* subkeys;
-        unsigned int i;
         uint32_t list_offset;
 
         if (is_volatile)
