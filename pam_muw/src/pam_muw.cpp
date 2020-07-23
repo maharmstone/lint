@@ -106,11 +106,28 @@ static void release_spinlock(shared* sh) {
     sh->turn++;
 }
 
-static void first_session(pam_handle_t* pamh, struct passwd* pwd) {
-    if (pwd->pw_uid != 1000)
-        return; // FIXME
+static u16string to_u16string(unsigned int num) {
+    char16_t s[20];
+    char16_t* ptr;
 
-    u16string sidstr = u"S-1-5-21-0-0-0-1000"; // FIXME - derive from uid
+    if (num == 0)
+        return u"0";
+
+    ptr = &s[(sizeof(s) / sizeof(char16_t)) - 1];
+    *ptr = 0;
+
+    do {
+        ptr--;
+
+        *ptr = (char16_t)(num % 10) + u'0';
+        num /= 10;
+    } while (num > 0);
+
+    return ptr;
+}
+
+static void first_session(pam_handle_t* pamh, struct passwd* pwd) {
+    u16string sidstr = u"S-1-22-1-" + to_u16string(pwd->pw_uid);
 
     try {
         create_reg_key(u"\\Registry\\User\\" + sidstr, true);
@@ -194,10 +211,7 @@ int pam_sm_open_session(pam_handle_t* pamh, __attribute__((unused)) int flags,
 }
 
 static void last_session(pam_handle_t* pamh, struct passwd* pwd) {
-    if (pwd->pw_uid != 1000)
-        return; // FIXME
-
-    u16string sidstr = u"S-1-5-21-0-0-0-1000"; // FIXME - derive from uid
+    u16string sidstr = u"S-1-22-1-" + to_u16string(pwd->pw_uid);
 
     try {
         unmount_hive(u"\\Registry\\User\\" + sidstr + u"_Classes");
