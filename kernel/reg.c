@@ -2703,140 +2703,6 @@ NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     return Status;
 }
 
-static NTSTATUS lh_copy_and_add(hive* h, uint32_t old_lh_offset, uint32_t* offset, uint32_t cell, uint32_t hash,
-                                UNICODE_STRING* us, bool is_volatile) {
-    NTSTATUS Status;
-    CM_KEY_FAST_INDEX* lh;
-    unsigned int i;
-    uint32_t pos;
-    bool found = false;
-    void* bins = is_volatile ? h->volatile_bins : h->bins;
-    CM_KEY_FAST_INDEX* old_lh = (CM_KEY_FAST_INDEX*)(bins + old_lh_offset + sizeof(int32_t));
-
-    for (i = 0; i < old_lh->Count; i++) {
-        int32_t size = -*(int32_t*)(bins + old_lh->List[i].Cell);
-        uint16_t sig;
-        CM_KEY_NODE* kn;
-
-        // FIXME - check not out of bounds
-
-        if (size < sizeof(int32_t) + sizeof(uint16_t))
-            return STATUS_REGISTRY_CORRUPT;
-
-        sig = *(uint16_t*)(bins + old_lh->List[i].Cell + sizeof(int32_t));
-
-        if (sig != CM_KEY_NODE_SIGNATURE)
-            return STATUS_REGISTRY_CORRUPT;
-
-        kn = (CM_KEY_NODE*)(bins + old_lh->List[i].Cell + sizeof(int32_t));
-
-        if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn->NameLength)
-            return STATUS_REGISTRY_CORRUPT;
-
-        if (kn->Flags & KEY_COMP_NAME) {
-            bool stop = false;
-            unsigned int j;
-            unsigned int len = kn->NameLength;
-
-            if (len > us->Length / sizeof(WCHAR))
-                len = us->Length / sizeof(WCHAR);
-
-            for (j = 0; j < len; j++) {
-                WCHAR c1 = ((char*)kn->Name)[j];
-                WCHAR c2 = us->Buffer[j];
-
-                if (c1 >= 'a' && c1 <= 'z')
-                    c1 = c1 - 'a' + 'A';
-
-                if (c2 >= 'a' && c2 <= 'z')
-                    c2 = c2 - 'a' + 'A';
-
-                if (c1 < c2) {
-                    stop = true;
-                    break;
-                }
-
-                if (c1 > c2) {
-                    found = true;
-                    pos = i;
-                    break;
-                }
-            }
-
-            if (found)
-                break;
-
-            if (!stop && kn->NameLength > us->Length / sizeof(WCHAR)) {
-                pos = i;
-                found = true;
-                break;
-            }
-        } else {
-            bool stop = false;
-            unsigned int j;
-            unsigned int len = kn->NameLength / sizeof(WCHAR);
-
-            if (len > us->Length / sizeof(WCHAR))
-                len = us->Length / sizeof(WCHAR);
-
-            for (j = 0; j < len; j++) {
-                WCHAR c1 = kn->Name[j];
-                WCHAR c2 = us->Buffer[j];
-
-                if (c1 >= 'a' && c1 <= 'z')
-                    c1 = c1 - 'a' + 'A';
-
-                if (c2 >= 'a' && c2 <= 'z')
-                    c2 = c2 - 'a' + 'A';
-
-                if (c1 < c2) {
-                    stop = true;
-                    break;
-                }
-
-                if (c1 > c2) {
-                    found = true;
-                    pos = i;
-                    break;
-                }
-            }
-
-            if (found)
-                break;
-
-            if (!stop && kn->NameLength > us->Length) {
-                pos = i;
-                found = true;
-                break;
-            }
-        }
-    }
-
-    if (!found)
-        pos = old_lh->Count - 1;
-
-    Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * (old_lh->Count + 1)),
-                           offset, is_volatile);
-    if (!NT_SUCCESS(Status))
-        return Status;
-
-    bins = is_volatile ? h->volatile_bins : h->bins;
-    old_lh = (CM_KEY_FAST_INDEX*)(bins + old_lh_offset + sizeof(int32_t));
-    lh = (CM_KEY_FAST_INDEX*)(bins + *offset + sizeof(int32_t));
-
-    lh->Signature = CM_KEY_HASH_LEAF;
-    lh->Count = old_lh->Count + 1;
-
-    memcpy(lh->List, old_lh->List, pos * sizeof(CM_INDEX));
-
-    lh->List[pos].Cell = cell;
-    lh->List[pos].HashKey = hash;
-
-    memcpy(&lh->List[pos+1], &old_lh->List[pos], (old_lh->Count - pos) * sizeof(CM_INDEX));
-
-    return STATUS_SUCCESS;
-}
-
 static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* off, token* tok,
                                       bool is_volatile, bool parent_is_volatile) {
     NTSTATUS Status;
@@ -3010,6 +2876,201 @@ static void free_sk(hive* h, uint32_t off, bool is_volatile) {
     free_cell(h, off, is_volatile);
 }
 
+static NTSTATUS extract_subkey_list(hive* h, bool is_volatile, uint32_t offset, uint32_t count, CM_INDEX** list) {
+    int32_t size;
+    uint16_t sig;
+
+    // FIXME - check not out of bounds
+
+    if (is_volatile)
+        size = -*(int32_t*)(h->volatile_bins + offset);
+    else
+        size = -*(int32_t*)(h->bins + offset);
+
+    if (size < sizeof(int32_t) + sizeof(uint16_t))
+        return STATUS_REGISTRY_CORRUPT;
+
+    if (is_volatile)
+        sig = *(uint16_t*)(h->volatile_bins + offset + sizeof(int32_t));
+    else
+        sig = *(uint16_t*)(h->bins + offset + sizeof(int32_t));
+
+    if (sig == CM_KEY_HASH_LEAF) {
+        CM_KEY_FAST_INDEX* lh;
+
+        if (is_volatile)
+            lh = (CM_KEY_FAST_INDEX*)(h->volatile_bins + offset + sizeof(int32_t));
+        else
+            lh = (CM_KEY_FAST_INDEX*)(h->bins + offset + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List) + (count * sizeof(CM_INDEX)))
+            return STATUS_REGISTRY_CORRUPT;
+
+        if (lh->Count != count)
+            return STATUS_REGISTRY_CORRUPT;
+
+        *list = kmalloc(count * sizeof(CM_INDEX), GFP_KERNEL);
+        memcpy(*list, lh->List, count * sizeof(CM_INDEX));
+
+        return STATUS_SUCCESS;
+    } else {
+        printk(KERN_INFO "extract_subkey_list: unexpected list type %04x\n", sig);
+        return STATUS_INVALID_PARAMETER;
+    }
+}
+
+static NTSTATUS add_subkey_entry(hive* h, bool is_volatile, CM_INDEX** list, uint32_t count, uint32_t hash,
+                                 uint32_t offset, UNICODE_STRING* us) {
+    uint8_t* bins = is_volatile ? h->volatile_bins : h->bins;
+    CM_INDEX* lh = *list;
+    CM_INDEX* new_lh;
+    bool found = false;
+    unsigned int i, pos;
+
+    for (i = 0; i < count; i++) {
+        int32_t size = -*(int32_t*)(bins + lh[i].Cell);
+        uint16_t sig;
+        CM_KEY_NODE* kn;
+
+        // FIXME - check not out of bounds
+
+        if (size < sizeof(int32_t) + sizeof(uint16_t))
+            return STATUS_REGISTRY_CORRUPT;
+
+        sig = *(uint16_t*)(bins + lh[i].Cell + sizeof(int32_t));
+
+        if (sig != CM_KEY_NODE_SIGNATURE)
+            return STATUS_REGISTRY_CORRUPT;
+
+        kn = (CM_KEY_NODE*)(bins + lh[i].Cell + sizeof(int32_t));
+
+        if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn->NameLength)
+            return STATUS_REGISTRY_CORRUPT;
+
+        if (kn->Flags & KEY_COMP_NAME) {
+            bool stop = false;
+            unsigned int j;
+            unsigned int len = kn->NameLength;
+
+            if (len > us->Length / sizeof(WCHAR))
+                len = us->Length / sizeof(WCHAR);
+
+            for (j = 0; j < len; j++) {
+                WCHAR c1 = ((char*)kn->Name)[j];
+                WCHAR c2 = us->Buffer[j];
+
+                if (c1 >= 'a' && c1 <= 'z')
+                    c1 = c1 - 'a' + 'A';
+
+                if (c2 >= 'a' && c2 <= 'z')
+                    c2 = c2 - 'a' + 'A';
+
+                if (c1 < c2) {
+                    stop = true;
+                    break;
+                }
+
+                if (c1 > c2) {
+                    found = true;
+                    pos = i;
+                    break;
+                }
+            }
+
+            if (found)
+                break;
+
+            if (!stop && kn->NameLength > us->Length / sizeof(WCHAR)) {
+                pos = i;
+                found = true;
+                break;
+            }
+        } else {
+            bool stop = false;
+            unsigned int j;
+            unsigned int len = kn->NameLength / sizeof(WCHAR);
+
+            if (len > us->Length / sizeof(WCHAR))
+                len = us->Length / sizeof(WCHAR);
+
+            for (j = 0; j < len; j++) {
+                WCHAR c1 = kn->Name[j];
+                WCHAR c2 = us->Buffer[j];
+
+                if (c1 >= 'a' && c1 <= 'z')
+                    c1 = c1 - 'a' + 'A';
+
+                if (c2 >= 'a' && c2 <= 'z')
+                    c2 = c2 - 'a' + 'A';
+
+                if (c1 < c2) {
+                    stop = true;
+                    break;
+                }
+
+                if (c1 > c2) {
+                    found = true;
+                    pos = i;
+                    break;
+                }
+            }
+
+            if (found)
+                break;
+
+            if (!stop && kn->NameLength > us->Length) {
+                pos = i;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found)
+        pos = count;
+
+    new_lh = kmalloc(sizeof(CM_INDEX) * (count + 1), GFP_KERNEL);
+    if (!new_lh)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    memcpy(new_lh, lh, pos * sizeof(CM_INDEX));
+
+    new_lh[pos].Cell = offset;
+    new_lh[pos].HashKey = hash;
+
+    memcpy(&new_lh[pos + 1], &lh[pos], (count - pos) * sizeof(CM_INDEX));
+
+    kfree(*list);
+    *list = new_lh;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS write_subkey_list(hive* h, bool is_volatile, CM_INDEX* subkeys, uint32_t count,
+                                  uint32_t* list_offset) {
+    NTSTATUS Status;
+    uint32_t offset;
+    CM_KEY_FAST_INDEX* lh;
+
+    // FIXME - allocate ri if too large
+
+    Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * count),
+                           &offset, is_volatile);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    lh = (CM_KEY_FAST_INDEX*)((is_volatile ? h->volatile_bins : h->bins) + offset + sizeof(int32_t));
+
+    lh->Signature = CM_KEY_HASH_LEAF;
+    lh->Count = count;
+
+    memcpy(lh->List, subkeys, count * sizeof(CM_INDEX));
+
+    *list_offset = offset;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_volatile, UNICODE_STRING* us,
                                uint32_t* subkey_offset, bool* subkey_is_volatile, ULONG CreateOptions,
                                bool* created) {
@@ -3154,6 +3215,8 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
     } else {
         uint16_t sig;
         int32_t size;
+        CM_INDEX* subkeys;
+        uint32_t list_offset;
 
         if (is_volatile)
             size = -*(int32_t*)(h->volatile_bins + subkey_list);
@@ -3173,60 +3236,58 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
         else
             sig = *(uint16_t*)(h->bins + subkey_list + sizeof(int32_t));
 
-        // FIXME - dealing with existing ri rather than lh
-        // FIXME - creating new ri if lh gets too large
+        Status = extract_subkey_list(h, is_volatile, subkey_list, subkey_count, &subkeys);
+        if (!NT_SUCCESS(Status)) {
+            free_sk(h, kn2->Security, is_volatile);
 
-        if (sig == CM_KEY_HASH_LEAF) {
-            CM_KEY_FAST_INDEX* old_lh;
-            uint32_t lh_offset;
+            free_cell(h, offset, is_volatile);
+            return Status;
+        }
+
+        Status = add_subkey_entry(h, is_volatile, &subkeys, subkey_count, hash, offset, us);
+        if (!NT_SUCCESS(Status)) {
+            kfree(subkeys);
+            free_sk(h, kn2->Security, is_volatile);
+            free_cell(h, offset, is_volatile);
+            return Status;
+        }
+
+        subkey_count++;
+
+        Status = write_subkey_list(h, is_volatile, subkeys, subkey_count, &list_offset);
+        if (!NT_SUCCESS(Status)) {
+            kfree(subkeys);
 
             if (is_volatile)
-                old_lh = (CM_KEY_FAST_INDEX*)(h->volatile_bins + subkey_list + sizeof(int32_t));
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
             else
-                old_lh = (CM_KEY_FAST_INDEX*)(h->bins + subkey_list + sizeof(int32_t));
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
-            if (size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * old_lh->Count)) {
-                if (kn2->Security != 0xffffffff)
-                    free_sk(h, kn2->Security, is_volatile);
-
-                free_cell(h, offset, is_volatile);
-                return STATUS_REGISTRY_CORRUPT;
-            }
-
-            Status = lh_copy_and_add(h, subkey_list, &lh_offset, offset, hash, us, is_volatile);
-            if (!NT_SUCCESS(Status)) {
-                if (kn2->Security != 0xffffffff)
-                    free_sk(h, kn2->Security, is_volatile);
-
-                free_cell(h, offset, is_volatile);
-                return Status;
-            }
-
-            if (parent_is_volatile)
-                kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + parent_offset + sizeof(int32_t));
-            else
-                kn = (CM_KEY_NODE*)((uint8_t*)h->bins + parent_offset + sizeof(int32_t));
-
-            free_cell(h, subkey_list, is_volatile);
-
-            if (is_volatile) {
-                kn->VolatileSubKeyCount++;
-                kn->VolatileSubKeyList = lh_offset;
-            } else {
-                kn->SubKeyCount++;
-                kn->SubKeyList = lh_offset;
-            }
-
-            if (us->Length > kn->MaxNameLen)
-                kn->MaxNameLen = us->Length;
-        } else {
-            printk(KERN_ALERT "NtCreateKey: unhandled list type %x\n", sig);
-
-            if (kn2->Security != 0xffffffff)
-                free_sk(h, kn2->Security, is_volatile);
-
-            return STATUS_NOT_IMPLEMENTED;
+            free_sk(h, kn2->Security, is_volatile);
+            free_cell(h, offset, is_volatile);
+            return Status;
         }
+
+        kfree(subkeys);
+
+        if (parent_is_volatile)
+            kn = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + parent_offset + sizeof(int32_t));
+        else
+            kn = (CM_KEY_NODE*)((uint8_t*)h->bins + parent_offset + sizeof(int32_t));
+
+        // FIXME - free ri and children
+        free_cell(h, subkey_list, is_volatile);
+
+        if (is_volatile) {
+            kn->VolatileSubKeyCount++;
+            kn->VolatileSubKeyList = list_offset;
+        } else {
+            kn->SubKeyCount++;
+            kn->SubKeyList = list_offset;
+        }
+
+        if (us->Length > kn->MaxNameLen)
+            kn->MaxNameLen = us->Length;
     }
 
     *subkey_offset = offset;
