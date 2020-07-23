@@ -156,7 +156,7 @@ static void uid_to_sid(SID** sid, kuid_t uid) {
 
     // FIXME - create from machine SID
 
-#if 0 // Samba's scheme
+#if 1 // Samba's scheme
     // use Samba's S-1-22-1 mappings
 
     s = kmalloc(offsetof(SID, SubAuthority) + (2 * sizeof(uint32_t)), GFP_KERNEL);
