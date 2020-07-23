@@ -3052,23 +3052,70 @@ static NTSTATUS write_subkey_list(hive* h, bool is_volatile, CM_INDEX* subkeys, 
     uint32_t offset;
     CM_KEY_FAST_INDEX* lh;
 
-    // FIXME - allocate ri if too large
+    static const unsigned int maxnum = (BIN_SIZE - sizeof(HBIN) - sizeof(int32_t) -
+                                        offsetof(CM_KEY_FAST_INDEX, List[0])) / sizeof(CM_INDEX);
 
-    Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * count),
-                           &offset, is_volatile);
-    if (!NT_SUCCESS(Status))
-        return Status;
+    if (count > maxnum) {
+        unsigned int num_parts = count / maxnum;
+        CM_KEY_INDEX* ri;
+        uint32_t lh_off, i;
 
-    lh = (CM_KEY_FAST_INDEX*)((is_volatile ? h->volatile_bins : h->bins) + offset + sizeof(int32_t));
+        if ((count % maxnum) != 0)
+            num_parts++;
 
-    lh->Signature = CM_KEY_HASH_LEAF;
-    lh->Count = count;
+        Status = allocate_cell(h, offsetof(CM_KEY_INDEX, List) + (sizeof(uint32_t) * num_parts),
+                               &offset, is_volatile);
+        if (!NT_SUCCESS(Status))
+            return Status;
 
-    memcpy(lh->List, subkeys, count * sizeof(CM_INDEX));
+        ri = (CM_KEY_INDEX*)((is_volatile ? h->volatile_bins : h->bins) + offset + sizeof(int32_t));
 
-    *list_offset = offset;
+        ri->Signature = CM_KEY_INDEX_ROOT;
+        ri->Count = num_parts;
 
-    return STATUS_SUCCESS;
+        for (i = 0; i < num_parts; i++) {
+            Status = write_subkey_list(h, is_volatile, subkeys, maxnum < count ? maxnum : count, &lh_off);
+
+            ri = (CM_KEY_INDEX*)((is_volatile ? h->volatile_bins : h->bins) + offset + sizeof(int32_t));
+
+            if (!NT_SUCCESS(Status)) {
+                unsigned int j;
+
+                free_cell(h, offset, is_volatile);
+
+                for (j = 0; j < i; j++) {
+                    free_cell(h, ri->List[j], is_volatile);
+                }
+
+                return Status;
+            }
+
+            ri->List[i] = lh_off;
+
+            subkeys += maxnum;
+            count -= maxnum;
+        }
+
+        *list_offset = offset;
+
+        return STATUS_SUCCESS;
+    } else {
+        Status = allocate_cell(h, offsetof(CM_KEY_FAST_INDEX, List[0]) + (sizeof(CM_INDEX) * count),
+                               &offset, is_volatile);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        lh = (CM_KEY_FAST_INDEX*)((is_volatile ? h->volatile_bins : h->bins) + offset + sizeof(int32_t));
+
+        lh->Signature = CM_KEY_HASH_LEAF;
+        lh->Count = count;
+
+        memcpy(lh->List, subkeys, count * sizeof(CM_INDEX));
+
+        *list_offset = offset;
+
+        return STATUS_SUCCESS;
+    }
 }
 
 static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_volatile, UNICODE_STRING* us,
@@ -3216,6 +3263,7 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
         uint16_t sig;
         int32_t size;
         CM_INDEX* subkeys;
+        unsigned int i;
         uint32_t list_offset;
 
         if (is_volatile)
@@ -3224,6 +3272,11 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
             size = -*(int32_t*)(h->bins + subkey_list);
 
         if (size < sizeof(int32_t) + sizeof(uint16_t)) {
+            if (is_volatile)
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+            else
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
             if (kn2->Security != 0xffffffff)
                 free_sk(h, kn2->Security, is_volatile);
 
@@ -3238,7 +3291,13 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
 
         Status = extract_subkey_list(h, is_volatile, subkey_list, subkey_count, &subkeys);
         if (!NT_SUCCESS(Status)) {
-            free_sk(h, kn2->Security, is_volatile);
+            if (is_volatile)
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+            else
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
+            if (kn2->Security != 0xffffffff)
+                free_sk(h, kn2->Security, is_volatile);
 
             free_cell(h, offset, is_volatile);
             return Status;
@@ -3247,7 +3306,15 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
         Status = add_subkey_entry(h, is_volatile, &subkeys, subkey_count, hash, offset, us);
         if (!NT_SUCCESS(Status)) {
             kfree(subkeys);
-            free_sk(h, kn2->Security, is_volatile);
+
+            if (is_volatile)
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+            else
+                kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
+            if (kn2->Security != 0xffffffff)
+                free_sk(h, kn2->Security, is_volatile);
+
             free_cell(h, offset, is_volatile);
             return Status;
         }
@@ -3263,7 +3330,9 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
             else
                 kn2 = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
 
-            free_sk(h, kn2->Security, is_volatile);
+            if (kn2->Security != 0xffffffff)
+                free_sk(h, kn2->Security, is_volatile);
+
             free_cell(h, offset, is_volatile);
             return Status;
         }
