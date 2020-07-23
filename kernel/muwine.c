@@ -251,7 +251,8 @@ NTSTATUS NtClose(HANDLE Handle) {
     if (!h)
         return STATUS_INVALID_HANDLE;
 
-    h->object->close(h->object);
+    if (__sync_sub_and_fetch(&h->object->refcount, 1) == 0)
+        h->object->close(h->object);
 
     kfree(h);
 
@@ -301,7 +302,7 @@ static int muwine_open(struct inode* inode, struct file* file) {
 
     // add pid to process list
 
-    p = kmalloc(sizeof(process), GFP_KERNEL);
+    p = kzalloc(sizeof(process), GFP_KERNEL);
 
     p->pid = task_tgid_vnr(current);
     p->refcount = 1;
@@ -318,7 +319,6 @@ static int muwine_open(struct inode* inode, struct file* file) {
         process* p2 = list_entry(le, process, list);
 
         if (p2->pid == p->pid) {
-            p2->refcount++;
             found = true;
             break;
         }
@@ -838,7 +838,8 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
 
             list_del(&hand->list);
 
-            hand->object->close(hand->object);
+            if (__sync_sub_and_fetch(&hand->object->refcount, 1) == 0)
+                hand->object->close(hand->object);
 
             kfree(hand);
         }
@@ -853,10 +854,93 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     return 0;
 }
 
+static void duplicate_handle(handle* old, handle** new) {
+    handle* h = kzalloc(sizeof(handle), GFP_KERNEL); // FIXME - handle malloc failure
+
+    h->object = old->object;
+    h->object->refcount++;
+
+    h->number = old->number;
+
+    *new = h;
+}
+
 static int fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
+    long retval;
+    struct list_head* le;
+    process* p = NULL;
+    process* new_p = NULL;
     pid_t pid = task_tgid_vnr(current);
 
-    printk(KERN_INFO "fork_handler (pid %u)\n", pid);
+    // FIXME - should we be doing this for the clone syscall as well?
+
+    retval = regs_return_value(regs);
+
+    if (retval < 0) // fork failed
+        return 0;
+
+    spin_lock(&pid_list_lock);
+
+    le = pid_list.next;
+
+    while (le != &pid_list) {
+        process* p2 = list_entry(le, process, list);
+
+        if (p2->pid == pid) {
+            p = p2;
+            break;
+        }
+
+        le = le->next;
+    }
+
+    if (!p) {
+        spin_unlock(&pid_list_lock);
+        return 0;
+    }
+
+    spin_lock(&p->handle_list_lock);
+
+    if (list_empty(&p->handle_list)) {
+        spin_unlock(&p->handle_list_lock);
+        spin_unlock(&pid_list_lock);
+        return 0;
+    }
+
+    new_p = kzalloc(sizeof(process), GFP_KERNEL);
+    if (!new_p) {
+        printk(KERN_ERR "muwine fork_handler: out of memory\n");
+        spin_unlock(&p->handle_list_lock);
+        spin_unlock(&pid_list_lock);
+        return 0;
+    }
+
+    new_p->pid = retval;
+    new_p->refcount = 1;
+    INIT_LIST_HEAD(&new_p->handle_list);
+    spin_lock_init(&new_p->handle_list_lock);
+    new_p->next_handle_no = p->next_handle_no;
+    muwine_duplicate_token(p->token, &new_p->token);
+
+    // duplicate handles
+
+    le = p->handle_list.next;
+
+    while (le != &p->handle_list) {
+        handle* h = list_entry(le, handle, list);
+        handle* h2;
+
+        duplicate_handle(h, &h2);
+        list_add_tail(&h2->list, &new_p->handle_list);
+
+        le = le->next;
+    }
+
+    spin_unlock(&p->handle_list_lock);
+
+    list_add_tail(&new_p->list, &pid_list);
+
+    spin_unlock(&pid_list_lock);
 
     return 0;
 }

@@ -242,4 +242,5 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
                                     token* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
 void muwine_make_process_token(token** t);
 void muwine_free_token(token* token);
+void muwine_duplicate_token(token* old, token** new);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
