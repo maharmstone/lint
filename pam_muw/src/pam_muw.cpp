@@ -118,7 +118,11 @@ static void first_session(pam_handle_t* pamh, struct passwd* pwd) {
         // FIXME - make paths to hives customizable?
         // FIXME - if doesn't exist, create new hive (copy from DEFAULT and recursively change SIDs)
         mount_hive(u"\\Registry\\User\\" + sidstr, get_nt_path(string(pwd->pw_dir) + "/.wine/NTUSER.DAT"));
+    } catch (const exception& e) {
+        pam_syslog(pamh, LOG_ERR, "first_session: %s\n", e.what());
+    }
 
+    try {
         create_reg_key(u"\\Registry\\User\\" + sidstr + u"_Classes", true);
 
         // FIXME - if doesn't exist, initialize blank hive(?)
