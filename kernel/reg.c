@@ -3173,6 +3173,41 @@ static NTSTATUS write_subkey_list(hive* h, bool is_volatile, CM_INDEX* subkeys, 
     }
 }
 
+static void free_subkey_list(hive* h, bool is_volatile, uint32_t subkey_list) {
+    int32_t size;
+    uint16_t sig;
+
+    // FIXME - check not out of bounds
+
+    if (is_volatile)
+        size = -*(int32_t*)(h->volatile_bins + subkey_list);
+    else
+        size = -*(int32_t*)(h->bins + subkey_list);
+
+    if (size < sizeof(int32_t) + sizeof(uint16_t))
+        return;
+
+    if (is_volatile)
+        sig = *(uint16_t*)(h->volatile_bins + subkey_list + sizeof(int32_t));
+    else
+        sig = *(uint16_t*)(h->bins + subkey_list + sizeof(int32_t));
+
+    if (sig == CM_KEY_INDEX_ROOT) {
+        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)(h->volatile_bins + subkey_list + sizeof(int32_t));
+
+        if (size >= sizeof(int32_t) + offsetof(CM_KEY_INDEX, List) &&
+            size >= sizeof(int32_t) + offsetof(CM_KEY_INDEX, List) + (ri->Count * sizeof(uint32_t))) {
+            unsigned int i;
+
+            for (i = 0; i < ri->Count; i++) {
+                free_cell(h, ri->List[i], is_volatile);
+            }
+        }
+    }
+
+    free_cell(h, subkey_list, is_volatile);
+}
+
 static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_volatile, UNICODE_STRING* us,
                                uint32_t* subkey_offset, bool* subkey_is_volatile, ULONG CreateOptions,
                                bool* created) {
@@ -3398,8 +3433,7 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
         else
             kn = (CM_KEY_NODE*)((uint8_t*)h->bins + parent_offset + sizeof(int32_t));
 
-        // FIXME - free ri and children
-        free_cell(h, subkey_list, is_volatile);
+        free_subkey_list(h, is_volatile, subkey_list);
 
         if (is_volatile) {
             kn->VolatileSubKeyCount++;
