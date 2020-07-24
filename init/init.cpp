@@ -10,6 +10,8 @@ using namespace std;
 
 #define STATUS_SUCCESS 0x00000000
 
+static void create_reg_symlink(const u16string_view& src, const u16string_view& dest);
+
 class formatted_error : public exception {
 public:
     template<typename... Args>
@@ -135,6 +137,9 @@ static void mount_hives() {
     mount_hive(u"\\Registry\\Machine\\System", get_nt_path("SYSTEM"));
     mount_hive(u"\\Registry\\Machine\\Software", get_nt_path("SOFTWARE"));
     mount_hive(u"\\Registry\\User\\.Default", get_nt_path("DEFAULT"));
+
+    create_reg_symlink(u"\\Registry\\User\\S-1-5-18",
+                       u"\\Registry\\User\\.Default");
 }
 
 static void create_reg_key(const u16string_view& key, bool is_volatile) {
