@@ -118,6 +118,7 @@ typedef enum _KEY_VALUE_INFORMATION_CLASS {
 #define READ_CONTROL            0x00020000
 #define WRITE_DAC               0x00040000
 #define WRITE_OWNER             0x00080000
+#define SYNCHRONIZE             0x00100000
 
 #define KEY_QUERY_VALUE         0x00000001
 #define KEY_SET_VALUE           0x00000002
@@ -162,7 +163,8 @@ struct _object_header;
 typedef void (*muwine_close_object)(struct _object_header* obj);
 
 typedef enum {
-    muwine_object_key
+    muwine_object_key,
+    muwine_object_file
 } object_type;
 
 typedef struct _object_header {
@@ -347,6 +349,14 @@ typedef enum {
     FileMaximumInformation
 } FILE_INFORMATION_CLASS;
 
+typedef struct {
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG NumberOfLinks;
+    BOOLEAN DeletePending;
+    BOOLEAN Directory;
+} FILE_STANDARD_INFORMATION;
+
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                       ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
@@ -369,3 +379,9 @@ typedef struct {
 NTSTATUS NtClose(HANDLE Handle);
 NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h);
 object_header* get_object_from_handle(HANDLE h);
+
+// unixfs.c
+NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
+                            PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
+                            ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
+                            PVOID EaBuffer, ULONG EaLength);
