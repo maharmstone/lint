@@ -51,7 +51,7 @@ typedef uint8_t BOOLEAN;
 
 typedef struct {
     int64_t QuadPart;
-} LARGE_INTEGER;
+} LARGE_INTEGER, *PLARGE_INTEGER;
 
 typedef struct _UNICODE_STRING {
     USHORT Length;
@@ -244,3 +244,9 @@ void muwine_make_process_token(token** t);
 void muwine_free_token(token* token);
 void muwine_duplicate_token(token* old, token** new);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
+
+// file.c
+NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                      PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
+                      ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
+                      PVOID EaBuffer, ULONG EaLength);

@@ -30,7 +30,8 @@ static struct muwine_func funcs[] = {
     { user_NtQueryKey, 5 },
     { NtSaveKey, 2 },
     { NtNotifyChangeKey, 10 },
-    { NtNotifyChangeMultipleKeys, 12 }
+    { NtNotifyChangeMultipleKeys, 12 },
+    { NtCreateFile, 11 }
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
