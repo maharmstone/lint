@@ -19,6 +19,7 @@ struct muwine_func {
 };
 
 #define STATUS_SUCCESS                      0x00000000
+#define STATUS_SOME_NOT_MAPPED              0x00000107
 #define STATUS_BUFFER_OVERFLOW              0x80000005
 #define STATUS_NO_MORE_ENTRIES              0x8000001a
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
@@ -194,6 +195,7 @@ bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us);
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
 process* muwine_current_process(void);
+NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len);
 
 // reg.c
 NTSTATUS muwine_init_registry(void);

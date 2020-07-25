@@ -182,6 +182,110 @@ int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count) {
     return 0;
 }
 
+NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len) {
+    NTSTATUS Status = STATUS_SUCCESS;
+    uint16_t* in = (uint16_t*)src;
+    uint8_t* out = (uint8_t*)dest;
+    ULONG in_len = src_len / sizeof(uint16_t);
+    ULONG needed = 0, left = dest_max;
+    ULONG i;
+
+    for (i = 0; i < in_len; i++) {
+        uint32_t cp = *in;
+        in++;
+
+        if ((cp & 0xfc00) == 0xd800) {
+            if (i == in_len - 1 || (*in & 0xfc00) != 0xdc00) {
+                cp = 0xfffd;
+                Status = STATUS_SOME_NOT_MAPPED;
+            } else {
+                cp = (cp & 0x3ff) << 10;
+                cp |= *in & 0x3ff;
+                cp += 0x10000;
+
+                in++;
+                i++;
+            }
+        } else if ((cp & 0xfc00) == 0xdc00) {
+            cp = 0xfffd;
+            Status = STATUS_SOME_NOT_MAPPED;
+        }
+
+        if (cp > 0x10ffff) {
+            cp = 0xfffd;
+            Status = STATUS_SOME_NOT_MAPPED;
+        }
+
+        if (dest) {
+            if (cp < 0x80) {
+                if (left < 1)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = (uint8_t)cp;
+                out++;
+
+                left--;
+            } else if (cp < 0x800) {
+                if (left < 2)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = 0xc0 | ((cp & 0x7c0) >> 6);
+                out++;
+
+                *out = 0x80 | (cp & 0x3f);
+                out++;
+
+                left -= 2;
+            } else if (cp < 0x10000) {
+                if (left < 3)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = 0xe0 | ((cp & 0xf000) >> 12);
+                out++;
+
+                *out = 0x80 | ((cp & 0xfc0) >> 6);
+                out++;
+
+                *out = 0x80 | (cp & 0x3f);
+                out++;
+
+                left -= 3;
+            } else {
+                if (left < 4)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = 0xf0 | ((cp & 0x1c0000) >> 18);
+                out++;
+
+                *out = 0x80 | ((cp & 0x3f000) >> 12);
+                out++;
+
+                *out = 0x80 | ((cp & 0xfc0) >> 6);
+                out++;
+
+                *out = 0x80 | (cp & 0x3f);
+                out++;
+
+                left -= 4;
+            }
+        }
+
+        if (cp < 0x80)
+            needed++;
+        else if (cp < 0x800)
+            needed += 2;
+        else if (cp < 0x10000)
+            needed += 3;
+        else
+            needed += 4;
+    }
+
+    if (dest_len)
+        *dest_len = needed;
+
+    return Status;
+}
+
 NTSTATUS muwine_error_to_ntstatus(int err) {
     switch (err) {
         case -ENOENT:
