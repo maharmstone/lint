@@ -191,15 +191,12 @@ bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
 bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us);
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us);
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
-NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h);
-object_header* get_object_from_handle(HANDLE h);
 process* muwine_current_process(void);
 
 // reg.c
 NTSTATUS muwine_init_registry(void);
 void muwine_free_reg(void);
 NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
-NTSTATUS NtClose(HANDLE Handle);
 NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                              PVOID KeyInformation, ULONG Length, PULONG ResultLength);
 NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
@@ -253,3 +250,14 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
 NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                     PULONG Key);
+
+// handle.c
+typedef struct {
+    struct list_head list;
+    object_header* object;
+    uintptr_t number;
+} handle;
+
+NTSTATUS NtClose(HANDLE Handle);
+NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h);
+object_header* get_object_from_handle(HANDLE h);
