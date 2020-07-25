@@ -31,3 +31,13 @@ NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    printk(KERN_INFO "NtQueryInformationFile(%lx, %px, %px, %x, %x): stub\n", (uintptr_t)FileHandle,
+           IoStatusBlock, FileInformation, Length, FileInformationClass);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

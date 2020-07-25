@@ -24,5 +24,6 @@
 #define MUWINE_IOCTL_NTCREATEFILE               MUWINE_IOCTL(17)
 #define MUWINE_IOCTL_NTREADFILE                 MUWINE_IOCTL(18)
 #define MUWINE_IOCTL_NTOPENFILE                 MUWINE_IOCTL(19)
+#define MUWINE_IOCTL_NTQUERYINFORMATIONFILE     MUWINE_IOCTL(20)
 
-#define MUWINE_IOCTL_MAX                  19
+#define MUWINE_IOCTL_MAX                  20
