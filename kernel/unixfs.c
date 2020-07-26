@@ -338,3 +338,13 @@ NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    printk(KERN_INFO "unixfs_set_information(%px, %px, %px, %x, %x): stub\n",
+           obj, IoStatusBlock, FileInformation, Length, FileInformationClass);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
