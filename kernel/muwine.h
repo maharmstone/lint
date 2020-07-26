@@ -44,6 +44,7 @@ typedef uint16_t WCHAR, *PWSTR;
 typedef void* HANDLE;
 typedef HANDLE* PHANDLE;
 typedef uint32_t ULONG, *PULONG;
+typedef int32_t LONG;
 typedef ULONG DWORD;
 typedef DWORD ACCESS_MASK;
 typedef void* PVOID;
@@ -52,7 +53,13 @@ typedef uint8_t UCHAR;
 typedef uint8_t BOOLEAN;
 
 typedef struct {
-    int64_t QuadPart;
+    union {
+        struct {
+            DWORD LowPart;
+            LONG HighPart;
+        };
+        int64_t QuadPart;
+    };
 } LARGE_INTEGER, *PLARGE_INTEGER;
 
 typedef struct _UNICODE_STRING {
@@ -293,6 +300,10 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 #define FILE_OPEN_NO_RECALL               0x00400000
 #define FILE_OPEN_FOR_FREE_SPACE_QUERY    0x00800000
 
+#define FO_SYNCHRONOUS_IO            0x00000002
+
+#define FILE_USE_FILE_POINTER_POSITION    0xfffffffe
+
 typedef enum {
     FileDirectoryInformation = 1,
     FileFullDirectoryInformation,
@@ -389,6 +400,8 @@ typedef struct _fcb fcb;
 typedef struct {
     object_header header;
     fcb* f;
+    ULONG flags;
+    uint64_t offset;
 } file_object;
 
 NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,

@@ -221,6 +221,11 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
 
     obj->header.close = file_object_close;
     obj->f = f;
+    obj->flags = 0;
+    obj->offset = 0;
+
+    if (CreateOptions & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
+        obj->flags |= FO_SYNCHRONOUS_IO;
 
     // return handle
 
@@ -285,13 +290,37 @@ NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlo
 }
 
 NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-                    PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
-                    PULONG Key) {
-    printk(KERN_INFO "unixfs_read(%px, %lx, %px, %px, %px, %px, %x, %px, %px): stub\n",
-           obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
-           Buffer, Length, ByteOffset, Key);
+                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                     PULONG Key) {
+    ssize_t read;
+    loff_t pos;
 
-    // FIXME
+    if (!IoStatusBlock)
+        return STATUS_INVALID_PARAMETER;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (ByteOffset && ByteOffset->HighPart == -1 && ByteOffset->LowPart == FILE_USE_FILE_POINTER_POSITION)
+        ByteOffset = NULL;
+
+    if (ByteOffset)
+        pos = ByteOffset->QuadPart;
+    else if (obj->flags & FO_SYNCHRONOUS_IO)
+        pos = obj->offset;
+    else
+        return STATUS_INVALID_PARAMETER;
+
+    read = kernel_read(obj->f->f, Buffer, Length, &pos);
+
+    if (read < 0) {
+        if (obj->flags & FO_SYNCHRONOUS_IO && ByteOffset)
+            obj->offset = ByteOffset->QuadPart;
+
+        return muwine_error_to_ntstatus(read);
+    }
+
+    if (obj->flags & FO_SYNCHRONOUS_IO)
+        obj->offset = pos;
+
+    IoStatusBlock->Information = read;
+
+    return STATUS_SUCCESS;
 }
