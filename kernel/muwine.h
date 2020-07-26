@@ -23,6 +23,7 @@ struct muwine_func {
 #define STATUS_BUFFER_OVERFLOW              0x80000005
 #define STATUS_NO_MORE_ENTRIES              0x8000001a
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
+#define STATUS_INVALID_INFO_CLASS           0xc0000003
 #define STATUS_INVALID_HANDLE               0xc0000008
 #define STATUS_INVALID_PARAMETER            0xc000000d
 #define STATUS_BUFFER_TOO_SMALL             0xc0000023

@@ -1,5 +1,7 @@
 #include "muwine.h"
 
+#define SECTOR_SIZE 0x1000
+
 typedef struct _fcb {
     struct list_head list;
     unsigned int refcount;
@@ -112,8 +114,6 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     }
 
     path[as_len] = 0;
-
-    printk(KERN_INFO "path = \"%s\"\n", path);
 
     // loop through list of FCBs, and increase refcount if found; otherwise, do filp_open
 
@@ -250,10 +250,36 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
 
 NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                   ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
-    printk(KERN_INFO "unixfs_query_information(%px, %px, %px, %x, %x): stub\n", obj,
-           IoStatusBlock, FileInformation, Length, FileInformationClass);
+    switch (FileInformationClass) {
+        case FileStandardInformation: {
+            FILE_STANDARD_INFORMATION* fsi = (FILE_STANDARD_INFORMATION*)FileInformation;
 
-    // FIXME
+            if (Length < sizeof(FILE_STANDARD_INFORMATION))
+                return STATUS_BUFFER_TOO_SMALL;
 
-    return STATUS_NOT_IMPLEMENTED;
+            if (!obj->f->f->f_inode)
+                return STATUS_INTERNAL_ERROR;
+
+            fsi->EndOfFile.QuadPart = obj->f->f->f_inode->i_size;
+            fsi->AllocationSize.QuadPart = (fsi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
+            fsi->NumberOfLinks = obj->f->f->f_inode->i_nlink;
+            fsi->DeletePending = false; // FIXME
+            fsi->Directory = false; // FIXME
+
+            return STATUS_SUCCESS;
+        }
+
+        // FIXME - FileBasicInformation
+        // FIXME - FileInternalInformation
+        // FIXME - FileEndOfFileInformation
+        // FIXME - FileAllInformation
+        // FIXME - others not supported by Wine
+
+        default: {
+            printk(KERN_INFO "unixfs_query_information: unhandled class %x\n",
+                   FileInformationClass);
+
+            return STATUS_INVALID_INFO_CLASS;
+        }
+    }
 }
