@@ -350,3 +350,17 @@ NTSTATUS user_NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusB
 
     return Status;
 }
+
+NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                              PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                              FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                              PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+    printk(KERN_INFO "NtQueryDirectoryFile(%lx, %lx, %px, %px, %px, %px, %x, %x, %x, %px, %x): stub\n",
+           (uintptr_t)FileHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           FileInformation, Length, FileInformationClass, ReturnSingleEntry, FileMask,
+           RestartScan);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
