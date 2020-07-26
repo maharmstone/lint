@@ -64,6 +64,63 @@ end:
     return Status;
 }
 
+NTSTATUS user_NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                           PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
+                           ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
+                           PVOID EaBuffer, ULONG EaLength) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK iosb;
+    LARGE_INTEGER alloc;
+    void* ea = NULL;
+
+    if (!FileHandle || !ObjectAttributes || !IoStatusBlock)
+        return STATUS_INVALID_PARAMETER;
+
+    if (AllocationSize) {
+        if (copy_from_user(&alloc.QuadPart, &AllocationSize->QuadPart, sizeof(int64_t)) != 0)
+            return STATUS_ACCESS_VIOLATION;
+    }
+
+    if (EaBuffer && EaLength > 0) {
+        ea = kmalloc(EaLength, GFP_KERNEL);
+        if (!ea)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        if (copy_from_user(ea, EaBuffer, EaLength) != 0)
+            return STATUS_ACCESS_VIOLATION;
+    }
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes)) {
+        if (ea)
+            kfree(ea);
+
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    Status = NtCreateFile(&h, DesiredAccess, &oa, &iosb, AllocationSize ? &alloc : NULL, FileAttributes,
+                          ShareAccess, CreateDisposition, CreateOptions, ea, EaLength);
+
+    if (ea)
+        kfree(ea);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (put_user(h, FileHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
+}
+
 NTSTATUS NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                     PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions) {
     return NtCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock,
