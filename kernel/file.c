@@ -226,3 +226,30 @@ NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBloc
     return unixfs_query_information(obj, IoStatusBlock, FileInformation, Length,
                                     FileInformationClass);
 }
+
+NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                     ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    uint8_t* buf;
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = NtQueryInformationFile(FileHandle, &iosb, buf, Length, FileInformationClass);
+
+    if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (buf) {
+        if (copy_to_user(FileInformation, buf, iosb.Information) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(buf);
+    }
+
+    return Status;
+}

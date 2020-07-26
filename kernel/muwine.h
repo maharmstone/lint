@@ -392,6 +392,8 @@ NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRou
                          PULONG Key);
 NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
+NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                     ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
 
 // handle.c
 typedef struct {

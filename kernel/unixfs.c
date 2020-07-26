@@ -271,6 +271,8 @@ NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlo
             fsi->DeletePending = false; // FIXME
             fsi->Directory = false; // FIXME
 
+            IoStatusBlock->Information = sizeof(FILE_STANDARD_INFORMATION);
+
             return STATUS_SUCCESS;
         }
 
