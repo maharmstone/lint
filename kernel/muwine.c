@@ -36,7 +36,7 @@ static struct muwine_func funcs[] = {
     { user_NtOpenFile, 6 },
     { user_NtQueryInformationFile, 5 },
     { user_NtWriteFile, 9 },
-    { NtSetInformationFile, 5 },
+    { user_NtSetInformationFile, 5 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
