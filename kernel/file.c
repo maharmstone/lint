@@ -127,6 +127,37 @@ NTSTATUS NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRI
                         NULL, 0, ShareAccess, FILE_OPEN, OpenOptions, NULL, 0);
 }
 
+NTSTATUS user_NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                         PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK iosb;
+
+    if (!FileHandle || !ObjectAttributes || !IoStatusBlock)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    Status = NtOpenFile(&h, DesiredAccess, &oa, &iosb, ShareAccess, OpenOptions);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, FileHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
+}
+
 NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                     PULONG Key) {
