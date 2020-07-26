@@ -253,3 +253,15 @@ NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatu
 
     return Status;
 }
+
+NTSTATUS NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                     PULONG Key) {
+    printk(KERN_INFO "NtWriteFile(%lx, %lx, %px, %px, %px, %px, %x, %px, %px): stub\n",
+           (uintptr_t)FileHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           Buffer, Length, ByteOffset, Key);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

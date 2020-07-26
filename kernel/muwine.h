@@ -394,6 +394,9 @@ NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBloc
                                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
 NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                      ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
+NTSTATUS NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                     PULONG Key);
 
 // handle.c
 typedef struct {
