@@ -180,7 +180,7 @@ NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRou
     LARGE_INTEGER off;
     ULONG key;
 
-    if (!IoStatusBlock || !Buffer)
+    if (!IoStatusBlock)
         return STATUS_INVALID_PARAMETER;
 
     if (Length > 0) {
@@ -265,4 +265,49 @@ NTSTATUS NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine
 
     return unixfs_write(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
                         ByteOffset, Key);
+}
+
+NTSTATUS user_NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                          PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                          PULONG Key) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    uint8_t* buf = NULL;
+    LARGE_INTEGER off;
+    ULONG key;
+
+    if (!IoStatusBlock)
+        return STATUS_INVALID_PARAMETER;
+
+    if (ByteOffset) {
+        if (copy_from_user(&off.QuadPart, &ByteOffset->QuadPart, sizeof(int64_t)) != 0)
+            return STATUS_ACCESS_VIOLATION;
+    }
+
+    if (Key) {
+        if (get_user(key, Key) < 0)
+            return STATUS_ACCESS_VIOLATION;
+    }
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        if (copy_from_user(buf, Buffer, Length) != 0) {
+            kfree(buf);
+            return STATUS_ACCESS_VIOLATION;
+        }
+    }
+
+    Status = NtWriteFile(FileHandle, Event, ApcRoutine, ApcContext, &iosb, buf, Length,
+                         ByteOffset ? &off : NULL, Key ? &key : NULL);
+
+    if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (buf)
+        kfree(buf);
+
+    return Status;
 }
