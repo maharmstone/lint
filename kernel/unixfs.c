@@ -348,3 +348,17 @@ NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                                PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+    printk(KERN_INFO "unixfs_query_directory(%px, %lx, %px, %px, %px, %px, %x, %x, %x, %px, %x): stub\n",
+           obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           FileInformation, Length, FileInformationClass, ReturnSingleEntry, FileMask,
+           RestartScan);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

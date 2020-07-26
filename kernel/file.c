@@ -355,12 +355,13 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
                               PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                               FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                               PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
-    printk(KERN_INFO "NtQueryDirectoryFile(%lx, %lx, %px, %px, %px, %px, %x, %x, %x, %px, %x): stub\n",
-           (uintptr_t)FileHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
-           FileInformation, Length, FileInformationClass, ReturnSingleEntry, FileMask,
-           RestartScan);
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
+    if (!obj || obj->header.type != muwine_object_file)
+        return STATUS_INVALID_HANDLE;
 
-    // FIXME
+    // FIXME - get FS device from object
 
-    return STATUS_NOT_IMPLEMENTED;
+    return unixfs_query_directory(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
+                                  Length, FileInformationClass, ReturnSingleEntry, FileMask,
+                                  RestartScan);
 }
