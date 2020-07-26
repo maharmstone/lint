@@ -801,7 +801,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             up_read(&hive_list_sem);
 
-            Status = muwine_add_handle(&k->header, KeyHandle);
+            Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
 
             if (!NT_SUCCESS(Status))
                 kfree(k);
@@ -840,6 +840,17 @@ NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_AT
     if (!get_user_object_attributes(&oa, ObjectAttributes))
         return STATUS_INVALID_PARAMETER;
 
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
     Status = NtOpenKeyEx(&h, DesiredAccess, &oa, 0);
 
     if (oa.ObjectName) {
@@ -870,6 +881,17 @@ NTSTATUS user_NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 
     if (!get_user_object_attributes(&oa, ObjectAttributes))
         return STATUS_INVALID_PARAMETER;
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
 
     Status = NtOpenKeyEx(&h, DesiredAccess, &oa, OpenOptions);
 
@@ -1241,6 +1263,9 @@ NTSTATUS user_NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLAS
     ULONG reslen = 0;
     void* buf;
 
+    if ((uintptr_t)KeyHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
     if (Length > 0) {
         buf = kmalloc(Length, GFP_KERNEL);
         if (!buf)
@@ -1564,6 +1589,9 @@ NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFOR
     ULONG reslen = 0;
     void* buf;
 
+    if ((uintptr_t)KeyHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
     if (Length > 0) {
         buf = kmalloc(Length, GFP_KERNEL);
         if (!buf)
@@ -1727,6 +1755,9 @@ NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_V
     UNICODE_STRING us;
     ULONG reslen = 0;
     void* buf;
+
+    if ((uintptr_t)KeyHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
 
     if (Length > 0) {
         buf = kmalloc(Length, GFP_KERNEL);
@@ -2420,6 +2451,9 @@ NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG T
     UNICODE_STRING us;
     void* buf;
 
+    if ((uintptr_t)KeyHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
     if (ValueName) {
         if (!get_user_unicode_string(&us, ValueName))
             return STATUS_INVALID_PARAMETER;
@@ -2686,6 +2720,9 @@ end:
 NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     NTSTATUS Status;
     UNICODE_STRING us;
+
+    if ((uintptr_t)KeyHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
 
     if (ValueName) {
         if (!get_user_unicode_string(&us, ValueName))
@@ -3448,7 +3485,8 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions, PULONG Disposition) {
+static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions,
+                                   PULONG Disposition, ULONG oa_attributes) {
     NTSTATUS Status;
     key_object* k;
     bool is_volatile, created;
@@ -3566,7 +3604,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->is_volatile = is_volatile;
     k->parent_is_volatile = parent_is_volatile;
 
-    Status = muwine_add_handle(&k->header, KeyHandle);
+    Status = muwine_add_handle(&k->header, KeyHandle, oa_attributes & OBJ_KERNEL_HANDLE);
 
     if (!NT_SUCCESS(Status)) {
         kfree(k);
@@ -3674,7 +3712,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             down_write(&h->sem);
 
-            Status = create_key_in_hive(h, &us2, KeyHandle, CreateOptions, Disposition);
+            Status = create_key_in_hive(h, &us2, KeyHandle, CreateOptions, Disposition, ObjectAttributes->Attributes);
 
             up_write(&h->sem);
             up_read(&hive_list_sem);
@@ -3724,6 +3762,20 @@ NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     if (!get_user_object_attributes(&oa, ObjectAttributes)) {
         if (us.Buffer)
             kfree(us.Buffer);
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (us.Buffer)
+            kfree(us.Buffer);
+
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
 
         return STATUS_INVALID_PARAMETER;
     }
@@ -4771,6 +4823,9 @@ NTSTATUS user_NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationC
     NTSTATUS Status;
     ULONG reslen = 0;
     void* buf;
+
+    if ((uintptr_t)KeyHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
 
     if (Length > 0) {
         buf = kmalloc(Length, GFP_KERNEL);

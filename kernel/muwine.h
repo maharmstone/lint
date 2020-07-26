@@ -53,6 +53,12 @@ typedef uint16_t USHORT;
 typedef uint8_t UCHAR;
 typedef uint8_t BOOLEAN;
 
+#ifdef __amd64 // FIXME - also aarch64
+#define KERNEL_HANDLE_MASK 0x8000000000000000
+#else
+#define KERNEL_HANDLE_MASK 0x80000000
+#endif
+
 typedef struct {
     union {
         struct {
@@ -68,6 +74,15 @@ typedef struct _UNICODE_STRING {
     USHORT MaximumLength;
     PWSTR Buffer;
 } UNICODE_STRING, *PUNICODE_STRING;
+
+#define OBJ_INHERIT             0x00000002
+#define OBJ_PERMANENT           0x00000010
+#define OBJ_EXCLUSIVE           0x00000020
+#define OBJ_CASE_INSENSITIVE    0x00000040
+#define OBJ_OPENIF              0x00000080
+#define OBJ_OPENLINK            0x00000100
+#define OBJ_KERNEL_HANDLE       0x00000200
+#define OBJ_FORCE_ACCESS_CHECK  0x00000400
 
 typedef struct _OBJECT_ATTRIBUTES {
     ULONG Length;
@@ -305,6 +320,22 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 
 #define FILE_USE_FILE_POINTER_POSITION    0xfffffffe
 
+#define FILE_ATTRIBUTE_READONLY             0x00000001
+#define FILE_ATTRIBUTE_HIDDEN               0x00000002
+#define FILE_ATTRIBUTE_SYSTEM               0x00000004
+#define FILE_ATTRIBUTE_DIRECTORY            0x00000010
+#define FILE_ATTRIBUTE_ARCHIVE              0x00000020
+#define FILE_ATTRIBUTE_DEVICE               0x00000040
+#define FILE_ATTRIBUTE_NORMAL               0x00000080
+#define FILE_ATTRIBUTE_TEMPORARY            0x00000100
+#define FILE_ATTRIBUTE_SPARSE_FILE          0x00000200
+#define FILE_ATTRIBUTE_REPARSE_POINT        0x00000400
+#define FILE_ATTRIBUTE_COMPRESSED           0x00000800
+#define FILE_ATTRIBUTE_OFFLINE              0x00001000
+#define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED  0x00002000
+#define FILE_ATTRIBUTE_ENCRYPTED            0x00004000
+#define FILE_ATTRIBUTE_VIRTUAL              0x00010000
+
 typedef enum {
     FileDirectoryInformation = 1,
     FileFullDirectoryInformation,
@@ -421,8 +452,10 @@ typedef struct {
 } handle;
 
 NTSTATUS NtClose(HANDLE Handle);
-NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h);
+NTSTATUS user_NtClose(HANDLE Handle);
+NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel);
 object_header* get_object_from_handle(HANDLE h);
+void muwine_free_kernel_handles(void);
 
 // unixfs.c
 typedef struct _fcb fcb;
@@ -437,7 +470,7 @@ typedef struct {
 NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
                             PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                             ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
-                            PVOID EaBuffer, ULONG EaLength);
+                            PVOID EaBuffer, ULONG EaLength, ULONG oa_attributes);
 NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                   ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
 NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,

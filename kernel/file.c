@@ -55,7 +55,8 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
     }
 
     Status = unixfs_create_file(FileHandle, DesiredAccess, &us, IoStatusBlock, AllocationSize, FileAttributes,
-                                ShareAccess, CreateDisposition, CreateOptions, EaBuffer, EaLength);
+                                ShareAccess, CreateDisposition, CreateOptions, EaBuffer, EaLength,
+                                ObjectAttributes->Attributes);
 
 end:
     if (oa_us_alloc)
@@ -99,6 +100,20 @@ NTSTATUS user_NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJEC
         return STATUS_ACCESS_VIOLATION;
     }
 
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (ea)
+            kfree(ea);
+
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
     Status = NtCreateFile(&h, DesiredAccess, &oa, &iosb, AllocationSize ? &alloc : NULL, FileAttributes,
                           ShareAccess, CreateDisposition, CreateOptions, ea, EaLength);
 
@@ -140,6 +155,17 @@ NTSTATUS user_NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_
     if (!get_user_object_attributes(&oa, ObjectAttributes))
         return STATUS_ACCESS_VIOLATION;
 
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
     Status = NtOpenFile(&h, DesiredAccess, &oa, &iosb, ShareAccess, OpenOptions);
 
     if (oa.ObjectName) {
@@ -179,6 +205,9 @@ NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRou
     uint8_t* buf = NULL;
     LARGE_INTEGER off;
     ULONG key;
+
+    if ((uintptr_t)FileHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
 
     if (!IoStatusBlock)
         return STATUS_INVALID_PARAMETER;
@@ -235,6 +264,9 @@ NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatu
     IO_STATUS_BLOCK iosb;
     uint8_t* buf = NULL;
 
+    if ((uintptr_t)FileHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
     if (Length > 0) {
         buf = kmalloc(Length, GFP_KERNEL);
         if (!buf)
@@ -279,6 +311,9 @@ NTSTATUS user_NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRo
     uint8_t* buf = NULL;
     LARGE_INTEGER off;
     ULONG key;
+
+    if ((uintptr_t)FileHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
 
     if (!IoStatusBlock)
         return STATUS_INVALID_PARAMETER;
@@ -333,6 +368,9 @@ NTSTATUS user_NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusB
     IO_STATUS_BLOCK iosb;
     uint8_t* buf = NULL;
 
+    if ((uintptr_t)FileHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
     if (Length > 0) {
         buf = kmalloc(Length, GFP_KERNEL);
         if (!buf)
@@ -378,6 +416,9 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
     IO_STATUS_BLOCK iosb;
     uint8_t* buf = NULL;
     UNICODE_STRING mask;
+
+    if ((uintptr_t)FileHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
 
     if (Length > 0) {
         buf = kmalloc(Length, GFP_KERNEL);

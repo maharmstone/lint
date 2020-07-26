@@ -64,7 +64,7 @@ static void file_object_close(object_header* obj) {
 NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
                             PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                             ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
-                            PVOID EaBuffer, ULONG EaLength) {
+                            PVOID EaBuffer, ULONG EaLength, ULONG oa_attributes) {
     NTSTATUS Status;
     ULONG as_len;
     char* path;
@@ -229,7 +229,7 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
 
     // return handle
 
-    Status = muwine_add_handle(&obj->header, FileHandle);
+    Status = muwine_add_handle(&obj->header, FileHandle, oa_attributes & OBJ_KERNEL_HANDLE);
 
     if (!NT_SUCCESS(Status)) {
         down_write(&fcb_list_sem);

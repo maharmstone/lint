@@ -15,7 +15,7 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 
 static struct muwine_func funcs[] = {
     { user_NtOpenKey, 3 },
-    { NtClose, 1 },
+    { user_NtClose, 1 },
     { user_NtEnumerateKey, 6 },
     { user_NtEnumerateValueKey, 6 },
     { user_NtQueryValueKey, 6 },
@@ -1016,6 +1016,8 @@ static void __exit muwine_exit(void) {
 
     unregister_kretprobe(&fork_kretprobe);
     unregister_kretprobe(&exit_kretprobe);
+
+    muwine_free_kernel_handles();
 
     muwine_free_reg();
 
