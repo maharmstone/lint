@@ -242,8 +242,8 @@ static void free_hive(hive* h) {
     if (h->path.Buffer)
         kfree(h->path.Buffer);
 
-    if (h->fs_path)
-        kfree(h->fs_path);
+    if (h->fs_path.Buffer)
+        kfree(h->fs_path.Buffer);
 
     list_del(&h->list);
 
@@ -3975,42 +3975,6 @@ end:
     return Status;
 }
 
-static NTSTATUS translate_path(UNICODE_STRING* us, char** path) {
-    UNICODE_STRING us2;
-    unsigned int i;
-    char* s;
-
-    static const WCHAR prefix[] = L"\\Device\\UnixRoot";
-
-    // FIXME - translate symlinks (DosDevices etc.)
-
-    if (us->Length <= sizeof(prefix) - sizeof(WCHAR))
-        return STATUS_OBJECT_PATH_INVALID;
-
-    if (wcsnicmp(us->Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1))
-        return STATUS_OBJECT_PATH_INVALID;
-
-    us2.Length = us2.MaximumLength = us->Length - sizeof(prefix) + sizeof(WCHAR);
-    us2.Buffer = us->Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1;
-
-    // FIXME - convert UTF-16 to UTF-8 properly here
-
-    *path = s = kmalloc((us2.Length / sizeof(WCHAR)) + 1, GFP_KERNEL);
-
-    for (i = 0; i < us2.Length / sizeof(WCHAR); i++) {
-        if (us2.Buffer[i] == '\\')
-            *s = '/';
-        else
-            *s = us2.Buffer[i];
-
-        s++;
-    }
-
-    *s = 0;
-
-    return STATUS_SUCCESS;
-}
-
 static unsigned int count_backslashes(UNICODE_STRING* us) {
     unsigned int i;
     unsigned int bs = 0;
@@ -4025,14 +3989,20 @@ static unsigned int count_backslashes(UNICODE_STRING* us) {
 
 static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
     NTSTATUS Status;
-    char* fs_path;
-    struct file* f;
-    loff_t pos;
     hive* h;
     UNICODE_STRING us;
     struct list_head* le;
+    HANDLE fh;
+    IO_STATUS_BLOCK iosb;
+    FILE_STANDARD_INFORMATION fsi;
+    uint64_t pos;
+    object_header* fileobj;
+    UNICODE_STRING fs_path;
 
     static const WCHAR prefix[] = L"\\Registry\\";
+
+    fs_path.Length = fs_path.MaximumLength = 0;
+    fs_path.Buffer = NULL;
 
     // FIXME - make sure user has SE_RESTORE_PRIVILEGE
 
@@ -4052,39 +4022,21 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
     us.Buffer = DestinationKeyName->ObjectName->Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1;
     us.Length = DestinationKeyName->ObjectName->Length - sizeof(prefix) + sizeof(WCHAR);
 
-    // translate HiveFileName to actual FS path
-
-    Status = translate_path(HiveFileName->ObjectName, &fs_path);
+    Status = NtOpenFile(&fh, SYNCHRONIZE | FILE_READ_DATA, HiveFileName, &iosb, 0,
+                        FILE_SYNCHRONOUS_IO_ALERT | FILE_NON_DIRECTORY_FILE);
     if (!NT_SUCCESS(Status))
         return Status;
 
-    f = filp_open(fs_path, O_RDONLY, 0);
-    if (IS_ERR(f)) {
-        printk(KERN_INFO "NtLoadKey: could not open %s\n", fs_path);
-        kfree(fs_path);
-        return muwine_error_to_ntstatus((int)(uintptr_t)f);
-    }
-
-    if (!f->f_inode) {
-        printk(KERN_INFO "NtLoadKey: file did not have an inode\n");
-        filp_close(f, NULL);
-        kfree(fs_path);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    h = kmalloc(sizeof(hive), GFP_KERNEL);
+    h = kzalloc(sizeof(hive), GFP_KERNEL);
     if (!h) {
-        filp_close(f, NULL);
-        kfree(h);
-        kfree(fs_path);
+        NtClose(fh);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     h->path.Buffer = kmalloc(us.Length, GFP_KERNEL);
     if (!h->path.Buffer) {
-        filp_close(f, NULL);
+        NtClose(fh);
         kfree(h);
-        kfree(fs_path);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -4093,49 +4045,74 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
     h->depth = count_backslashes(&us) + 1;
 
-    h->size = f->f_inode->i_size;
-    h->file_mode = f->f_inode->i_mode;
+//     h->file_mode = f->f_inode->i_mode; // FIXME
 
-    if (h->size == 0) {
-        filp_close(f, NULL);
+    Status = NtQueryInformationFile(fh, &iosb, &fsi, sizeof(FILE_STANDARD_INFORMATION), FileStandardInformation);
+    if (!NT_SUCCESS(Status)) {
+        NtClose(fh);
         kfree(h->path.Buffer);
         kfree(h);
-        kfree(fs_path);
+        return Status;
+    }
+
+    h->size = fsi.EndOfFile.QuadPart;
+
+    if (h->size == 0) {
+        NtClose(fh);
+        kfree(h->path.Buffer);
+        kfree(h);
         return STATUS_REGISTRY_CORRUPT;
     }
 
     h->data = vmalloc(h->size);
     if (!h->data) {
-        filp_close(f, NULL);
+        NtClose(fh);
         kfree(h->path.Buffer);
         kfree(h);
-        kfree(fs_path);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     pos = 0;
 
     while (pos < h->size) {
-        ssize_t read = kernel_read(f, (uint8_t*)h->data + pos, h->size - pos, &pos);
-
-        if (read < 0) {
-            printk(KERN_INFO "NtLoadKey: read returned %ld\n", read);
-            filp_close(f, NULL);
+        Status = NtReadFile(fh, NULL, NULL, NULL, &iosb, (uint8_t*)h->data + pos, h->size - pos, NULL, NULL);
+        if (!NT_SUCCESS(Status)) {
+            NtClose(fh);
             vfree(h->data);
             kfree(h->path.Buffer);
             kfree(h);
-            kfree(fs_path);
-            return muwine_error_to_ntstatus(read);
+            return Status;
         }
+
+        pos += iosb.Information;
     }
 
-    filp_close(f, NULL);
+    fileobj = get_object_from_handle(fh);
+
+    if (fileobj->path.Length > 0) {
+        fs_path.Buffer = kmalloc(fileobj->path.Length, GFP_KERNEL);
+        if (!fs_path.Buffer) {
+            vfree(h->data);
+            kfree(h->path.Buffer);
+            kfree(h);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memcpy(fs_path.Buffer, fileobj->path.Buffer, fileobj->path.Length);
+
+        fs_path.Length = fs_path.MaximumLength = fileobj->path.Length;
+    }
+
+    NtClose(fh);
 
     if (!hive_is_valid(h)) {
         vfree(h->data);
         kfree(h->path.Buffer);
         kfree(h);
-        kfree(fs_path);
+
+        if (fs_path.Buffer)
+            kfree(fs_path.Buffer);
+
         return STATUS_REGISTRY_CORRUPT;
     }
 
@@ -4144,7 +4121,10 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
         vfree(h->data);
         kfree(h->path.Buffer);
         kfree(h);
-        kfree(fs_path);
+
+        if (fs_path.Buffer)
+            kfree(fs_path.Buffer);
+
         return Status;
     }
 
@@ -4181,7 +4161,9 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
                 vfree(h->data);
                 kfree(h->path.Buffer);
                 kfree(h);
-                kfree(fs_path);
+
+                if (fs_path.Buffer)
+                    kfree(fs_path.Buffer);
 
                 return Status;
             }
@@ -4198,7 +4180,9 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
                 vfree(h->data);
                 kfree(h->path.Buffer);
                 kfree(h);
-                kfree(fs_path);
+
+                if (fs_path.Buffer)
+                    kfree(fs_path.Buffer);
 
                 return STATUS_INVALID_PARAMETER;
             }
@@ -4235,7 +4219,24 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
             up_write(&hive_list_sem);
 
-            printk(KERN_INFO "NtLoadKey: loaded hive at %s\n", fs_path);
+            {
+                ULONG as_len;
+
+                if (NT_SUCCESS(utf16_to_utf8(NULL, 0, &as_len, fs_path.Buffer, fs_path.Length))) {
+                    char* s;
+
+                    s = kmalloc(as_len + 1, GFP_KERNEL);
+                    if (s) {
+                        if (NT_SUCCESS(utf16_to_utf8(s, as_len, &as_len, fs_path.Buffer, fs_path.Length))) {
+                            s[as_len] = 0;
+
+                            printk(KERN_INFO "NtLoadKey: loaded hive at %s\n", s);
+                        }
+
+                        kfree(s);
+                    }
+                }
+            }
 
             return STATUS_SUCCESS;
         }
@@ -4352,7 +4353,24 @@ static NTSTATUS NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
             flush_hive(h);
             h->parent_hive->refcount--;
 
-            printk(KERN_INFO "NtUnloadKey: unloaded hive at %s\n", h->fs_path);
+            if (h->fs_path.Length > 0) {
+                ULONG as_len;
+
+                if (NT_SUCCESS(utf16_to_utf8(NULL, 0, &as_len, h->fs_path.Buffer, h->fs_path.Length))) {
+                    char* s;
+
+                    s = kmalloc(as_len + 1, GFP_KERNEL);
+                    if (s) {
+                        if (NT_SUCCESS(utf16_to_utf8(s, as_len, &as_len, h->fs_path.Buffer, h->fs_path.Length))) {
+                            s[as_len] = 0;
+
+                            printk(KERN_INFO "NtUnloadKey: unloaded hive at %s\n", s);
+                        }
+
+                        kfree(s);
+                    }
+                }
+            }
 
             free_hive(h);
 
@@ -4449,25 +4467,13 @@ NTSTATUS muwine_init_registry(void) {
     unsigned int sdlen;
     CM_KEY_SECURITY* sk;
 
-    h = kmalloc(sizeof(hive), GFP_KERNEL);
+    h = kzalloc(sizeof(hive), GFP_KERNEL);
     if (!h)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    h->path.Buffer = NULL;
-    h->path.Length = h->path.MaximumLength = 0;
-    h->depth = 0;
-    h->data = NULL;
-    h->bins = NULL;
-    h->size = 0;
-    h->refcount = 0;
     INIT_LIST_HEAD(&h->holes);
     init_rwsem(&h->sem);
-    h->dirty = false;
-    h->volatile_bins = NULL;
-    h->volatile_size = 0;
     INIT_LIST_HEAD(&h->volatile_holes);
-    h->fs_path = NULL;
-    h->parent_hive = NULL;
     h->volatile_sk = 0xffffffff;
 
     Status = allocate_cell(h, offsetof(CM_KEY_NODE, Name[0]), &offset, true);
@@ -4540,6 +4546,7 @@ NTSTATUS muwine_init_registry(void) {
     return STATUS_SUCCESS;
 }
 
+#if 0
 static void get_temp_hive_path(hive* h, char** out) {
     size_t len = strlen(h->fs_path);
 
@@ -4569,8 +4576,10 @@ static void init_qstr_from_path(struct qstr* q, const char* path) {
     q->name = &path[start];
     q->len = i - start;
 }
+#endif
 
 static NTSTATUS flush_hive(hive* h) {
+#if 0
     struct file* f;
     loff_t pos;
     HBASE_BLOCK* base_block;
@@ -4580,12 +4589,14 @@ static NTSTATUS flush_hive(hive* h) {
     int ret;
     struct qstr q;
     struct dentry* new_dentry;
+#endif
 
     // FIXME - if called from periodic thread, give up if can't acquire lock immediately? (Might need to put a limit on how often this happens.)
 
     if (h->depth == 0) // volatile root
         return STATUS_SUCCESS;
 
+#if 0
     down_read(&h->sem);
 
     if (!h->dirty) {
@@ -4677,6 +4688,7 @@ static NTSTATUS flush_hive(hive* h) {
     up_read(&h->sem);
 
     kfree(temp_fn);
+#endif
 
     return STATUS_SUCCESS;
 }

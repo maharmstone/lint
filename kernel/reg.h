@@ -201,7 +201,7 @@ typedef struct _hive {
     size_t volatile_size;
     struct list_head volatile_holes;
     uint32_t volatile_root_cell;
-    char* fs_path;
+    UNICODE_STRING fs_path;
     int file_mode;
     struct _hive* parent_hive;
     uint32_t parent_key_offset;
