@@ -171,6 +171,50 @@ NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
                        ByteOffset, Key);
 }
 
+NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                         PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                         PULONG Key) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    uint8_t* buf = NULL;
+    LARGE_INTEGER off;
+    ULONG key;
+
+    if (!IoStatusBlock || !Buffer)
+        return STATUS_INVALID_PARAMETER;
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (ByteOffset) {
+        if (copy_from_user(&off.QuadPart, &ByteOffset->QuadPart, sizeof(int64_t)) != 0)
+            return STATUS_ACCESS_VIOLATION;
+    }
+
+    if (Key) {
+        if (get_user(key, Key) < 0)
+            return STATUS_ACCESS_VIOLATION;
+    }
+
+    Status = NtReadFile(FileHandle, Event, ApcRoutine, ApcContext, &iosb, buf, Length,
+                        ByteOffset ? &off : NULL, Key ? &key : NULL);
+
+    if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (buf) {
+        if (copy_to_user(Buffer, buf, iosb.Information) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(buf);
+    }
+
+    return Status;
+}
+
 NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     file_object* obj = (file_object*)get_object_from_handle(FileHandle);

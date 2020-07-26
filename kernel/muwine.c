@@ -32,7 +32,7 @@ static struct muwine_func funcs[] = {
     { NtNotifyChangeKey, 10 },
     { NtNotifyChangeMultipleKeys, 12 },
     { user_NtCreateFile, 11 },
-    { NtReadFile, 9 },
+    { user_NtReadFile, 9 },
     { user_NtOpenFile, 6 },
     { NtQueryInformationFile, 5 },
 };
