@@ -408,6 +408,10 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
                               PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                               FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                               PUNICODE_STRING FileMask, BOOLEAN RestartScan);
+NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                   PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                   FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                                   PUNICODE_STRING FileMask, BOOLEAN RestartScan);
 
 // handle.c
 typedef struct {

@@ -199,6 +199,8 @@ NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRou
             return STATUS_ACCESS_VIOLATION;
     }
 
+    iosb.Information = 0;
+
     Status = NtReadFile(FileHandle, Event, ApcRoutine, ApcContext, &iosb, buf, Length,
                         ByteOffset ? &off : NULL, Key ? &key : NULL);
 
@@ -238,6 +240,8 @@ NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatu
         if (!buf)
             return STATUS_INSUFFICIENT_RESOURCES;
     }
+
+    iosb.Information = 0;
 
     Status = NtQueryInformationFile(FileHandle, &iosb, buf, Length, FileInformationClass);
 
@@ -364,4 +368,50 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
     return unixfs_query_directory(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
                                   Length, FileInformationClass, ReturnSingleEntry, FileMask,
                                   RestartScan);
+}
+
+NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                   PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                   FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                                   PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    uint8_t* buf = NULL;
+    UNICODE_STRING mask;
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (FileMask) {
+        if (!get_user_unicode_string(&mask, FileMask)) {
+            if (buf)
+                kfree(buf);
+
+            return STATUS_ACCESS_VIOLATION;
+        }
+    }
+
+    iosb.Information = 0;
+
+    Status = NtQueryDirectoryFile(FileHandle, Event, ApcRoutine, ApcContext, &iosb, buf, Length,
+                                  FileInformationClass, ReturnSingleEntry, FileMask ? &mask : NULL,
+                                  RestartScan);
+
+    if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (buf) {
+        if (copy_to_user(FileInformation, buf, iosb.Information) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(buf);
+    }
+
+    if (FileMask)
+        kfree(mask.Buffer);
+
+    return Status;
 }
