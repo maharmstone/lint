@@ -281,3 +281,142 @@ void close_muwine() {
         muwine_fd = 0;
     }
 }
+
+NTSTATUS __stdcall NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                                PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
+                                ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
+                                PVOID EaBuffer, ULONG EaLength) {
+    uintptr_t args[] = {
+        11,
+        (uintptr_t)FileHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)AllocationSize,
+        (uintptr_t)FileAttributes,
+        (uintptr_t)ShareAccess,
+        (uintptr_t)CreateDisposition,
+        (uintptr_t)CreateOptions,
+        (uintptr_t)EaBuffer,
+        (uintptr_t)EaLength
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATEFILE, args);
+}
+
+NTSTATUS __stdcall NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                              PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                              PULONG Key) {
+    uintptr_t args[] = {
+        9,
+        (uintptr_t)FileHandle,
+        (uintptr_t)Event,
+        (uintptr_t)ApcRoutine,
+        (uintptr_t)ApcContext,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)Buffer,
+        (uintptr_t)Length,
+        (uintptr_t)ByteOffset,
+        (uintptr_t)Key
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTREADFILE, args);
+}
+
+NTSTATUS __stdcall NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                              PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions) {
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)FileHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)ShareAccess,
+        (uintptr_t)OpenOptions
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENFILE, args);
+}
+
+NTSTATUS __stdcall NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                          ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)FileHandle,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)FileInformation,
+        (uintptr_t)Length,
+        (uintptr_t)FileInformationClass
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYINFORMATIONFILE, args);
+}
+
+NTSTATUS __stdcall NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                               PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                               PULONG Key) {
+    uintptr_t args[] = {
+        9,
+        (uintptr_t)FileHandle,
+        (uintptr_t)Event,
+        (uintptr_t)ApcRoutine,
+        (uintptr_t)ApcContext,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)Buffer,
+        (uintptr_t)Length,
+        (uintptr_t)ByteOffset,
+        (uintptr_t)Key
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTWRITEFILE, args);
+}
+
+NTSTATUS __stdcall NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                        ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)FileHandle,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)FileInformation,
+        (uintptr_t)Length,
+        (uintptr_t)FileInformationClass
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTSETINFORMATIONFILE, args);
+}
+
+NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                        PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                        FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                                        PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+    uintptr_t args[] = {
+        11,
+        (uintptr_t)FileHandle,
+        (uintptr_t)Event,
+        (uintptr_t)ApcRoutine,
+        (uintptr_t)ApcContext,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)FileInformation,
+        (uintptr_t)Length,
+        (uintptr_t)FileInformationClass,
+        (uintptr_t)ReturnSingleEntry,
+        (uintptr_t)FileMask,
+        (uintptr_t)RestartScan
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYDIRECTORYFILE, args);
+}

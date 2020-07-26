@@ -21,6 +21,7 @@ static_assert(sizeof(wchar_t) == 2, "wchar_t is not 2 bytes. Make sure you pass 
 typedef int32_t NTSTATUS;
 typedef void* HANDLE, *PHANDLE;
 typedef uint32_t ULONG, *PULONG;
+typedef int32_t LONG;
 typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef ULONG DWORD;
@@ -51,9 +52,15 @@ typedef struct {
 
 typedef OBJECT_ATTRIBUTES* POBJECT_ATTRIBUTES;
 
-typedef struct _LARGE_INTEGER {
-    int64_t QuadPart;
-} LARGE_INTEGER;
+typedef struct {
+    union {
+        struct {
+            DWORD LowPart;
+            LONG HighPart;
+        };
+        int64_t QuadPart;
+    };
+} LARGE_INTEGER, *PLARGE_INTEGER;
 
 #define KEY_QUERY_VALUE        0x0001
 #define KEY_SET_VALUE          0x0002
@@ -152,6 +159,65 @@ typedef struct {
 
 typedef void* PIO_APC_ROUTINE;
 
+typedef enum {
+    FileDirectoryInformation = 1,
+    FileFullDirectoryInformation,
+    FileBothDirectoryInformation,
+    FileBasicInformation,
+    FileStandardInformation,
+    FileInternalInformation,
+    FileEaInformation,
+    FileAccessInformation,
+    FileNameInformation,
+    FileRenameInformation,
+    FileLinkInformation,
+    FileNamesInformation,
+    FileDispositionInformation,
+    FilePositionInformation,
+    FileFullEaInformation,
+    FileModeInformation,
+    FileAlignmentInformation,
+    FileAllInformation,
+    FileAllocationInformation,
+    FileEndOfFileInformation,
+    FileAlternateNameInformation,
+    FileStreamInformation,
+    FilePipeInformation,
+    FilePipeLocalInformation,
+    FilePipeRemoteInformation,
+    FileMailslotQueryInformation,
+    FileMailslotSetInformation,
+    FileCompressionInformation,
+    FileObjectIdInformation,
+    FileCompletionInformation,
+    FileMoveClusterInformation,
+    FileQuotaInformation,
+    FileReparsePointInformation,
+    FileNetworkOpenInformation,
+    FileAttributeTagInformation,
+    FileTrackingInformation,
+    FileIdBothDirectoryInformation,
+    FileIdFullDirectoryInformation,
+    FileValidDataLengthInformation,
+    FileShortNameInformation,
+    FileIoCompletionNotificationInformation,
+    FileIoStatusBlockRangeInformation,
+    FileIoPriorityHintInformation,
+    FileSfioReserveInformation,
+    FileSfioVolumeInformation,
+    FileHardLinkInformation,
+    FileProcessIdsUsingFileInformation,
+    FileNormalizedNameInformation,
+    FileNetworkPhysicalNameInformation,
+    FileIdGlobalTxDirectoryInformation,
+    FileIsRemoteDeviceInformation,
+    FileAttributeCacheInformation,
+    FileNumaNodeInformation,
+    FileStandardLinkInformation,
+    FileRemoteProtocolInformation,
+    FileMaximumInformation
+} FILE_INFORMATION_CLASS;
+
 #endif
 
 #define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
@@ -164,13 +230,14 @@ NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION
                                   PVOID KeyInformation, ULONG Length, PULONG ResultLength);
 NTSTATUS __stdcall NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                        PVOID KeyValueInformation, ULONG Length, PULONG ResultLength);
-NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
-                                   void* KeyValueInformation, DWORD Length, DWORD* ResultLength);
+NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName,
+                                   KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass, void* KeyValueInformation,
+                                   DWORD Length, DWORD* ResultLength);
 NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName, ULONG TitleIndex,
                                  ULONG Type, const void* Data, ULONG DataSize);
 NTSTATUS __stdcall NtDeleteValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName);
-NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes, ULONG TitleIndex,
-                               const UNICODE_STRING* Class, ULONG CreateOptions, PULONG Disposition);
+NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
+                               ULONG TitleIndex, const UNICODE_STRING* Class, ULONG CreateOptions, PULONG Disposition);
 NTSTATUS __stdcall NtDeleteKey(HANDLE KeyHandle);
 NTSTATUS __stdcall NtLoadKey(const OBJECT_ATTRIBUTES* DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName);
 NTSTATUS __stdcall NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName);
@@ -188,6 +255,26 @@ NTSTATUS __stdcall NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJ
                                               PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter,
                                               BOOLEAN WatchSubtree, PVOID ChangeBuffer, ULONG Length,
                                               BOOLEAN Asynchronous);
+NTSTATUS __stdcall NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                                PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
+                                ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
+                                PVOID EaBuffer, ULONG EaLength);
+NTSTATUS __stdcall NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                                PULONG Key);
+NTSTATUS __stdcall NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                                PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions);
+NTSTATUS __stdcall NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
+NTSTATUS __stdcall NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                                PULONG Key);
+NTSTATUS __stdcall NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                              ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
+NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                        PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                        FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                                        PUNICODE_STRING FileMask, BOOLEAN RestartScan);
 
 #ifdef __cplusplus
 }
