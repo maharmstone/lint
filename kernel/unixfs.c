@@ -383,13 +383,39 @@ NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
 NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                       PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                       PULONG Key) {
-    printk(KERN_INFO "unixfs_write(%px, %lx, %px, %px, %px, %px, %x, %px, %px): stub\n",
-           obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
-           Buffer, Length, ByteOffset, Key);
+    ssize_t written;
+    loff_t pos;
 
-    // FIXME
+    if (!IoStatusBlock)
+        return STATUS_INVALID_PARAMETER;
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME - FILE_APPEND_DATA
+
+    if (ByteOffset && ByteOffset->HighPart == -1 && ByteOffset->LowPart == FILE_USE_FILE_POINTER_POSITION)
+        ByteOffset = NULL;
+
+    if (ByteOffset)
+        pos = ByteOffset->QuadPart;
+    else if (obj->flags & FO_SYNCHRONOUS_IO)
+        pos = obj->offset;
+    else
+        return STATUS_INVALID_PARAMETER;
+
+    written = kernel_write(obj->f->f, Buffer, Length, &pos);
+
+    if (written < 0) {
+        if (obj->flags & FO_SYNCHRONOUS_IO && ByteOffset)
+            obj->offset = ByteOffset->QuadPart;
+
+        return muwine_error_to_ntstatus(written);
+    }
+
+    if (obj->flags & FO_SYNCHRONOUS_IO)
+        obj->offset = pos;
+
+    IoStatusBlock->Information = written;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
