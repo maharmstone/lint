@@ -20,6 +20,7 @@ struct muwine_func {
 
 #define STATUS_SUCCESS                      0x00000000
 #define STATUS_SOME_NOT_MAPPED              0x00000107
+#define STATUS_OBJECT_NAME_EXISTS           0x40000000
 #define STATUS_BUFFER_OVERFLOW              0x80000005
 #define STATUS_NO_MORE_ENTRIES              0x8000001a
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
@@ -335,6 +336,13 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 #define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED  0x00002000
 #define FILE_ATTRIBUTE_ENCRYPTED            0x00004000
 #define FILE_ATTRIBUTE_VIRTUAL              0x00010000
+
+#define FILE_SUPERSEDED         0x00000000
+#define FILE_OPENED             0x00000001
+#define FILE_CREATED            0x00000002
+#define FILE_OVERWRITTEN        0x00000003
+#define FILE_EXISTS             0x00000004
+#define FILE_DOES_NOT_EXIST     0x00000005
 
 typedef enum {
     FileDirectoryInformation = 1,

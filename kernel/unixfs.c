@@ -80,12 +80,15 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     // FIXME - handle creating files
     // FIXME - how do ECPs get passed?
 
-    if (CreateDisposition != FILE_OPEN && CreateDisposition != FILE_OPEN_IF)
-        return STATUS_NOT_IMPLEMENTED;
-
     // FIXME - handle opening \\Device\\UnixRoot directly
     if (us->Length < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
+
+    if (CreateDisposition != FILE_SUPERSEDE && CreateDisposition != FILE_CREATE &&
+        CreateDisposition != FILE_OPEN && CreateDisposition != FILE_OPEN_IF &&
+        CreateDisposition != FILE_OVERWRITE && CreateDisposition != FILE_OVERWRITE_IF) {
+        return STATUS_INVALID_PARAMETER;
+    }
 
     if (us->Buffer[0] != '\\')
         return STATUS_INVALID_PARAMETER;
@@ -125,6 +128,16 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
 
         // FIXME - should be by mount point and inode no.
         if (!stricmp(f2->path, path)) {
+            if (CreateDisposition == FILE_SUPERSEDE) {
+                up_write(&fcb_list_sem);
+                kfree(path);
+                return STATUS_CANNOT_DELETE;
+            } else if (CreateDisposition == FILE_CREATE) {
+                up_write(&fcb_list_sem);
+                kfree(path);
+                return STATUS_OBJECT_NAME_EXISTS;
+            }
+
             f2->refcount++;
             f = f2;
             break;
@@ -134,6 +147,8 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     }
 
     if (!f) {
+        unsigned int flags;
+
         f = kmalloc(offsetof(fcb, path) + as_len + 1, GFP_KERNEL);
         if (!f) {
             up_write(&fcb_list_sem);
@@ -143,9 +158,21 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
 
         f->refcount = 1;
 
+        if (CreateDisposition == FILE_SUPERSEDE || CreateDisposition == FILE_OPEN_IF || CreateDisposition == FILE_OVERWRITE_IF)
+            flags = O_CREAT;
+        else if (CreateDisposition == FILE_CREATE || CreateDisposition == FILE_OVERWRITE)
+            flags = O_CREAT | O_EXCL;
+        else
+            flags = 0;
+
+        if (CreateDisposition == FILE_OVERWRITE || CreateDisposition == FILE_OVERWRITE_IF ||
+            CreateDisposition == FILE_SUPERSEDE) {
+            flags |= O_TRUNC;
+        }
+
         // FIXME - case-insensitivity
-        f->f = filp_open(path, O_RDONLY, 0);
-        if (IS_ERR(f)) {
+        f->f = filp_open(path, flags | O_RDWR, 0644);
+        if (IS_ERR(f->f)) {
             int err = (int)(uintptr_t)f->f;
 
             up_write(&fcb_list_sem);
@@ -156,6 +183,8 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
             return muwine_error_to_ntstatus(err);
         }
 
+        // FIXME - if new file, change uid and gid
+
         memcpy(f->path, path, as_len + 1);
 
         list_add_tail(&f->list, &fcb_list);
@@ -164,6 +193,10 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     up_write(&fcb_list_sem);
 
     kfree(path);
+
+    // FIXME - truncate if re-opened currently open file, and FILE_OVERWRITE, FILE_OVERWRITE_IF, or FILE_SUPERSEDE
+
+    // FIXME - if supersede, should get rid of xattrs etc.(?)
 
     // FIXME - check xattr for SD, and check process has permissions for requested access
     // FIXME - check share access
@@ -248,6 +281,26 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
         kfree(obj);
 
         return Status;
+    }
+
+    if (f->f->f_mode & FMODE_CREATED)
+        IoStatusBlock->Information = FILE_CREATED;
+    else {
+        switch (CreateDisposition) {
+            case FILE_SUPERSEDE:
+                IoStatusBlock->Information = FILE_SUPERSEDED;
+            break;
+
+            case FILE_OPEN:
+            case FILE_OPEN_IF:
+                IoStatusBlock->Information = FILE_OPENED;
+            break;
+
+            case FILE_OVERWRITE:
+            case FILE_OVERWRITE_IF:
+                IoStatusBlock->Information = FILE_OVERWRITTEN;
+            break;
+        }
     }
 
     return Status;
