@@ -311,3 +311,13 @@ NTSTATUS user_NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRo
 
     return Status;
 }
+
+NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                              ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    printk(KERN_INFO "NtSetInformationFile(%lx, %px, %px, %x, %x): stub\n", (uintptr_t)FileHandle,
+           IoStatusBlock, FileInformation, Length, FileInformationClass);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
