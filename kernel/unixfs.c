@@ -283,3 +283,15 @@ NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlo
         }
     }
 }
+
+NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                    PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                    PULONG Key) {
+    printk(KERN_INFO "unixfs_read(%px, %lx, %px, %px, %px, %px, %x, %px, %px): stub\n",
+           obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           Buffer, Length, ByteOffset, Key);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
