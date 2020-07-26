@@ -1,16 +1,11 @@
 #include "muwine.h"
 
-typedef struct {
+typedef struct _fcb {
     struct list_head list;
     unsigned int refcount;
     struct file* f;
     char path[1];
 } fcb;
-
-typedef struct {
-    object_header header;
-    fcb* f;
-} file_object;
 
 LIST_HEAD(fcb_list);
 DECLARE_RWSEM(fcb_list_sem);
@@ -251,4 +246,14 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     }
 
     return Status;
+}
+
+NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                  ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    printk(KERN_INFO "unixfs_query_information(%px, %px, %px, %x, %x): stub\n", obj,
+           IoStatusBlock, FileInformation, Length, FileInformationClass);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
 }

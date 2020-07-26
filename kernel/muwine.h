@@ -383,7 +383,16 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h);
 object_header* get_object_from_handle(HANDLE h);
 
 // unixfs.c
+typedef struct _fcb fcb;
+
+typedef struct {
+    object_header header;
+    fcb* f;
+} file_object;
+
 NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
                             PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                             ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
                             PVOID EaBuffer, ULONG EaLength);
+NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                  ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);

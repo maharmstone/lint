@@ -84,10 +84,12 @@ NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
 
 NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
-    printk(KERN_INFO "NtQueryInformationFile(%lx, %px, %px, %x, %x): stub\n", (uintptr_t)FileHandle,
-           IoStatusBlock, FileInformation, Length, FileInformationClass);
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
+    if (!obj || obj->header.type != muwine_object_file)
+        return STATUS_INVALID_HANDLE;
 
-    // FIXME
+    // FIXME - get FS device from object
 
-    return STATUS_NOT_IMPLEMENTED;
+    return unixfs_query_information(obj, IoStatusBlock, FileInformation, Length,
+                                    FileInformationClass);
 }
