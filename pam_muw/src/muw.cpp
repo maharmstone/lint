@@ -100,7 +100,7 @@ void mount_hive(const u16string_view& key, const u16string_view& file) {
     key_us.Length = key_us.MaximumLength = (USHORT)(key.length() * sizeof(char16_t));
     key_us.Buffer = (WCHAR*)key.data();
 
-    file_oa.Length = sizeof(file);
+    file_oa.Length = sizeof(file_oa);
     file_oa.RootDirectory = nullptr;
     file_oa.ObjectName = &file_us;
     file_oa.Attributes = 0;
