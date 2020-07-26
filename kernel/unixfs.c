@@ -326,3 +326,15 @@ NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
 
     return STATUS_SUCCESS;
 }
+
+NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                      PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                      PULONG Key) {
+    printk(KERN_INFO "unixfs_write(%px, %lx, %px, %px, %px, %px, %x, %px, %px): stub\n",
+           obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           Buffer, Length, ByteOffset, Key);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
