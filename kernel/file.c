@@ -359,14 +359,96 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
 
     // FIXME - get FS device from object
 
-    return unixfs_set_information(obj, IoStatusBlock, FileInformation, Length, FileInformationClass);
+    if (FileInformationClass == FileRenameInformation) {
+        NTSTATUS Status;
+        FILE_RENAME_INFORMATION* fri = FileInformation;
+        UNICODE_STRING us;
+        bool us_alloc = false;
+        ULONG fri2len;
+        FILE_RENAME_INFORMATION* fri2;
+
+        static const WCHAR prefix[] = L"\\Device\\UnixRoot";
+
+        if (Length < offsetof(FILE_RENAME_INFORMATION, FileName))
+            return STATUS_INVALID_PARAMETER;
+
+        if (Length < offsetof(FILE_RENAME_INFORMATION, FileName) + fri->FileNameLength)
+            return STATUS_INVALID_PARAMETER;
+
+        if (fri->RootDirectory) {
+            file_object* obj2 = (file_object*)get_object_from_handle(fri->RootDirectory);
+            if (!obj2 || obj2->header.type != muwine_object_file)
+                return STATUS_INVALID_HANDLE;
+
+            us.Length = obj2->header.path.Length + sizeof(WCHAR) + fri->FileNameLength;
+            us.Buffer = kmalloc(us.Length, GFP_KERNEL);
+
+            if (!us.Buffer)
+                return STATUS_INSUFFICIENT_RESOURCES;
+
+            memcpy(us.Buffer, obj2->header.path.Buffer, obj2->header.path.Length);
+            us.Buffer[obj2->header.path.Length / sizeof(WCHAR)] = '\\';
+            memcpy(&us.Buffer[obj2->header.path.Length / sizeof(WCHAR)],
+                   fri->FileName, fri->FileNameLength);
+
+            us_alloc = true;
+        } else {
+            // FIXME - resolve device symlinks in FileName
+            us.Buffer = fri->FileName;
+            us.Length = fri->FileNameLength;
+        }
+
+        // check same device, and return STATUS_NOT_SAME_DEVICE if not
+
+        if (us.Length < sizeof(prefix) - sizeof(WCHAR)) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            return STATUS_NOT_SAME_DEVICE;
+        }
+
+        if (wcsnicmp(us.Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1) ||
+            (us.Length >= sizeof(prefix) - sizeof(WCHAR) && us.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1] != '\\')) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            return STATUS_NOT_SAME_DEVICE;
+        }
+
+        fri2len = offsetof(FILE_RENAME_INFORMATION, FileName) + us.Length - (sizeof(prefix) - sizeof(WCHAR));
+
+        fri2 = kmalloc(fri2len, GFP_KERNEL);
+        if (!fri2) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        fri2->ReplaceIfExists = fri->ReplaceIfExists;
+        fri2->RootDirectory = NULL;
+        fri2->FileNameLength = us.Length - (sizeof(prefix) - sizeof(WCHAR));
+        memcpy(fri2->FileName, us.Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1, fri2->FileNameLength);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        // pass device-relative filename to unixfs_set_information
+
+        Status = unixfs_set_information(obj, IoStatusBlock, fri2, fri2len, FileInformationClass);
+
+        kfree(fri2);
+
+        return Status;
+    } else
+        return unixfs_set_information(obj, IoStatusBlock, FileInformation, Length, FileInformationClass);
 }
 
 NTSTATUS user_NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                    ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
-    uint8_t* buf = NULL;
+    void* buf = NULL;
 
     if ((uintptr_t)FileHandle & KERNEL_HANDLE_MASK)
         return STATUS_INVALID_HANDLE;
@@ -379,6 +461,15 @@ NTSTATUS user_NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusB
         if (copy_from_user(buf, FileInformation, Length) != 0) {
             kfree(buf);
             return STATUS_ACCESS_VIOLATION;
+        }
+    }
+
+    if (FileInformationClass == FileRenameInformation) {
+        FILE_RENAME_INFORMATION* fri = buf;
+
+        if (Length >= offsetof(FILE_RENAME_INFORMATION, FileName) && (uintptr_t)fri->RootDirectory & KERNEL_HANDLE_MASK) {
+            kfree(buf);
+            return STATUS_INVALID_HANDLE;
         }
     }
 
