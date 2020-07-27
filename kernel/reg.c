@@ -662,16 +662,22 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         if (!key || key->header.type != muwine_object_key)
             return STATUS_INVALID_HANDLE;
 
+        spin_lock(&key->header.path_lock);
+
         us.Length = key->header.path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
         us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
 
-        if (!us.Buffer)
+        if (!us.Buffer) {
+            spin_unlock(&key->header.path_lock);
             return STATUS_INSUFFICIENT_RESOURCES;
+        }
 
         memcpy(us.Buffer, key->header.path.Buffer, key->header.path.Length);
         us.Buffer[key->header.path.Length / sizeof(WCHAR)] = '\\';
         memcpy(&us.Buffer[(key->header.path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
                ObjectAttributes->ObjectName->Length);
+
+        spin_unlock(&key->header.path_lock);
     } else {
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -772,6 +778,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             k->header.refcount = 1;
             k->header.type = muwine_object_key;
 
+            spin_lock_init(&k->header.path_lock);
             k->header.path.Length = k->header.path.MaximumLength = orig_us.Length + sizeof(prefix) - sizeof(WCHAR);
             k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
@@ -3572,6 +3579,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->header.refcount = 1;
     k->header.type = muwine_object_key;
 
+    spin_lock_init(&k->header.path_lock);
     k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + h->path.Length + us->Length;
 
     if (h->depth != 0 && us->Length > 0)
@@ -3635,16 +3643,22 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         if (!key || key->header.type != muwine_object_key)
             return STATUS_INVALID_HANDLE;
 
+        spin_lock(&key->header.path_lock);
+
         us.Length = key->header.path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
         us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
 
-        if (!us.Buffer)
+        if (!us.Buffer) {
+            spin_unlock(&key->header.path_lock);
             return STATUS_INSUFFICIENT_RESOURCES;
+        }
 
         memcpy(us.Buffer, key->header.path.Buffer, key->header.path.Length);
         us.Buffer[key->header.path.Length / sizeof(WCHAR)] = '\\';
         memcpy(&us.Buffer[(key->header.path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
                ObjectAttributes->ObjectName->Length);
+
+        spin_unlock(&key->header.path_lock);
     } else {
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -4141,9 +4155,12 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
     fileobj = get_object_from_handle(fh);
 
+    spin_lock(&fileobj->path_lock);
+
     if (fileobj->path.Length > 0) {
         fs_path.Buffer = kmalloc(fileobj->path.Length, GFP_KERNEL);
         if (!fs_path.Buffer) {
+            spin_unlock(&fileobj->path_lock);
             vfree(h->data);
             kfree(h->path.Buffer);
             kfree(h);
@@ -4154,6 +4171,8 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
         fs_path.Length = fs_path.MaximumLength = fileobj->path.Length;
     }
+
+    spin_unlock(&fileobj->path_lock);
 
     NtClose(fh);
 

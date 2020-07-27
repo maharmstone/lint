@@ -18,16 +18,22 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         if (!obj || obj->type != muwine_object_file)
             return STATUS_INVALID_HANDLE;
 
+        spin_lock(&obj->path_lock);
+
         us.Length = obj->path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
         us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
 
-        if (!us.Buffer)
+        if (!us.Buffer) {
+            spin_unlock(&obj->path_lock);
             return STATUS_INSUFFICIENT_RESOURCES;
+        }
 
         memcpy(us.Buffer, obj->path.Buffer, obj->path.Length);
         us.Buffer[obj->path.Length / sizeof(WCHAR)] = '\\';
         memcpy(&us.Buffer[(obj->path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
                ObjectAttributes->ObjectName->Length);
+
+        spin_unlock(&obj->path_lock);
     } else {
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -380,16 +386,22 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
             if (!obj2 || obj2->header.type != muwine_object_file)
                 return STATUS_INVALID_HANDLE;
 
+            spin_lock(&obj2->header.path_lock);
+
             us.Length = obj2->header.path.Length + sizeof(WCHAR) + fri->FileNameLength;
             us.Buffer = kmalloc(us.Length, GFP_KERNEL);
 
-            if (!us.Buffer)
+            if (!us.Buffer) {
+                spin_unlock(&obj2->header.path_lock);
                 return STATUS_INSUFFICIENT_RESOURCES;
+            }
 
             memcpy(us.Buffer, obj2->header.path.Buffer, obj2->header.path.Length);
             us.Buffer[obj2->header.path.Length / sizeof(WCHAR)] = '\\';
             memcpy(&us.Buffer[obj2->header.path.Length / sizeof(WCHAR)],
                    fri->FileName, fri->FileNameLength);
+
+            spin_unlock(&obj2->header.path_lock);
 
             us_alloc = true;
         } else {

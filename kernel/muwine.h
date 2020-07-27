@@ -200,6 +200,7 @@ typedef struct _object_header {
     struct list_head list;
     object_type type;
     UNICODE_STRING path;
+    spinlock_t path_lock;
     muwine_close_object close;
 } object_header;
 

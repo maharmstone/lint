@@ -229,6 +229,7 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     obj->header.refcount = 1;
     obj->header.type = muwine_object_file;
 
+    spin_lock_init(&obj->header.path_lock);
     obj->header.path.Length = obj->header.path.MaximumLength = us->Length + sizeof(prefix) - sizeof(WCHAR);
     obj->header.path.Buffer = kmalloc(obj->header.path.Length, GFP_KERNEL);
 
