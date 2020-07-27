@@ -4598,57 +4598,44 @@ NTSTATUS muwine_init_registry(void) {
     return STATUS_SUCCESS;
 }
 
-#if 0
-static void get_temp_hive_path(hive* h, char** out) {
-    size_t len = strlen(h->fs_path);
+static NTSTATUS get_temp_hive_path(hive* h, UNICODE_STRING* out) {
+    UNICODE_STRING us;
 
-    static const char suffix[] = ".tmp";
+    static const WCHAR suffix[] = L".tmp";
 
     // FIXME - also prepend dot, so that file is hidden
 
-    *out = kmalloc(len + sizeof(suffix), GFP_KERNEL);
-    if (!*out)
-        return;
+    us.Length = h->fs_path.Length + sizeof(suffix) - sizeof(WCHAR);
+    us.Buffer = kmalloc(us.Length, GFP_KERNEL);
+    if (!us.Buffer)
+        return STATUS_INSUFFICIENT_RESOURCES;
 
-    memcpy(*out, h->fs_path, len);
-    memcpy(&(*out)[len], suffix, sizeof(suffix));
+    memcpy(us.Buffer, h->fs_path.Buffer, h->fs_path.Length);
+    memcpy(&us.Buffer[h->fs_path.Length / sizeof(WCHAR)], suffix, sizeof(suffix) - sizeof(WCHAR));
+
+    *out = us;
+
+    return STATUS_SUCCESS;
 }
-
-static void init_qstr_from_path(struct qstr* q, const char* path) {
-    unsigned int i, start = 0;
-
-    i = 0;
-    while (path[i] != 0) {
-        if (path[i] == '/')
-            start = i + 1;
-
-        i++;
-    }
-
-    q->name = &path[start];
-    q->len = i - start;
-}
-#endif
 
 static NTSTATUS flush_hive(hive* h) {
-#if 0
-    struct file* f;
-    loff_t pos;
+    NTSTATUS Status;
+    LARGE_INTEGER pos;
     HBASE_BLOCK* base_block;
     unsigned int i;
     uint32_t csum;
-    char* temp_fn;
-    int ret;
-    struct qstr q;
-    struct dentry* new_dentry;
-#endif
+    UNICODE_STRING temp_fn;
+    HANDLE fh;
+    IO_STATUS_BLOCK iosb;
+    OBJECT_ATTRIBUTES objatt;
+    ULONG frilen;
+    FILE_RENAME_INFORMATION* fri;
 
     // FIXME - if called from periodic thread, give up if can't acquire lock immediately? (Might need to put a limit on how often this happens.)
 
     if (h->depth == 0) // volatile root
         return STATUS_SUCCESS;
 
-#if 0
     down_read(&h->sem);
 
     if (!h->dirty) {
@@ -4680,67 +4667,82 @@ static NTSTATUS flush_hive(hive* h) {
 
     base_block->CheckSum = csum;
 
-    get_temp_hive_path(h, &temp_fn);
-    if (!temp_fn) {
+    Status = get_temp_hive_path(h, &temp_fn);
+    if (!NT_SUCCESS(Status)) {
         printk(KERN_ALERT "flush_hive: unable to get temporary filename for hive\n");
+        up_read(&h->sem);
+        return Status;
+    }
+
+    objatt.Length = sizeof(objatt);
+    objatt.RootDirectory = NULL;
+    objatt.ObjectName = &temp_fn;
+    objatt.Attributes = OBJ_KERNEL_HANDLE;
+    objatt.SecurityDescriptor = NULL;
+    objatt.SecurityQualityOfService = NULL;
+
+    // FIXME - AllocationSize
+    Status = NtCreateFile(&fh, FILE_WRITE_DATA | DELETE, &objatt, &iosb, NULL, FILE_ATTRIBUTE_NORMAL,
+                          0, FILE_OVERWRITE_IF, FILE_NON_DIRECTORY_FILE, NULL, 0);
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "flush_hive: error %08x when opening file for writing\n", Status);
+        up_read(&h->sem);
+        kfree(temp_fn.Buffer);
+        return Status;
+    }
+
+    kfree(temp_fn.Buffer);
+
+    pos.QuadPart = 0;
+
+    while (pos.QuadPart < h->size) {
+        Status = NtWriteFile(fh, NULL, NULL, NULL, &iosb, (uint8_t*)h->data + pos.QuadPart,
+                             h->size - pos.QuadPart, &pos, NULL);
+        if (!NT_SUCCESS(Status)) {
+            printk(KERN_ALERT "flush_hive: error %08x when writing file\n", Status);
+            // FIXME - delete file
+            NtClose(fh);
+            up_read(&h->sem);
+            return Status;
+        }
+
+        pos.QuadPart += iosb.Information;
+    }
+
+    frilen = offsetof(FILE_RENAME_INFORMATION, FileName) + h->fs_path.Length;
+
+    fri = kmalloc(frilen, GFP_KERNEL);
+    if (!fri) {
+        // FIXME - delete file
+        NtClose(fh);
         up_read(&h->sem);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    // FIXME - O_TMPFILE?
-    f = filp_open(temp_fn, O_CREAT | O_WRONLY, h->file_mode);
-    if (IS_ERR(f)) {
-        printk(KERN_ALERT "flush_hive: could not open %s for writing\n", temp_fn);
+    fri->ReplaceIfExists = true;
+    fri->RootDirectory = NULL;
+    fri->FileNameLength = h->fs_path.Length;
+    memcpy(fri->FileName, h->fs_path.Buffer, h->fs_path.Length);
+
+    Status = NtSetInformationFile(fh, &iosb, fri, frilen, FileRenameInformation);
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "flush_hive: error %08x when renaming file\n", Status);
+        // FIXME - delete file
+        NtClose(fh);
         up_read(&h->sem);
-        kfree(temp_fn);
-        return muwine_error_to_ntstatus((int)(uintptr_t)f);
+        kfree(fri);
+        return Status;
     }
 
-    // FIXME - preallocate file (vfs_fallocate?)
+    kfree(fri);
 
-    // dump contents of h->data
+    NtClose(fh);
 
-    pos = 0;
-
-    while (pos < h->size) {
-        ssize_t written = kernel_write(f, (uint8_t*)h->data + pos, h->size - pos, &pos);
-
-        if (written < 0) {
-            printk(KERN_INFO "flush_hive: write returned %ld\n", written);
-            filp_close(f, NULL);
-            up_read(&h->sem);
-            kfree(temp_fn);
-            return muwine_error_to_ntstatus(written);
-        }
-    }
-
-    // copy new file over old
-
-    init_qstr_from_path(&q, h->fs_path);
-
-    new_dentry = d_alloc(file_dentry(f)->d_parent, &q);
-
-    lock_rename(file_dentry(f)->d_parent, file_dentry(f)->d_parent);
-
-    ret = vfs_rename(file_dentry(f)->d_parent->d_inode, file_dentry(f), file_dentry(f)->d_parent->d_inode,
-                     new_dentry, NULL, 0);
-    if (ret < 0)
-        printk(KERN_WARNING "flush_hive: vfs_rename returned %d\n", ret);
-
-    unlock_rename(file_dentry(f)->d_parent, file_dentry(f)->d_parent);
-
-    d_invalidate(new_dentry);
-
-    // FIXME - preserve uid, gid, and extended attributes
-
-    filp_close(f, NULL);
+    // FIXME - preserve uid, gid, mode, and extended attributes
 
     h->dirty = false;
 
     up_read(&h->sem);
-
-    kfree(temp_fn);
-#endif
 
     return STATUS_SUCCESS;
 }
