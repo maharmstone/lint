@@ -419,6 +419,24 @@ NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine
     return STATUS_SUCCESS;
 }
 
+typedef struct {
+    struct dir_context dc;
+    const char* fn;
+    bool found;
+} rename_iterate;
+
+static int dir_iterate(struct dir_context* dc, const char* name, int name_len, loff_t pos,
+                       u64 ino, unsigned int type) {
+    rename_iterate* ri = (rename_iterate*)dc;
+
+    if (strnicmp(name, ri->fn, name_len) || ri->fn[name_len] != 0)
+        return 0;
+
+    ri->found = true;
+
+    return -1; // stop iterating
+}
+
 static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     NTSTATUS Status;
     ULONG dest_len;
@@ -428,6 +446,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     struct file* dest_dir;
     int ret;
     struct dentry* new_dentry;
+    rename_iterate ri;
 
     // FIXME - handle POSIX-style deletes
 
@@ -458,6 +477,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     dest[last_slash] = 0;
     fn = dest + last_slash + 1;
 
+    // FIXME - open case-insensitively
     dest_dir = filp_open(dest, 0, 0);
     if (IS_ERR(dest_dir)) {
         int err = (int)(uintptr_t)dest_dir;
@@ -477,15 +497,6 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
         return STATUS_INTERNAL_ERROR;
     }
 
-    // FIXME - can we lock filesystem or directory, so no new files are created while we're doing this?
-
-    // FIXME - check FCB list for destination
-    // FIXME - if found and ReplaceIfExists not set, return STATUS_OBJECT_NAME_COLLISION
-    // FIXME - if found and ReplaceIfExists set, mark as deleted
-
-    // FIXME - if not found in list, try to open destination
-    // FIXME - if destination found and ReplaceIfExists not set, return STATUS_OBJECT_NAME_COLLISION
-
     new_dentry = d_alloc_name(file_dentry(dest_dir), fn);
     if (!new_dentry) {
         filp_close(dest_dir, NULL);
@@ -494,6 +505,34 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     }
 
     lock_rename(file_dentry(obj->f->f)->d_parent, file_dentry(dest_dir));
+
+    ri.dc.actor = dir_iterate;
+    ri.dc.pos = 0;
+    ri.fn = fn;
+    ri.found = false;
+
+    if (dest_dir->f_op->iterate_shared)
+        dest_dir->f_op->iterate_shared(dest_dir, &ri.dc);
+    else
+        dest_dir->f_op->iterate(dest_dir, &ri.dc);
+
+    if (ri.found) {
+        if (!fri->ReplaceIfExists) {
+            unlock_rename(file_dentry(obj->f->f)->d_parent, file_dentry(dest_dir));
+
+            d_invalidate(new_dentry);
+
+            filp_close(dest_dir, NULL);
+
+            kfree(dest);
+
+
+            return STATUS_OBJECT_NAME_COLLISION;
+        }
+
+        // FIXME - search FCB list for this inode, and fail if present
+        // FIXME - delete (in case file exists but differs by case)
+    }
 
     ret = vfs_rename(file_dentry(obj->f->f)->d_parent->d_inode, file_dentry(obj->f->f), dest_dir->f_inode,
                      new_dentry, NULL, 0);

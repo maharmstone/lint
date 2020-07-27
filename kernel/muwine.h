@@ -31,6 +31,7 @@ struct muwine_func {
 #define STATUS_BUFFER_TOO_SMALL             0xc0000023
 #define STATUS_OBJECT_NAME_INVALID          0xc0000033
 #define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
+#define STATUS_OBJECT_NAME_COLLISION        0xc0000035
 #define STATUS_OBJECT_PATH_INVALID          0xc0000039
 #define STATUS_OBJECT_PATH_NOT_FOUND        0xc000003a
 #define STATUS_INSUFFICIENT_RESOURCES       0xc000009a
@@ -220,6 +221,7 @@ bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
 bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us);
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us);
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
+int strnicmp(const char* string1, const char* string2, size_t count);
 process* muwine_current_process(void);
 NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len);
 

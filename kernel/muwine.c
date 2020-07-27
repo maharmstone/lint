@@ -185,6 +185,33 @@ int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count) {
     return 0;
 }
 
+int strnicmp(const char* string1, const char* string2, size_t count) {
+    size_t i;
+
+    // FIXME - do this properly (including Greek, Cyrillic, etc.)
+
+    for (i = 0; i < count; i++) {
+        char c1 = *string1;
+        char c2 = *string2;
+
+        if (c1 >= 'A' && c1 <= 'Z')
+            c1 = c1 - 'A' + 'a';
+
+        if (c2 >= 'A' && c2 <= 'Z')
+            c2 = c2 - 'A' + 'a';
+
+        if (c1 < c2)
+            return -1;
+        else if (c1 > c2)
+            return 1;
+
+        string1++;
+        string2++;
+    }
+
+    return 0;
+}
+
 NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len) {
     NTSTATUS Status = STATUS_SUCCESS;
     uint16_t* in = (uint16_t*)src;
