@@ -1,4 +1,5 @@
 #include "muwine.h"
+#include <linux/namei.h>
 
 #define SECTOR_SIZE 0x1000
 
@@ -418,14 +419,122 @@ NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
+    NTSTATUS Status;
+    ULONG dest_len;
+    char* dest;
+    char* fn;
+    unsigned int i, last_slash;
+    struct file* dest_dir;
+    int ret;
+    struct dentry* new_dentry;
+
+    // FIXME - handle POSIX-style deletes
+
+    if (fri->FileNameLength < 2 * sizeof(WCHAR) || fri->FileName[0] != '\\')
+        return STATUS_INVALID_PARAMETER;
+
+    Status = utf16_to_utf8(NULL, 0, &dest_len, fri->FileName, fri->FileNameLength);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    dest = kmalloc(dest_len + 1, GFP_KERNEL);
+    if (!dest)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    Status = utf16_to_utf8(dest, dest_len, &dest_len, fri->FileName, fri->FileNameLength);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    dest[dest_len] = 0;
+
+    for (i = 0; i < dest_len; i++) {
+        if (dest[i] == '\\') {
+            dest[i] = '/';
+            last_slash = i;
+        }
+    }
+
+    dest[last_slash] = 0;
+    fn = dest + last_slash + 1;
+
+    dest_dir = filp_open(dest, 0, 0);
+    if (IS_ERR(dest_dir)) {
+        int err = (int)(uintptr_t)dest_dir;
+
+        kfree(dest);
+
+        if (err == -ENOENT)
+            return STATUS_OBJECT_PATH_NOT_FOUND;
+        else
+            return muwine_error_to_ntstatus(err);
+    }
+
+    if (obj->f->f->f_inode->i_sb != dest_dir->f_inode->i_sb) { // FIXME
+        printk(KERN_ALERT "unixfs_rename: FIXME - handle moving files across filesystems\n");
+        filp_close(dest_dir, NULL);
+        kfree(dest);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    // FIXME - can we lock filesystem or directory, so no new files are created while we're doing this?
+
+    // FIXME - check FCB list for destination
+    // FIXME - if found and ReplaceIfExists not set, return STATUS_OBJECT_NAME_COLLISION
+    // FIXME - if found and ReplaceIfExists set, mark as deleted
+
+    // FIXME - if not found in list, try to open destination
+    // FIXME - if destination found and ReplaceIfExists not set, return STATUS_OBJECT_NAME_COLLISION
+
+    new_dentry = d_alloc_name(file_dentry(dest_dir), fn);
+    if (!new_dentry) {
+        filp_close(dest_dir, NULL);
+        kfree(dest);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    lock_rename(file_dentry(obj->f->f)->d_parent, file_dentry(dest_dir));
+
+    ret = vfs_rename(file_dentry(obj->f->f)->d_parent->d_inode, file_dentry(obj->f->f), dest_dir->f_inode,
+                     new_dentry, NULL, 0);
+
+    unlock_rename(file_dentry(obj->f->f)->d_parent, file_dentry(dest_dir));
+
+    d_invalidate(new_dentry);
+
+    filp_close(dest_dir, NULL);
+
+    kfree(dest);
+
+    if (ret < 0)
+        return muwine_error_to_ntstatus(ret);
+
+    // FIXME - change path in object header (need lock for this)
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
-    printk(KERN_INFO "unixfs_set_information(%px, %px, %px, %x, %x): stub\n",
-           obj, IoStatusBlock, FileInformation, Length, FileInformationClass);
+    switch (FileInformationClass) {
+        case FileRenameInformation: {
+            FILE_RENAME_INFORMATION* fri = FileInformation;
 
-    // FIXME
+            if (Length < offsetof(FILE_RENAME_INFORMATION, FileName))
+                return STATUS_INVALID_PARAMETER;
 
-    return STATUS_NOT_IMPLEMENTED;
+            if (Length < offsetof(FILE_RENAME_INFORMATION, FileName) + fri->FileNameLength)
+                return STATUS_INVALID_PARAMETER;
+
+            return unixfs_rename(obj, fri);
+        }
+
+        default:
+            printk(KERN_INFO "unixfs_set_information: unhandled class %x\n",
+                   FileInformationClass);
+
+            return STATUS_INVALID_INFO_CLASS;
+    }
 }
 
 NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
