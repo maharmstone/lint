@@ -448,8 +448,12 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     int ret;
     struct dentry* new_dentry;
     rename_iterate ri;
+    UNICODE_STRING new_path;
+
+    static const WCHAR prefix[] = L"\\Device\\UnixRoot";
 
     // FIXME - handle POSIX-style deletes
+    // FIXME - don't allow if directory with open children
 
     if (fri->FileNameLength < 2 * sizeof(WCHAR) || fri->FileName[0] != '\\')
         return STATUS_INVALID_PARAMETER;
@@ -549,7 +553,24 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     if (ret < 0)
         return muwine_error_to_ntstatus(ret);
 
-    // FIXME - change path in object header (need lock for this)
+    spin_lock(&obj->header.path_lock);
+
+    new_path.Length = sizeof(prefix) - sizeof(WCHAR) + fri->FileNameLength;
+    new_path.Buffer = kmalloc(new_path.Length, GFP_KERNEL);
+
+    if (!new_path.Buffer) {
+        spin_unlock(&obj->header.path_lock);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    kfree(obj->header.path.Buffer);
+    obj->header.path = new_path;
+
+    memcpy(obj->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
+    memcpy(obj->header.path.Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1,
+           fri->FileName, fri->FileNameLength);
+
+    spin_unlock(&obj->header.path_lock);
 
     return STATUS_SUCCESS;
 }
