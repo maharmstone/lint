@@ -69,3 +69,12 @@ NTSTATUS muwine_find_device(UNICODE_STRING* us, device** dev) {
 
     return STATUS_OBJECT_PATH_NOT_FOUND;
 }
+
+NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    printk(KERN_INFO "NtCreateDirectoryObject(%lx, %x, %px): stub\n", (uintptr_t)DirectoryHandle,
+           DesiredAccess, ObjectAttributes);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

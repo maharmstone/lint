@@ -525,3 +525,4 @@ typedef struct _device {
 NTSTATUS muwine_add_device(device* dev);
 void muwine_free_objs(void);
 NTSTATUS muwine_find_device(UNICODE_STRING* us, device** dev);
+NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
