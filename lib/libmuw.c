@@ -361,8 +361,8 @@ NTSTATUS __stdcall NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK Io
 }
 
 NTSTATUS __stdcall NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-                               PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
-                               PULONG Key) {
+                               PIO_STATUS_BLOCK IoStatusBlock, const void* Buffer, ULONG Length,
+                               PLARGE_INTEGER ByteOffset, PULONG Key) {
     uintptr_t args[] = {
         9,
         (uintptr_t)FileHandle,
