@@ -38,7 +38,7 @@ static struct muwine_func funcs[] = {
     { user_NtWriteFile, 9 },
     { user_NtSetInformationFile, 5 },
     { user_NtQueryDirectoryFile, 11 },
-    { NtCreateDirectoryObject, 3 },
+    { user_NtCreateDirectoryObject, 3 },
     { NtCreateSymbolicLinkObject, 4 },
 };
 
