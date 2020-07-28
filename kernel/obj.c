@@ -78,3 +78,13 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                                    PUNICODE_STRING DestinationName) {
+    printk(KERN_INFO "NtCreateSymbolicLinkObject(%lx, %x, %px, %px): stub\n", (uintptr_t)pHandle, DesiredAccess,
+           ObjectAttributes, DestinationName);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

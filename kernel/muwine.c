@@ -39,6 +39,7 @@ static struct muwine_func funcs[] = {
     { user_NtSetInformationFile, 5 },
     { user_NtQueryDirectoryFile, 11 },
     { NtCreateDirectoryObject, 3 },
+    { NtCreateSymbolicLinkObject, 4 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
