@@ -7,8 +7,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
     NTSTATUS Status;
     UNICODE_STRING us;
     WCHAR* oa_us_alloc = NULL;
-
-    static const WCHAR prefix[] = L"\\Device\\UnixRoot";
+    device* dev;
 
     if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES) || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
@@ -39,30 +38,18 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
     }
 
-    // FIXME - resolve symlinks
-    // FIXME - check against object manager devices
+    Status = muwine_find_device(&us, &dev);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
-    if (us.Length <= sizeof(prefix) - sizeof(WCHAR)) {
-        Status = STATUS_OBJECT_PATH_INVALID;
+    if (!dev->create) {
+        Status = STATUS_NOT_IMPLEMENTED;
         goto end;
     }
 
-    if (wcsnicmp(us.Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1)) {
-        Status = STATUS_OBJECT_PATH_INVALID;
-        goto end;
-    }
-
-    us.Buffer += (sizeof(prefix) / sizeof(WCHAR)) - 1;
-    us.Length -= sizeof(prefix) - sizeof(WCHAR);
-
-    if (us.Length >= sizeof(WCHAR) && us.Buffer[0] != '\\') {
-        Status = STATUS_OBJECT_PATH_INVALID;
-        goto end;
-    }
-
-    Status = unixfs_create_file(FileHandle, DesiredAccess, &us, IoStatusBlock, AllocationSize, FileAttributes,
-                                ShareAccess, CreateDisposition, CreateOptions, EaBuffer, EaLength,
-                                ObjectAttributes->Attributes);
+    Status = dev->create(dev, FileHandle, DesiredAccess, &us, IoStatusBlock, AllocationSize, FileAttributes,
+                         ShareAccess, CreateDisposition, CreateOptions, EaBuffer, EaLength,
+                         ObjectAttributes->Attributes);
 
 end:
     if (oa_us_alloc)
@@ -197,10 +184,11 @@ NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
     if (!obj || obj->header.type != muwine_object_file)
         return STATUS_INVALID_HANDLE;
 
-    // FIXME - get FS device from object
+    if (!obj->dev->read)
+        return STATUS_NOT_IMPLEMENTED;
 
-    return unixfs_read(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
-                       ByteOffset, Key);
+    return obj->dev->read(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
+                          ByteOffset, Key);
 }
 
 NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
@@ -258,10 +246,11 @@ NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBloc
     if (!obj || obj->header.type != muwine_object_file)
         return STATUS_INVALID_HANDLE;
 
-    // FIXME - get FS device from object
+    if (!obj->dev->query_information)
+        return STATUS_NOT_IMPLEMENTED;
 
-    return unixfs_query_information(obj, IoStatusBlock, FileInformation, Length,
-                                    FileInformationClass);
+    return obj->dev->query_information(obj, IoStatusBlock, FileInformation, Length,
+                                       FileInformationClass);
 }
 
 NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
@@ -303,10 +292,11 @@ NTSTATUS NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine
     if (!obj || obj->header.type != muwine_object_file)
         return STATUS_INVALID_HANDLE;
 
-    // FIXME - get FS device from object
+    if (!obj->dev->write)
+        return STATUS_NOT_IMPLEMENTED;
 
-    return unixfs_write(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
-                        ByteOffset, Key);
+    return obj->dev->write(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
+                           ByteOffset, Key);
 }
 
 NTSTATUS user_NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
@@ -363,7 +353,8 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
     if (!obj || obj->header.type != muwine_object_file)
         return STATUS_INVALID_HANDLE;
 
-    // FIXME - get FS device from object
+    if (!obj->dev->set_information)
+        return STATUS_NOT_IMPLEMENTED;
 
     if (FileInformationClass == FileRenameInformation) {
         NTSTATUS Status;
@@ -372,8 +363,6 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
         bool us_alloc = false;
         ULONG fri2len;
         FILE_RENAME_INFORMATION* fri2;
-
-        static const WCHAR prefix[] = L"\\Device\\UnixRoot";
 
         if (Length < offsetof(FILE_RENAME_INFORMATION, FileName))
             return STATUS_INVALID_PARAMETER;
@@ -412,22 +401,22 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
 
         // check same device, and return STATUS_NOT_SAME_DEVICE if not
 
-        if (us.Length < sizeof(prefix) - sizeof(WCHAR)) {
+        if (us.Length < obj->dev->path.Length) {
             if (us_alloc)
                 kfree(us.Buffer);
 
             return STATUS_NOT_SAME_DEVICE;
         }
 
-        if (wcsnicmp(us.Buffer, prefix, (sizeof(prefix) / sizeof(WCHAR)) - 1) ||
-            (us.Length >= sizeof(prefix) - sizeof(WCHAR) && us.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1] != '\\')) {
+        if (wcsnicmp(us.Buffer, obj->dev->path.Buffer, obj->dev->path.Length / sizeof(WCHAR)) ||
+            (us.Length > obj->dev->path.Length && us.Buffer[obj->dev->path.Length / sizeof(WCHAR)] != '\\')) {
             if (us_alloc)
                 kfree(us.Buffer);
 
             return STATUS_NOT_SAME_DEVICE;
         }
 
-        fri2len = offsetof(FILE_RENAME_INFORMATION, FileName) + us.Length - (sizeof(prefix) - sizeof(WCHAR));
+        fri2len = offsetof(FILE_RENAME_INFORMATION, FileName) + us.Length - obj->dev->path.Length;
 
         fri2 = kmalloc(fri2len, GFP_KERNEL);
         if (!fri2) {
@@ -439,21 +428,21 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
 
         fri2->ReplaceIfExists = fri->ReplaceIfExists;
         fri2->RootDirectory = NULL;
-        fri2->FileNameLength = us.Length - (sizeof(prefix) - sizeof(WCHAR));
-        memcpy(fri2->FileName, us.Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1, fri2->FileNameLength);
+        fri2->FileNameLength = us.Length - obj->dev->path.Length;
+        memcpy(fri2->FileName, us.Buffer + (obj->dev->path.Length / sizeof(WCHAR)), fri2->FileNameLength);
 
         if (us_alloc)
             kfree(us.Buffer);
 
         // pass device-relative filename to unixfs_set_information
 
-        Status = unixfs_set_information(obj, IoStatusBlock, fri2, fri2len, FileInformationClass);
+        Status = obj->dev->set_information(obj, IoStatusBlock, fri2, fri2len, FileInformationClass);
 
         kfree(fri2);
 
         return Status;
     } else
-        return unixfs_set_information(obj, IoStatusBlock, FileInformation, Length, FileInformationClass);
+        return obj->dev->set_information(obj, IoStatusBlock, FileInformation, Length, FileInformationClass);
 }
 
 NTSTATUS user_NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
@@ -504,11 +493,12 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
     if (!obj || obj->header.type != muwine_object_file)
         return STATUS_INVALID_HANDLE;
 
-    // FIXME - get FS device from object
+    if (!obj->dev->query_directory)
+        return STATUS_NOT_IMPLEMENTED;
 
-    return unixfs_query_directory(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
-                                  Length, FileInformationClass, ReturnSingleEntry, FileMask,
-                                  RestartScan);
+    return obj->dev->query_directory(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
+                                     Length, FileInformationClass, ReturnSingleEntry, FileMask,
+                                     RestartScan);
 }
 
 NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,

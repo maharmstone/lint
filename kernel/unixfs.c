@@ -62,10 +62,10 @@ static void file_object_close(object_header* obj) {
     kfree(f);
 }
 
-NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
-                            PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
-                            ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
-                            PVOID EaBuffer, ULONG EaLength, ULONG oa_attributes) {
+static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
+                                   PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
+                                   ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
+                                   PVOID EaBuffer, ULONG EaLength, ULONG oa_attributes) {
     NTSTATUS Status;
     ULONG as_len;
     char* path;
@@ -73,8 +73,6 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     struct list_head* le;
     fcb* f = NULL;
     file_object* obj;
-
-    static const WCHAR prefix[] = L"\\Device\\UnixRoot";
 
     // FIXME - ADS
 
@@ -230,7 +228,7 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     obj->header.type = muwine_object_file;
 
     spin_lock_init(&obj->header.path_lock);
-    obj->header.path.Length = obj->header.path.MaximumLength = us->Length + sizeof(prefix) - sizeof(WCHAR);
+    obj->header.path.Length = obj->header.path.MaximumLength = us->Length + dev->path.Length;
     obj->header.path.Buffer = kmalloc(obj->header.path.Length, GFP_KERNEL);
 
     if (!obj->header.path.Buffer) {
@@ -251,13 +249,14 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    memcpy(obj->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
-    memcpy(&obj->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], us->Buffer, us->Length);
+    memcpy(obj->header.path.Buffer, dev->path.Buffer, dev->path.Length);
+    memcpy(&obj->header.path.Buffer[dev->path.Length / sizeof(WCHAR)], us->Buffer, us->Length);
 
     obj->header.close = file_object_close;
     obj->f = f;
     obj->flags = 0;
     obj->offset = 0;
+    obj->dev = dev;
 
     if (CreateOptions & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
         obj->flags |= FO_SYNCHRONOUS_IO;
@@ -308,8 +307,8 @@ NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICO
     return Status;
 }
 
-NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
-                                  ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                         ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     switch (FileInformationClass) {
         case FileStandardInformation: {
             FILE_STANDARD_INFORMATION* fsi = (FILE_STANDARD_INFORMATION*)FileInformation;
@@ -346,9 +345,9 @@ NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlo
     }
 }
 
-NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
-                     PULONG Key) {
+static NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                            PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                            PULONG Key) {
     ssize_t read;
     loff_t pos;
 
@@ -382,9 +381,9 @@ NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
     return STATUS_SUCCESS;
 }
 
-NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-                      PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
-                      PULONG Key) {
+static NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                             PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                             PULONG Key) {
     ssize_t written;
     loff_t pos;
 
@@ -449,8 +448,6 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     struct dentry* new_dentry;
     rename_iterate ri;
     UNICODE_STRING new_path;
-
-    static const WCHAR prefix[] = L"\\Device\\UnixRoot";
 
     // FIXME - handle POSIX-style deletes
     // FIXME - don't allow if directory with open children
@@ -555,7 +552,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
 
     spin_lock(&obj->header.path_lock);
 
-    new_path.Length = sizeof(prefix) - sizeof(WCHAR) + fri->FileNameLength;
+    new_path.Length = obj->dev->path.Length + fri->FileNameLength;
     new_path.Buffer = kmalloc(new_path.Length, GFP_KERNEL);
 
     if (!new_path.Buffer) {
@@ -566,8 +563,8 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     kfree(obj->header.path.Buffer);
     obj->header.path = new_path;
 
-    memcpy(obj->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
-    memcpy(obj->header.path.Buffer + (sizeof(prefix) / sizeof(WCHAR)) - 1,
+    memcpy(obj->header.path.Buffer, obj->dev->path.Buffer, obj->dev->path.Length);
+    memcpy(obj->header.path.Buffer + (obj->dev->path.Length / sizeof(WCHAR)),
            fri->FileName, fri->FileNameLength);
 
     spin_unlock(&obj->header.path_lock);
@@ -575,8 +572,8 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
-                                ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                       ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     switch (FileInformationClass) {
         case FileRenameInformation: {
             FILE_RENAME_INFORMATION* fri = FileInformation;
@@ -610,4 +607,41 @@ NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS muwine_init_unixroot(void) {
+    NTSTATUS Status;
+    device* dev;
+
+    static const WCHAR prefix[] = L"\\Device\\UnixRoot";
+
+    dev = kzalloc(sizeof(device), GFP_KERNEL);
+    if (!dev)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    dev->path.Length = sizeof(prefix) - sizeof(WCHAR);
+    dev->path.Buffer = kmalloc(dev->path.Length, GFP_KERNEL);
+    if (!dev->path.Buffer) {
+        kfree(dev);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(dev->path.Buffer, prefix, dev->path.Length);
+
+    dev->create = unixfs_create_file;
+    dev->read = unixfs_read;
+    dev->write = unixfs_write;
+    dev->query_information = unixfs_query_information;
+    dev->set_information = unixfs_set_information;
+    dev->query_directory = unixfs_query_directory;
+
+    Status = muwine_add_device(dev);
+
+    if (!NT_SUCCESS(Status)) {
+        kfree(dev->path.Buffer);
+        kfree(dev);
+        return Status;
+    }
+
+    return Status;
 }

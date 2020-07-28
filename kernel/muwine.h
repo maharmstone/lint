@@ -216,6 +216,8 @@ typedef struct {
     token* token;
 } process;
 
+typedef struct _device device;
+
 // muwine.c
 NTSTATUS muwine_error_to_ntstatus(int err);
 bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
@@ -484,23 +486,42 @@ typedef struct {
     fcb* f;
     ULONG flags;
     uint64_t offset;
+    device* dev;
 } file_object;
 
-NTSTATUS unixfs_create_file(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
-                            PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
-                            ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
-                            PVOID EaBuffer, ULONG EaLength, ULONG oa_attributes);
-NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
-                                  ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
-NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
-                     PULONG Key);
-NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-                      PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
-                      PULONG Key);
-NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
-                                ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
-NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-                                PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
-                                FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
-                                PUNICODE_STRING FileMask, BOOLEAN RestartScan);
+NTSTATUS muwine_init_unixroot(void);
+
+// obj.c
+typedef NTSTATUS (*muwine_create)(device* dev, PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
+                                  PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
+                                  ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
+                                  PVOID EaBuffer, ULONG EaLength, ULONG oa_attributes);
+typedef NTSTATUS (*muwine_query_information)(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock,
+                                             PVOID FileInformation, ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
+typedef NTSTATUS (*muwine_read)(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                                PULONG Key);
+typedef NTSTATUS (*muwine_write)(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                 PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
+                                 PULONG Key);
+typedef NTSTATUS (*muwine_set_information)(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
+                                           ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
+typedef NTSTATUS (*muwine_query_directory)(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                           PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                           FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                                           PUNICODE_STRING FileMask, BOOLEAN RestartScan);
+
+typedef struct _device {
+    struct list_head list;
+    UNICODE_STRING path;
+    muwine_create create;
+    muwine_read read;
+    muwine_write write;
+    muwine_query_information query_information;
+    muwine_set_information set_information;
+    muwine_query_directory query_directory;
+} device;
+
+NTSTATUS muwine_add_device(device* dev);
+void muwine_free_objs(void);
+NTSTATUS muwine_find_device(UNICODE_STRING* us, device** dev);
