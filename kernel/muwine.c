@@ -866,8 +866,6 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     if (p) {
         // force close of all open handles
 
-        spin_lock(&p->handle_list_lock);
-
         while (!list_empty(&p->handle_list)) {
             handle* hand = list_entry(p->handle_list.next, handle, list);
 
@@ -878,8 +876,6 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
 
             kfree(hand);
         }
-
-        spin_unlock(&p->handle_list_lock);
 
         muwine_free_token(p->token);
 
