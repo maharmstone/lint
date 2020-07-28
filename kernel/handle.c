@@ -149,8 +149,6 @@ NTSTATUS user_NtClose(HANDLE Handle) {
 }
 
 void muwine_free_kernel_handles(void) {
-    spin_lock(&kernel_handle_list_lock);
-
     while (!list_empty(&kernel_handle_list)) {
         handle* hand = list_entry(kernel_handle_list.next, handle, list);
 
@@ -161,6 +159,4 @@ void muwine_free_kernel_handles(void) {
 
         kfree(hand);
     }
-
-    spin_unlock(&kernel_handle_list_lock);
 }
