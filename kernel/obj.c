@@ -38,6 +38,97 @@ void muwine_free_objs(void) {
         dir_root.header.close(&dir_root.header);
 }
 
+static NTSTATUS resolve_symlinks(UNICODE_STRING* us, bool* done_alloc) {
+    UNICODE_STRING us2;
+    bool alloc = false;
+    unsigned int count = 0;
+
+    us2.Buffer = us->Buffer;
+    us2.Length = us->Length;
+
+    spin_lock(&symlink_list_lock);
+
+    while (true) {
+        struct list_head* le;
+        bool found = false;
+
+        le = symlink_list.next;
+        while (le != &symlink_list) {
+            symlink_cache* sc = list_entry(le, symlink_cache, list);
+
+            if (us2.Length < sc->src.Length) {
+                le = le->next;
+                continue;
+            }
+
+            if (us2.Length > sc->src.Length && us2.Buffer[sc->src.Length / sizeof(WCHAR)] != '\\') {
+                le = le->next;
+                continue;
+            }
+
+            if (wcsnicmp(us2.Buffer, sc->src.Buffer, sc->src.Length / sizeof(WCHAR))) {
+                le = le->next;
+                continue;
+            }
+
+            if (us2.Length == sc->src.Length) {
+                WCHAR* buf = kmalloc(sc->dest.Length, GFP_KERNEL); // FIXME - handle malloc failure
+
+                memcpy(buf, sc->dest.Buffer, sc->dest.Length);
+
+                if (alloc)
+                    kfree(us2.Buffer);
+
+                us2.Buffer = buf;
+                us2.Length = sc->dest.Length;
+
+                alloc = true;
+            } else {
+                unsigned int newlen = sc->dest.Length + us2.Length - sc->src.Length;
+                WCHAR* buf = kmalloc(newlen, GFP_KERNEL); // FIXME - handle malloc failure
+
+                memcpy(buf, sc->dest.Buffer, sc->dest.Length);
+                memcpy(&buf[sc->dest.Length / sizeof(WCHAR)],
+                       &us2.Buffer[sc->src.Length / sizeof(WCHAR)], us2.Length - sc->src.Length);
+
+                if (alloc)
+                    kfree(us2.Buffer);
+
+                us2.Buffer = buf;
+                us2.Length = newlen;
+
+                alloc = true;
+            }
+
+            found = true;
+            break;
+        }
+
+        if (!found)
+            break;
+
+        count++;
+
+        if (count == 20) { // don't loop too many times
+            spin_unlock(&symlink_list_lock);
+            kfree(us2.Buffer);
+            *done_alloc = false;
+            return STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    spin_unlock(&symlink_list_lock);
+
+    *done_alloc = alloc;
+
+    if (alloc) {
+        us->Buffer = us2.Buffer;
+        us->Length = us2.Length;
+    }
+
+    return STATUS_SUCCESS;
+}
+
 NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after) {
     UNICODE_STRING left, part;
     dir_object* parent;
@@ -480,6 +571,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     UNICODE_STRING us;
     symlink_object* obj;
     symlink_cache* cache;
+    bool us_alloc = false;
 
     if (!ObjectAttributes || !ObjectAttributes->ObjectName || !DestinationName || DestinationName->Length < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
@@ -490,13 +582,28 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     us.Buffer = ObjectAttributes->ObjectName->Buffer;
 
     // FIXME - resolve symlinks
+    Status = resolve_symlinks(&us, &us_alloc);
+    if (!NT_SUCCESS(Status)) {
+        if (us_alloc)
+            kfree(us.Buffer);
 
-    if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\')
+        return Status;
+    }
+
+    if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
+        if (us_alloc)
+            kfree(us.Buffer);
+
         return STATUS_INVALID_PARAMETER;
+    }
 
     obj = kzalloc(sizeof(symlink_object), GFP_KERNEL);
-    if (!obj)
+    if (!obj) {
+        if (us_alloc)
+            kfree(us.Buffer);
+
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     obj->header.refcount = 1;
     obj->header.type = muwine_object_symlink;
@@ -508,6 +615,10 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
     if (!obj->header.path.Buffer) {
         obj->header.close(&obj->header);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -518,6 +629,10 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 
     if (!obj->dest.Buffer) {
         obj->header.close(&obj->header);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -526,6 +641,10 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     Status = add_symlink_cache_entry(&obj->header.path, &obj->dest, &cache);
     if (!NT_SUCCESS(Status)) {
         obj->header.close(&obj->header);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
         return Status;
     }
 
@@ -535,8 +654,15 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 
     if (!NT_SUCCESS(Status)) {
         obj->header.close(&obj->header);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
         return Status;
     }
+
+    if (us_alloc)
+        kfree(us.Buffer);
 
     Status = muwine_add_handle(&obj->header, pHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
 

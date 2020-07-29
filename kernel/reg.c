@@ -555,7 +555,7 @@ static NTSTATUS open_key_in_hive(hive* h, UNICODE_STRING* us, uint32_t* ret_offs
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS resolve_symlinks(UNICODE_STRING* us, bool* done_alloc) {
+static NTSTATUS resolve_reg_symlinks(UNICODE_STRING* us, bool* done_alloc) {
     UNICODE_STRING us2;
     bool alloc = false;
     struct list_head* le;
@@ -699,7 +699,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     // FIXME - is this right? What if we're opening a symlink, but there's another symlink in the path?
     if (!(OpenOptions & REG_OPTION_OPEN_LINK)) {
-        Status = resolve_symlinks(&us, &us_alloc);
+        Status = resolve_reg_symlinks(&us, &us_alloc);
         if (!NT_SUCCESS(Status)) {
             if (oa_us_alloc)
                 kfree(oa_us_alloc);
@@ -3683,7 +3683,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     // FIXME - is this right? What if we're opening a symlink, but there's another symlink in the path?
     if (!(CreateOptions & REG_OPTION_CREATE_LINK)) {
-        Status = resolve_symlinks(&us, &us_alloc);
+        Status = resolve_reg_symlinks(&us, &us_alloc);
         if (!NT_SUCCESS(Status)) {
             if (oa_us_alloc)
                 kfree(oa_us_alloc);
