@@ -1034,6 +1034,12 @@ static int __init muwine_init(void) {
         return -ENOMEM;
     }
 
+    Status = muwine_init_objdir();
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "muwine_init_objdir returned %08x\n", Status);
+        return -ENOMEM;
+    }
+
     Status = muwine_init_unixroot();
     if (!NT_SUCCESS(Status)) {
         printk(KERN_ALERT "muwine_init_unixroot returned %08x\n", Status);

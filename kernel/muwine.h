@@ -192,12 +192,12 @@ typedef void (*muwine_close_object)(struct _object_header* obj);
 
 typedef enum {
     muwine_object_key,
-    muwine_object_file
+    muwine_object_file,
+    muwine_object_directory,
 } object_type;
 
 typedef struct _object_header {
     int refcount;
-    struct list_head list;
     object_type type;
     UNICODE_STRING path;
     spinlock_t path_lock;
@@ -525,6 +525,7 @@ typedef struct _device {
 NTSTATUS muwine_add_device(device* dev);
 void muwine_free_objs(void);
 NTSTATUS muwine_find_device(UNICODE_STRING* us, device** dev);
+NTSTATUS muwine_init_objdir(void);
 NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
                                       POBJECT_ATTRIBUTES ObjectAttributes);
