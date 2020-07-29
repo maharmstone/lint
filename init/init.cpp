@@ -216,6 +216,40 @@ static void create_current_control_set_symlink() {
                        u"\\Registry\\Machine\\System\\ControlSet001");
 }
 
+static void create_obj_symlink(const u16string_view& src, const u16string_view& dest) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    UNICODE_STRING srcus, destus;
+
+    srcus.Buffer = (WCHAR*)src.data();
+    srcus.Length = srcus.MaximumLength = (uint16_t)(src.length() * sizeof(char16_t));
+
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = nullptr;
+    oa.ObjectName = &srcus;
+    oa.Attributes = OBJ_PERMANENT;
+    oa.SecurityDescriptor = nullptr;
+    oa.SecurityQualityOfService = nullptr;
+
+    destus.Buffer = (WCHAR*)dest.data();
+    destus.Length = destus.MaximumLength = (uint16_t)(dest.length() * sizeof(char16_t));
+
+    Status = NtCreateSymbolicLinkObject(&h, 0, &oa, &destus);
+    if (!NT_SUCCESS(Status))
+        throw formatted_error("NtCreateSymbolicLinkObject returned {:08x}.", (uint32_t)Status);
+
+    NtClose(h);
+}
+
+static void create_drive_letters() {
+    // FIXME - should this be being done by mountmgr?
+    // At the very least, we should be considering the mountpoint list in SYSTEM
+
+    create_obj_symlink(u"\\DosDevices\\Z:", u"\\Device\\UnixRoot");
+    create_obj_symlink(u"\\DosDevices\\C:", u"\\Device\\UnixRoot\\root\\wine\\prefix\\drive_c"); // FIXME
+}
+
 int main() {
     try {
         create_reg_keys();
@@ -223,6 +257,8 @@ int main() {
         mount_hives();
 
         create_current_control_set_symlink();
+
+        create_drive_letters();
     } catch (const exception& e) {
         cerr << e.what() << endl;
         return 1;
