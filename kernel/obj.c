@@ -391,9 +391,6 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     UNICODE_STRING us;
     symlink_object* obj;
 
-    printk(KERN_INFO "NtCreateSymbolicLinkObject(%lx, %x, %px, %px): stub\n", (uintptr_t)pHandle, DesiredAccess,
-           ObjectAttributes, DestinationName);
-
     if (!ObjectAttributes || !ObjectAttributes->ObjectName || !DestinationName || DestinationName->Length < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
 
