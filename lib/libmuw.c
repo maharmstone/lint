@@ -448,3 +448,22 @@ NTSTATUS __stdcall NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK Desir
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATESYMBOLICLINKOBJECT, args);
 }
+
+NTSTATUS __stdcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
+                                   const LARGE_INTEGER* MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
+                                   HANDLE FileHandle) {
+    uintptr_t args[] = {
+        7,
+        (uintptr_t)SectionHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)MaximumSize,
+        (uintptr_t)SectionPageProtection,
+        (uintptr_t)AllocationAttributes,
+        (uintptr_t)FileHandle
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATESECTION, args);
+}
