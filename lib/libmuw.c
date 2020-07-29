@@ -420,3 +420,31 @@ NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYDIRECTORYFILE, args);
 }
+
+NTSTATUS __stdcall NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)DirectoryHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATEDIRECTORYOBJECT, args);
+}
+
+NTSTATUS __stdcall NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                                              PUNICODE_STRING DestinationName) {
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)pHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)DestinationName
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATESYMBOLICLINKOBJECT, args);
+}

@@ -275,6 +275,9 @@ NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC
                                         PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                                         FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                                         PUNICODE_STRING FileMask, BOOLEAN RestartScan);
+NTSTATUS __stdcall NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS __stdcall NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                                              PUNICODE_STRING DestinationName);
 
 #ifdef __cplusplus
 }
