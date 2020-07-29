@@ -56,6 +56,9 @@ static void file_object_close(object_header* obj) {
 
     up_write(&fcb_list_sem);
 
+    if (__sync_sub_and_fetch(&f->dev->header.refcount, 1) == 0)
+        f->dev->header.close(&f->dev->header);
+
     if (f->header.path.Buffer)
         kfree(f->header.path.Buffer);
 
@@ -258,6 +261,8 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     obj->offset = 0;
     obj->dev = dev;
 
+    __sync_add_and_fetch(&dev->header.refcount, 1);
+
     if (CreateOptions & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
         obj->flags |= FO_SYNCHRONOUS_IO;
 
@@ -277,6 +282,9 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         }
 
         up_write(&fcb_list_sem);
+
+        if (__sync_sub_and_fetch(&obj->dev->header.refcount, 1) == 0)
+            obj->dev->header.close(&obj->dev->header);
 
         kfree(obj->header.path.Buffer);
         kfree(obj);
@@ -651,13 +659,6 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->query_directory = unixfs_query_directory;
 
     Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header);
-    if (!NT_SUCCESS(Status)) {
-        dev->header.close(&dev->header);
-        return Status;
-    }
-
-    Status = muwine_add_device(dev);
-
     if (!NT_SUCCESS(Status)) {
         dev->header.close(&dev->header);
         return Status;

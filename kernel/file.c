@@ -5,7 +5,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
                       ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
                       PVOID EaBuffer, ULONG EaLength) {
     NTSTATUS Status;
-    UNICODE_STRING us;
+    UNICODE_STRING us, after;
     WCHAR* oa_us_alloc = NULL;
     device* dev;
 
@@ -38,18 +38,32 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
     }
 
-    Status = muwine_find_device(&us, &dev);
+    Status = muwine_open_object(&us, (object_header**)&dev, &after);
     if (!NT_SUCCESS(Status))
         goto end;
 
-    if (!dev->create) {
+    if (dev->header.type != muwine_object_device) {
+        if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
+            dev->header.close(&dev->header);
+
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
     }
 
-    Status = dev->create(dev, FileHandle, DesiredAccess, &us, IoStatusBlock, AllocationSize, FileAttributes,
+    if (!dev->create) {
+        if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
+            dev->header.close(&dev->header);
+
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    Status = dev->create(dev, FileHandle, DesiredAccess, &after, IoStatusBlock, AllocationSize, FileAttributes,
                          ShareAccess, CreateDisposition, CreateOptions, EaBuffer, EaLength,
                          ObjectAttributes->Attributes);
+
+    if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
+        dev->header.close(&dev->header);
 
 end:
     if (oa_us_alloc)

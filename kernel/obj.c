@@ -13,81 +13,108 @@ typedef struct {
     struct list_head children;
 } dir_object;
 
-LIST_HEAD(dev_list);
-DEFINE_SPINLOCK(dev_list_lock);
-
 dir_object dir_root;
 
-NTSTATUS muwine_add_device(device* dev) {
-    // FIXME - calculate depth
-    // FIXME - store devices in reverse order of depth
-
-    __sync_add_and_fetch(&dev->header.refcount, 1);
-
-    spin_lock(&dev_list_lock);
-    list_add_tail(&dev->list, &dev_list);
-    spin_unlock(&dev_list_lock);
-
-    return STATUS_SUCCESS;
-}
+static void next_part(UNICODE_STRING* left, UNICODE_STRING* part);
 
 void muwine_free_objs(void) {
-    spin_lock(&dev_list_lock);
-
-    while (!list_empty(&dev_list)) {
-        device* dev = list_entry(dev_list.next, device, list);
-
-        list_del(&dev->list);
-
-        if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
-            dev->header.close(&dev->header);
-    }
-
-    spin_unlock(&dev_list_lock);
-
     if (__sync_sub_and_fetch(&dir_root.header.refcount, 1) == 0)
         dir_root.header.close(&dir_root.header);
 }
 
-NTSTATUS muwine_find_device(UNICODE_STRING* us, device** dev) {
+NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after) {
+    UNICODE_STRING left, part;
+    dir_object* parent;
     struct list_head* le;
+
+    if (us->Length < sizeof(WCHAR) || us->Buffer[0] != '\\')
+        return STATUS_INVALID_PARAMETER;
 
     // FIXME - resolve symlinks
 
-    spin_lock(&dev_list_lock);
+    left.Buffer = &us->Buffer[1];
+    left.Length = us->Length - sizeof(WCHAR);
 
-    le = dev_list.next;
-    while (le != &dev_list) {
-        device* d = list_entry(le, device, list);
+    parent = &dir_root;
+    next_part(&left, &part);
 
-        if (us->Length < d->header.path.Length) {
+    __sync_add_and_fetch(&parent->header.refcount, 1);
+
+    do {
+        dir_object* new_parent = NULL;
+
+        spin_lock(&parent->children_lock);
+
+        le = parent->children.next;
+        while (le != &parent->children) {
+            dir_item* item = list_entry(le, dir_item, list);
+
+            if (item->name_len == part.Length && !wcsnicmp(item->name, part.Buffer, part.Length / sizeof(WCHAR))) {
+                if (left.Length == 0) {
+                    *obj = item->object;
+
+                    __sync_add_and_fetch(&item->object->refcount, 1);
+
+                    spin_unlock(&parent->children_lock);
+
+                    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
+                        parent->header.close(&parent->header);
+
+                    after->Buffer = NULL;
+                    after->Length = 0;
+
+                    return STATUS_SUCCESS;
+                }
+
+                if (item->object->type != muwine_object_directory) {
+                    *obj = item->object;
+
+                    __sync_add_and_fetch(&item->object->refcount, 1);
+
+                    spin_unlock(&parent->children_lock);
+
+                    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
+                        parent->header.close(&parent->header);
+
+                    after->Buffer = left.Buffer;
+                    after->Length = left.Length;
+
+                    return STATUS_SUCCESS;
+                }
+
+                __sync_add_and_fetch(&item->object->refcount, 1);
+                new_parent = (dir_object*)item->object;
+
+                break;
+            }
+
             le = le->next;
-            continue;
         }
 
-        if (wcsnicmp(us->Buffer, d->header.path.Buffer, d->header.path.Length / sizeof(WCHAR))) {
-            le = le->next;
-            continue;
+        if (!new_parent) {
+            *obj = &parent->header;
+
+            spin_unlock(&parent->children_lock);
+
+            after->Buffer = left.Buffer;
+            after->Length = left.Length;
+
+            return STATUS_SUCCESS;
         }
 
-        if (us->Length > d->header.path.Length && us->Buffer[d->header.path.Length / sizeof(WCHAR)] != '\\') {
-            le = le->next;
-            continue;
-        }
+        spin_unlock(&parent->children_lock);
 
-        us->Buffer += d->header.path.Length / sizeof(WCHAR);
-        us->Length -= d->header.path.Length;
+        if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
+            parent->header.close(&parent->header);
 
-        *dev = d;
+        parent = new_parent;
+        next_part(&left, &part);
+    } while (true);
 
-        spin_unlock(&dev_list_lock);
+    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
+        parent->header.close(&parent->header);
 
-        return STATUS_SUCCESS;
-    }
-
-    spin_unlock(&dev_list_lock);
-
-    return STATUS_OBJECT_PATH_NOT_FOUND;
+    return STATUS_INTERNAL_ERROR;
 }
 
 static void dir_object_close(object_header* obj) {

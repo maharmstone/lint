@@ -514,7 +514,6 @@ typedef NTSTATUS (*muwine_query_directory)(file_object* obj, HANDLE Event, PIO_A
 
 typedef struct _device {
     object_header header;
-    struct list_head list;
     muwine_create create;
     muwine_read read;
     muwine_write write;
@@ -523,9 +522,8 @@ typedef struct _device {
     muwine_query_directory query_directory;
 } device;
 
-NTSTATUS muwine_add_device(device* dev);
 void muwine_free_objs(void);
-NTSTATUS muwine_find_device(UNICODE_STRING* us, device** dev);
+NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after);
 NTSTATUS muwine_init_objdir(void);
 NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
