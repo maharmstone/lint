@@ -438,6 +438,7 @@ NTSTATUS muwine_init_objdir(void) {
     OBJECT_ATTRIBUTES oa;
 
     static const WCHAR device_dir[] = L"\\Device";
+    static const WCHAR global_dir[] = L"\\GLOBAL??";
 
     init_dir(&dir_root);
 
@@ -460,6 +461,17 @@ NTSTATUS muwine_init_objdir(void) {
     oa.Attributes = OBJ_KERNEL_HANDLE | OBJ_PERMANENT;
     oa.SecurityDescriptor = NULL;
     oa.SecurityQualityOfService = NULL;
+
+    Status = NtCreateDirectoryObject(&dir, 0, &oa);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    NtClose(dir);
+
+    // create \\GLOBAL?? dir
+
+    us.Buffer = (WCHAR*)global_dir;
+    us.Length = us.MaximumLength = sizeof(global_dir) - sizeof(WCHAR);
 
     Status = NtCreateDirectoryObject(&dir, 0, &oa);
     if (!NT_SUCCESS(Status))
