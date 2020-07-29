@@ -10,8 +10,8 @@ typedef struct _fcb {
     char path[1];
 } fcb;
 
-LIST_HEAD(fcb_list);
-DECLARE_RWSEM(fcb_list_sem);
+static LIST_HEAD(fcb_list);
+static DECLARE_RWSEM(fcb_list_sem);
 
 static int stricmp(char* s1, char* s2) {
     // FIXME - do this properly (including Greek, Cyrillic, etc.)

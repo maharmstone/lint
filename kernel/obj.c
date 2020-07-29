@@ -14,11 +14,22 @@ typedef struct {
 } dir_object;
 
 typedef struct {
+    struct list_head list;
+    unsigned int depth;
+    UNICODE_STRING src;
+    UNICODE_STRING dest;
+} symlink_cache;
+
+typedef struct {
     object_header header;
     UNICODE_STRING dest;
+    symlink_cache* cache;
 } symlink_object;
 
 dir_object dir_root;
+
+static LIST_HEAD(symlink_list);
+static DEFINE_SPINLOCK(symlink_list_lock);
 
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part);
 
@@ -382,7 +393,85 @@ static void symlink_object_close(object_header* obj) {
     if (symlink->header.path.Buffer)
         kfree(symlink->header.path.Buffer);
 
+    if (symlink->cache) {
+        spin_lock(&symlink_list_lock);
+        list_del(&symlink->cache->list);
+        spin_unlock(&symlink_list_lock);
+
+        kfree(symlink->cache->src.Buffer);
+        kfree(symlink->cache->dest.Buffer);
+        kfree(symlink->cache);
+    }
+
     kfree(symlink);
+}
+
+static NTSTATUS add_symlink_cache_entry(UNICODE_STRING* src, UNICODE_STRING* dest,
+                                        symlink_cache** cache) {
+    symlink_cache* sc;
+    unsigned int i;
+    struct list_head* le;
+
+    sc = kmalloc(sizeof(symlink_cache), GFP_KERNEL);
+    if (!sc)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    sc->depth = 0;
+
+    for (i = 0; i < src->Length / sizeof(WCHAR); i++) {
+        if (src->Buffer[i] == '\\')
+            sc->depth++;
+    }
+
+    sc->src.Length = src->Length;
+    sc->src.Buffer = kmalloc(sc->src.Length, GFP_KERNEL);
+
+    if (!sc->src.Buffer) {
+        kfree(sc);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(sc->src.Buffer, src->Buffer, src->Length);
+
+    sc->dest.Length = dest->Length;
+    sc->dest.Buffer = kmalloc(sc->dest.Length, GFP_KERNEL);
+
+    if (!sc->dest.Buffer) {
+        kfree(sc->src.Buffer);
+        kfree(sc);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(sc->dest.Buffer, dest->Buffer, dest->Length);
+
+    spin_lock(&symlink_list_lock);
+
+    // insert into symlink list, reverse-ordered by depth
+
+    le = symlink_list.next;
+    while (le != &symlink_list) {
+        symlink_cache* sc2 = list_entry(le, symlink_cache, list);
+
+        if (sc2->depth < sc->depth) {
+            list_add(&sc->list, le->prev);
+
+            spin_unlock(&symlink_list_lock);
+
+            *cache = sc;
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->next;
+    }
+
+    list_add_tail(&sc->list, &symlink_list);
+
+    spin_unlock(&symlink_list_lock);
+
+    *cache = sc;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
@@ -390,6 +479,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     NTSTATUS Status;
     UNICODE_STRING us;
     symlink_object* obj;
+    symlink_cache* cache;
 
     if (!ObjectAttributes || !ObjectAttributes->ObjectName || !DestinationName || DestinationName->Length < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
@@ -398,6 +488,11 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 
     us.Length = ObjectAttributes->ObjectName->Length;
     us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+    // FIXME - resolve symlinks
+
+    if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\')
+        return STATUS_INVALID_PARAMETER;
 
     obj = kzalloc(sizeof(symlink_object), GFP_KERNEL);
     if (!obj)
@@ -427,6 +522,14 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     }
 
     memcpy(obj->dest.Buffer, DestinationName->Buffer, DestinationName->Length);
+
+    Status = add_symlink_cache_entry(&obj->header.path, &obj->dest, &cache);
+    if (!NT_SUCCESS(Status)) {
+        obj->header.close(&obj->header);
+        return Status;
+    }
+
+    obj->cache = cache;
 
     Status = muwine_add_entry_in_hierarchy(&us, &obj->header);
 

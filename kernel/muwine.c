@@ -44,8 +44,8 @@ static struct muwine_func funcs[] = {
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
 
-LIST_HEAD(pid_list);
-DEFINE_SPINLOCK(pid_list_lock);
+static LIST_HEAD(pid_list);
+static DEFINE_SPINLOCK(pid_list_lock);
 
 static struct file_operations file_ops = {
     .open = muwine_open,

@@ -15,11 +15,11 @@ static int reboot_callback(struct notifier_block* self, unsigned long val, void*
 
 static const WCHAR symlinkval[] = L"SymbolicLinkValue";
 
-LIST_HEAD(hive_list);
-DECLARE_RWSEM(hive_list_sem);
-LIST_HEAD(symlink_list);
-DEFINE_RWLOCK(symlink_lock);
-DEFINE_TIMER(reg_flush_timer, reg_flush_timer_handler);
+static LIST_HEAD(hive_list);
+static DECLARE_RWSEM(hive_list_sem);
+static LIST_HEAD(symlink_list);
+static DEFINE_RWLOCK(symlink_lock);
+static DEFINE_TIMER(reg_flush_timer, reg_flush_timer_handler);
 
 static struct task_struct* reg_flush_thread = NULL;
 static bool reg_thread_running = true;

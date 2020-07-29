@@ -2,8 +2,8 @@
 
 static uintptr_t next_kernel_handle_no = KERNEL_HANDLE_MASK;
 
-LIST_HEAD(kernel_handle_list);
-DEFINE_SPINLOCK(kernel_handle_list_lock);
+static LIST_HEAD(kernel_handle_list);
+static DEFINE_SPINLOCK(kernel_handle_list_lock);
 
 NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel) {
     handle* hand;
