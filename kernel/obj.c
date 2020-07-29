@@ -505,12 +505,13 @@ NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAcc
 
 NTSTATUS muwine_init_objdir(void) {
     NTSTATUS Status;
-    HANDLE dir;
-    UNICODE_STRING us;
+    HANDLE dir, symlink;
+    UNICODE_STRING us, us2;
     OBJECT_ATTRIBUTES oa;
 
     static const WCHAR device_dir[] = L"\\Device";
     static const WCHAR global_dir[] = L"\\GLOBAL??";
+    static const WCHAR global_global[] = L"\\GLOBAL??\\Global";
 
     init_dir(&dir_root);
 
@@ -550,6 +551,20 @@ NTSTATUS muwine_init_objdir(void) {
         return Status;
 
     NtClose(dir);
+
+    // create symlink: \\GLOBAL??\\Global -> \\GLOBAL??
+
+    us.Buffer = (WCHAR*)global_global;
+    us.Length = us.MaximumLength = sizeof(global_global) - sizeof(WCHAR);
+
+    us2.Buffer = (WCHAR*)global_dir;
+    us2.Length = us.MaximumLength = sizeof(global_dir) - sizeof(WCHAR);
+
+    Status = NtCreateSymbolicLinkObject(&symlink, 0, &oa, &us2);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    NtClose(symlink);
 
     return STATUS_SUCCESS;
 }
