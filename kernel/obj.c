@@ -126,3 +126,56 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                                         PUNICODE_STRING DestinationName) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    UNICODE_STRING dest;
+
+    if (!pHandle || !ObjectAttributes || !DestinationName)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!get_user_unicode_string(&dest, DestinationName)) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    Status = NtCreateSymbolicLinkObject(&h, DesiredAccess, &oa, &dest);
+
+    if (DestinationName && dest.Buffer)
+        kfree(dest.Buffer);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, pHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
+}
