@@ -152,26 +152,18 @@ static void next_part(UNICODE_STRING* left, UNICODE_STRING* part) {
     left->Length = 0;
 }
 
-NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
-    UNICODE_STRING us, left, part;
+static NTSTATUS add_entry_in_hierarchy(UNICODE_STRING* us, object_header* obj) {
+    UNICODE_STRING left, part;
     dir_object* parent;
     struct list_head* le;
 
-    if (!ObjectAttributes || !ObjectAttributes->ObjectName)
-        return STATUS_INVALID_PARAMETER;
-
-    // FIXME - RootDirectory
-
-    us.Length = ObjectAttributes->ObjectName->Length;
-    us.Buffer = ObjectAttributes->ObjectName->Buffer;
-
-    if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\')
+    if (us->Length < sizeof(WCHAR) || us->Buffer[0] != '\\')
         return STATUS_INVALID_PARAMETER;
 
     // FIXME - resolve symlinks
 
-    left.Buffer = &us.Buffer[1];
-    left.Length = us.Length - sizeof(WCHAR);
+    left.Buffer = &us->Buffer[1];
+    left.Length = us->Length - sizeof(WCHAR);
 
     parent = &dir_root;
     next_part(&left, &part);
@@ -216,40 +208,10 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
         }
 
         if (!new_parent && left.Length == 0) {
-            NTSTATUS Status;
-            dir_object* obj = kzalloc(sizeof(dir_object), GFP_KERNEL);
             dir_item* item;
-
-            if (!obj) {
-                spin_unlock(&parent->children_lock);
-
-                if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-                    parent->header.close(&parent->header);
-
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            init_dir(obj);
-
-            obj->header.path.Length = us.Length;
-            obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
-            if (!obj->header.path.Buffer) {
-                obj->header.close(&obj->header);
-
-                spin_unlock(&parent->children_lock);
-
-                if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-                    parent->header.close(&parent->header);
-
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
 
             item = kmalloc(offsetof(dir_item, name) + part.Length, GFP_KERNEL);
             if (!item) {
-                obj->header.close(&obj->header);
-
                 spin_unlock(&parent->children_lock);
 
                 if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
@@ -258,11 +220,11 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            obj->header.refcount++; // for handle
-
-            item->object = &obj->header;
+            item->object = obj;
             item->name_len = part.Length;
             memcpy(item->name, part.Buffer, part.Length);
+
+            __sync_add_and_fetch(&obj->refcount, 1);
 
             list_add_tail(&item->list, &parent->children);
 
@@ -270,15 +232,6 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
 
             if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
                 parent->header.close(&parent->header);
-
-            Status = muwine_add_handle(&obj->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
-
-            if (!NT_SUCCESS(Status)) {
-                if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                    obj->header.close(&obj->header);
-
-                return Status;
-            }
 
             return STATUS_SUCCESS;
         }
@@ -298,6 +251,53 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
         parent->header.close(&parent->header);
 
     return STATUS_OBJECT_PATH_INVALID;
+}
+
+NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    NTSTATUS Status;
+    UNICODE_STRING us;
+    dir_object* obj;
+
+    if (!ObjectAttributes || !ObjectAttributes->ObjectName)
+        return STATUS_INVALID_PARAMETER;
+
+    // FIXME - RootDirectory
+
+    us.Length = ObjectAttributes->ObjectName->Length;
+    us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+    obj = kzalloc(sizeof(dir_object), GFP_KERNEL);
+    if (!obj)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    init_dir(obj);
+
+    obj->header.path.Length = us.Length;
+    obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+    if (!obj->header.path.Buffer) {
+        obj->header.close(&obj->header);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
+
+    Status = add_entry_in_hierarchy(&us, &obj->header);
+
+    if (!NT_SUCCESS(Status)) {
+        obj->header.close(&obj->header);
+        return Status;
+    }
+
+    Status = muwine_add_handle(&obj->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
+
+    if (!NT_SUCCESS(Status)) {
+        if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
+            obj->header.close(&obj->header);
+
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
