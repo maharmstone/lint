@@ -513,6 +513,7 @@ NTSTATUS muwine_init_objdir(void) {
     static const WCHAR global_dir[] = L"\\GLOBAL??";
     static const WCHAR global_global[] = L"\\GLOBAL??\\Global";
     static const WCHAR qmqm[] = L"\\??";
+    static const WCHAR dosdevices[] = L"\\DosDevices";
 
     init_dir(&dir_root);
 
@@ -576,6 +577,20 @@ NTSTATUS muwine_init_objdir(void) {
 
     us2.Buffer = (WCHAR*)global_dir;
     us2.Length = us.MaximumLength = sizeof(global_dir) - sizeof(WCHAR);
+
+    Status = NtCreateSymbolicLinkObject(&symlink, 0, &oa, &us2);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    NtClose(symlink);
+
+    // create symlink: \\DosDevices -> \\??
+
+    us.Buffer = (WCHAR*)dosdevices;
+    us.Length = us.MaximumLength = sizeof(dosdevices) - sizeof(WCHAR);
+
+    us2.Buffer = (WCHAR*)qmqm;
+    us2.Length = us.MaximumLength = sizeof(qmqm) - sizeof(WCHAR);
 
     Status = NtCreateSymbolicLinkObject(&symlink, 0, &oa, &us2);
     if (!NT_SUCCESS(Status))
