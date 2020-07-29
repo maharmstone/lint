@@ -334,18 +334,32 @@ static void next_part(UNICODE_STRING* left, UNICODE_STRING* part) {
     left->Length = 0;
 }
 
-NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj) {
-    UNICODE_STRING left, part;
+NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj, bool do_resolve_symlinks) {
+    NTSTATUS Status;
+    UNICODE_STRING us2, left, part;
     dir_object* parent;
     struct list_head* le;
+    bool us_alloc;
 
-    if (us->Length < sizeof(WCHAR) || us->Buffer[0] != '\\')
+    us2.Buffer = us->Buffer;
+    us2.Length = us->Length;
+
+    if (do_resolve_symlinks) {
+        Status = resolve_symlinks(&us2, &us_alloc);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    } else
+        us_alloc = false;
+
+    if (us2.Length < sizeof(WCHAR) || us2.Buffer[0] != '\\') {
+        if (us_alloc)
+            kfree(us2.Buffer);
+
         return STATUS_INVALID_PARAMETER;
+    }
 
-    // FIXME - resolve symlinks
-
-    left.Buffer = &us->Buffer[1];
-    left.Length = us->Length - sizeof(WCHAR);
+    left.Buffer = &us2.Buffer[1];
+    left.Length = us2.Length - sizeof(WCHAR);
 
     parent = &dir_root;
     next_part(&left, &part);
@@ -368,6 +382,9 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
                     if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
                         parent->header.close(&parent->header);
 
+                    if (us_alloc)
+                        kfree(us2.Buffer);
+
                     return STATUS_OBJECT_NAME_COLLISION;
                 }
 
@@ -376,6 +393,9 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
 
                     if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
                         parent->header.close(&parent->header);
+
+                    if (us_alloc)
+                        kfree(us2.Buffer);
 
                     return STATUS_OBJECT_PATH_INVALID;
                 }
@@ -399,6 +419,9 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
                 if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
                     parent->header.close(&parent->header);
 
+                if (us_alloc)
+                    kfree(us2.Buffer);
+
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
@@ -414,6 +437,9 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
 
             if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
                 parent->header.close(&parent->header);
+
+            if (us_alloc)
+                kfree(us2.Buffer);
 
             return STATUS_SUCCESS;
         }
@@ -432,6 +458,9 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
 
     if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
         parent->header.close(&parent->header);
+
+    if (us_alloc)
+        kfree(us2.Buffer);
 
     return STATUS_OBJECT_PATH_INVALID;
 }
@@ -464,7 +493,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
 
     memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
 
-    Status = muwine_add_entry_in_hierarchy(&us, &obj->header);
+    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, true);
 
     if (!NT_SUCCESS(Status)) {
         obj->header.close(&obj->header);
@@ -627,7 +656,6 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     us.Length = ObjectAttributes->ObjectName->Length;
     us.Buffer = ObjectAttributes->ObjectName->Buffer;
 
-    // FIXME - resolve symlinks
     Status = resolve_symlinks(&us, &us_alloc);
     if (!NT_SUCCESS(Status)) {
         if (us_alloc)
@@ -696,7 +724,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 
     obj->cache = cache;
 
-    Status = muwine_add_entry_in_hierarchy(&us, &obj->header);
+    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, false);
 
     if (!NT_SUCCESS(Status)) {
         obj->header.close(&obj->header);

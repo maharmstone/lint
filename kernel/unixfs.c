@@ -658,7 +658,7 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->set_information = unixfs_set_information;
     dev->query_directory = unixfs_query_directory;
 
-    Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header);
+    Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header, true);
     if (!NT_SUCCESS(Status)) {
         dev->header.close(&dev->header);
         return Status;
