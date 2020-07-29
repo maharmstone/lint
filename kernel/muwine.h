@@ -494,7 +494,7 @@ typedef struct {
 NTSTATUS muwine_init_unixroot(void);
 
 // obj.c
-typedef NTSTATUS (*muwine_create)(device* dev, PHANDLE FileHandle, ACCESS_MASK DesiredAccess, UNICODE_STRING* us,
+typedef NTSTATUS (*muwine_create)(device* dev, PHANDLE FileHandle, ACCESS_MASK DesiredAccess, const UNICODE_STRING* us,
                                   PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                                   ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
                                   PVOID EaBuffer, ULONG EaLength, ULONG oa_attributes);
@@ -524,7 +524,8 @@ typedef struct _device {
 } device;
 
 void muwine_free_objs(void);
-NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after);
+NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,
+                            bool* after_alloc);
 NTSTATUS muwine_init_objdir(void);
 NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,

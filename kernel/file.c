@@ -8,6 +8,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
     UNICODE_STRING us, after;
     WCHAR* oa_us_alloc = NULL;
     device* dev;
+    bool after_alloc = false;
 
     if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES) || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
@@ -38,7 +39,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
     }
 
-    Status = muwine_open_object(&us, (object_header**)&dev, &after);
+    Status = muwine_open_object(&us, (object_header**)&dev, &after, &after_alloc);
     if (!NT_SUCCESS(Status))
         goto end;
 
@@ -68,6 +69,9 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
 end:
     if (oa_us_alloc)
         kfree(oa_us_alloc);
+
+    if (after_alloc)
+        kfree(after.Buffer);
 
     return Status;
 }

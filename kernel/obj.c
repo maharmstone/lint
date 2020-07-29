@@ -129,18 +129,30 @@ static NTSTATUS resolve_symlinks(UNICODE_STRING* us, bool* done_alloc) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after) {
-    UNICODE_STRING left, part;
+NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,
+                            bool* after_alloc) {
+    NTSTATUS Status;
+    UNICODE_STRING us2, left, part;
     dir_object* parent;
     struct list_head* le;
+    bool us_alloc = false;
 
-    if (us->Length < sizeof(WCHAR) || us->Buffer[0] != '\\')
+    us2.Length = us->Length;
+    us2.Buffer = us->Buffer;
+
+    Status = resolve_symlinks(&us2, &us_alloc);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    if (us2.Length < sizeof(WCHAR) || us2.Buffer[0] != '\\') {
+        if (us_alloc)
+            kfree(us2.Buffer);
+
         return STATUS_INVALID_PARAMETER;
+    }
 
-    // FIXME - resolve symlinks
-
-    left.Buffer = &us->Buffer[1];
-    left.Length = us->Length - sizeof(WCHAR);
+    left.Buffer = &us2.Buffer[1];
+    left.Length = us2.Length - sizeof(WCHAR);
 
     parent = &dir_root;
     next_part(&left, &part);
@@ -170,6 +182,8 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
                     after->Buffer = NULL;
                     after->Length = 0;
 
+                    *after_alloc = false;
+
                     return STATUS_SUCCESS;
                 }
 
@@ -183,8 +197,21 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
                     if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
                         parent->header.close(&parent->header);
 
-                    after->Buffer = left.Buffer;
+                    *after_alloc = us_alloc;
                     after->Length = left.Length;
+
+                    if (us_alloc) {
+                        after->Buffer = kmalloc(after->Length, GFP_KERNEL);
+                        if (!after->Buffer) {
+                            kfree(us2.Buffer);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+
+                        memcpy(after->Buffer, left.Buffer, left.Length);
+
+                        kfree(us2.Buffer);
+                    } else
+                        after->Buffer = left.Buffer;
 
                     return STATUS_SUCCESS;
                 }
@@ -206,6 +233,22 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
             after->Buffer = left.Buffer;
             after->Length = left.Length;
 
+            *after_alloc = us_alloc;
+            after->Length = left.Length;
+
+            if (us_alloc) {
+                after->Buffer = kmalloc(after->Length, GFP_KERNEL);
+                if (!after->Buffer) {
+                    kfree(us2.Buffer);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                memcpy(after->Buffer, left.Buffer, left.Length);
+
+                kfree(us2.Buffer);
+            } else
+                after->Buffer = left.Buffer;
+
             return STATUS_SUCCESS;
         }
 
@@ -220,6 +263,9 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
 
     if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
         parent->header.close(&parent->header);
+
+    if (us_alloc)
+        kfree(us2.Buffer);
 
     return STATUS_INTERNAL_ERROR;
 }
