@@ -512,6 +512,7 @@ NTSTATUS muwine_init_objdir(void) {
     static const WCHAR device_dir[] = L"\\Device";
     static const WCHAR global_dir[] = L"\\GLOBAL??";
     static const WCHAR global_global[] = L"\\GLOBAL??\\Global";
+    static const WCHAR qmqm[] = L"\\??";
 
     init_dir(&dir_root);
 
@@ -556,6 +557,22 @@ NTSTATUS muwine_init_objdir(void) {
 
     us.Buffer = (WCHAR*)global_global;
     us.Length = us.MaximumLength = sizeof(global_global) - sizeof(WCHAR);
+
+    us2.Buffer = (WCHAR*)global_dir;
+    us2.Length = us.MaximumLength = sizeof(global_dir) - sizeof(WCHAR);
+
+    Status = NtCreateSymbolicLinkObject(&symlink, 0, &oa, &us2);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    NtClose(symlink);
+
+    // HACK - create symlink: \\?? -> \\GLOBAL??
+    // FIXME - this isn't correct. \\?? is actually a pseudo-directory, combining both \\GLOBAL??
+    // and the user's session directory
+
+    us.Buffer = (WCHAR*)qmqm;
+    us.Length = us.MaximumLength = sizeof(qmqm) - sizeof(WCHAR);
 
     us2.Buffer = (WCHAR*)global_dir;
     us2.Length = us.MaximumLength = sizeof(global_dir) - sizeof(WCHAR);
