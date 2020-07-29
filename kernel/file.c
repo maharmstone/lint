@@ -544,7 +544,7 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
         kfree(buf);
     }
 
-    if (FileMask)
+    if (FileMask && mask.Buffer)
         kfree(mask.Buffer);
 
     return Status;
