@@ -401,22 +401,22 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
 
         // check same device, and return STATUS_NOT_SAME_DEVICE if not
 
-        if (us.Length < obj->dev->path.Length) {
+        if (us.Length < obj->dev->header.path.Length) {
             if (us_alloc)
                 kfree(us.Buffer);
 
             return STATUS_NOT_SAME_DEVICE;
         }
 
-        if (wcsnicmp(us.Buffer, obj->dev->path.Buffer, obj->dev->path.Length / sizeof(WCHAR)) ||
-            (us.Length > obj->dev->path.Length && us.Buffer[obj->dev->path.Length / sizeof(WCHAR)] != '\\')) {
+        if (wcsnicmp(us.Buffer, obj->dev->header.path.Buffer, obj->dev->header.path.Length / sizeof(WCHAR)) ||
+            (us.Length > obj->dev->header.path.Length && us.Buffer[obj->dev->header.path.Length / sizeof(WCHAR)] != '\\')) {
             if (us_alloc)
                 kfree(us.Buffer);
 
             return STATUS_NOT_SAME_DEVICE;
         }
 
-        fri2len = offsetof(FILE_RENAME_INFORMATION, FileName) + us.Length - obj->dev->path.Length;
+        fri2len = offsetof(FILE_RENAME_INFORMATION, FileName) + us.Length - obj->dev->header.path.Length;
 
         fri2 = kmalloc(fri2len, GFP_KERNEL);
         if (!fri2) {
@@ -428,8 +428,8 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
 
         fri2->ReplaceIfExists = fri->ReplaceIfExists;
         fri2->RootDirectory = NULL;
-        fri2->FileNameLength = us.Length - obj->dev->path.Length;
-        memcpy(fri2->FileName, us.Buffer + (obj->dev->path.Length / sizeof(WCHAR)), fri2->FileNameLength);
+        fri2->FileNameLength = us.Length - obj->dev->header.path.Length;
+        memcpy(fri2->FileName, us.Buffer + (obj->dev->header.path.Length / sizeof(WCHAR)), fri2->FileNameLength);
 
         if (us_alloc)
             kfree(us.Buffer);

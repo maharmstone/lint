@@ -22,6 +22,8 @@ NTSTATUS muwine_add_device(device* dev) {
     // FIXME - calculate depth
     // FIXME - store devices in reverse order of depth
 
+    __sync_add_and_fetch(&dev->header.refcount, 1);
+
     spin_lock(&dev_list_lock);
     list_add_tail(&dev->list, &dev_list);
     spin_unlock(&dev_list_lock);
@@ -37,8 +39,8 @@ void muwine_free_objs(void) {
 
         list_del(&dev->list);
 
-        kfree(dev->path.Buffer);
-        kfree(dev);
+        if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
+            dev->header.close(&dev->header);
     }
 
     spin_unlock(&dev_list_lock);
@@ -58,23 +60,23 @@ NTSTATUS muwine_find_device(UNICODE_STRING* us, device** dev) {
     while (le != &dev_list) {
         device* d = list_entry(le, device, list);
 
-        if (us->Length < d->path.Length) {
+        if (us->Length < d->header.path.Length) {
             le = le->next;
             continue;
         }
 
-        if (wcsnicmp(us->Buffer, d->path.Buffer, d->path.Length / sizeof(WCHAR))) {
+        if (wcsnicmp(us->Buffer, d->header.path.Buffer, d->header.path.Length / sizeof(WCHAR))) {
             le = le->next;
             continue;
         }
 
-        if (us->Length > d->path.Length && us->Buffer[d->path.Length / sizeof(WCHAR)] != '\\') {
+        if (us->Length > d->header.path.Length && us->Buffer[d->header.path.Length / sizeof(WCHAR)] != '\\') {
             le = le->next;
             continue;
         }
 
-        us->Buffer += d->path.Length / sizeof(WCHAR);
-        us->Length -= d->path.Length;
+        us->Buffer += d->header.path.Length / sizeof(WCHAR);
+        us->Length -= d->header.path.Length;
 
         *dev = d;
 
@@ -152,7 +154,7 @@ static void next_part(UNICODE_STRING* left, UNICODE_STRING* part) {
     left->Length = 0;
 }
 
-static NTSTATUS add_entry_in_hierarchy(UNICODE_STRING* us, object_header* obj) {
+NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj) {
     UNICODE_STRING left, part;
     dir_object* parent;
     struct list_head* le;
@@ -245,6 +247,7 @@ static NTSTATUS add_entry_in_hierarchy(UNICODE_STRING* us, object_header* obj) {
             parent->header.close(&parent->header);
 
         parent = new_parent;
+        next_part(&left, &part);
     } while (true);
 
     if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
@@ -281,7 +284,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
 
     memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
 
-    Status = add_entry_in_hierarchy(&us, &obj->header);
+    Status = muwine_add_entry_in_hierarchy(&us, &obj->header);
 
     if (!NT_SUCCESS(Status)) {
         obj->header.close(&obj->header);

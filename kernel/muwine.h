@@ -194,6 +194,7 @@ typedef enum {
     muwine_object_key,
     muwine_object_file,
     muwine_object_directory,
+    muwine_object_device,
 } object_type;
 
 typedef struct _object_header {
@@ -512,8 +513,8 @@ typedef NTSTATUS (*muwine_query_directory)(file_object* obj, HANDLE Event, PIO_A
                                            PUNICODE_STRING FileMask, BOOLEAN RestartScan);
 
 typedef struct _device {
+    object_header header;
     struct list_head list;
-    UNICODE_STRING path;
     muwine_create create;
     muwine_read read;
     muwine_write write;
@@ -533,3 +534,4 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
                                     PUNICODE_STRING DestinationName);
 NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                                          PUNICODE_STRING DestinationName);
+NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj);

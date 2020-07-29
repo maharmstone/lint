@@ -228,7 +228,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     obj->header.type = muwine_object_file;
 
     spin_lock_init(&obj->header.path_lock);
-    obj->header.path.Length = obj->header.path.MaximumLength = us->Length + dev->path.Length;
+    obj->header.path.Length = obj->header.path.MaximumLength = us->Length + dev->header.path.Length;
     obj->header.path.Buffer = kmalloc(obj->header.path.Length, GFP_KERNEL);
 
     if (!obj->header.path.Buffer) {
@@ -249,8 +249,8 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    memcpy(obj->header.path.Buffer, dev->path.Buffer, dev->path.Length);
-    memcpy(&obj->header.path.Buffer[dev->path.Length / sizeof(WCHAR)], us->Buffer, us->Length);
+    memcpy(obj->header.path.Buffer, dev->header.path.Buffer, dev->header.path.Length);
+    memcpy(&obj->header.path.Buffer[dev->header.path.Length / sizeof(WCHAR)], us->Buffer, us->Length);
 
     obj->header.close = file_object_close;
     obj->f = f;
@@ -552,7 +552,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
 
     spin_lock(&obj->header.path_lock);
 
-    new_path.Length = obj->dev->path.Length + fri->FileNameLength;
+    new_path.Length = obj->dev->header.path.Length + fri->FileNameLength;
     new_path.Buffer = kmalloc(new_path.Length, GFP_KERNEL);
 
     if (!new_path.Buffer) {
@@ -563,9 +563,9 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     kfree(obj->header.path.Buffer);
     obj->header.path = new_path;
 
-    memcpy(obj->header.path.Buffer, obj->dev->path.Buffer, obj->dev->path.Length);
-    memcpy(obj->header.path.Buffer + (obj->dev->path.Length / sizeof(WCHAR)),
-           fri->FileName, fri->FileNameLength);
+    memcpy(obj->header.path.Buffer, obj->dev->header.path.Buffer, obj->dev->header.path.Length);
+    memcpy(obj->header.path.Buffer + (obj->dev->header.path.Length / sizeof(WCHAR)),
+        fri->FileName, fri->FileNameLength);
 
     spin_unlock(&obj->header.path_lock);
 
@@ -609,24 +609,39 @@ NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE 
     return STATUS_NOT_IMPLEMENTED;
 }
 
+static void device_object_close(object_header* obj) {
+    device* dev = (device*)obj;
+
+    if (dev->header.path.Buffer)
+        kfree(dev->header.path.Buffer);
+
+    kfree(dev);
+}
+
 NTSTATUS muwine_init_unixroot(void) {
     NTSTATUS Status;
     device* dev;
 
-    static const WCHAR prefix[] = L"\\Device\\UnixRoot";
+    static const WCHAR name[] = L"\\Device\\UnixRoot";
 
     dev = kzalloc(sizeof(device), GFP_KERNEL);
     if (!dev)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    dev->path.Length = sizeof(prefix) - sizeof(WCHAR);
-    dev->path.Buffer = kmalloc(dev->path.Length, GFP_KERNEL);
-    if (!dev->path.Buffer) {
-        kfree(dev);
+    dev->header.refcount = 1;
+    dev->header.type = muwine_object_device;
+
+    spin_lock_init(&dev->header.path_lock);
+    dev->header.close = device_object_close;
+
+    dev->header.path.Length = sizeof(name) - sizeof(WCHAR);
+    dev->header.path.Buffer = kmalloc(dev->header.path.Length, GFP_KERNEL);
+    if (!dev->header.path.Buffer) {
+        dev->header.close(&dev->header);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    memcpy(dev->path.Buffer, prefix, dev->path.Length);
+    memcpy(dev->header.path.Buffer, name, dev->header.path.Length);
 
     dev->create = unixfs_create_file;
     dev->read = unixfs_read;
@@ -635,13 +650,18 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->set_information = unixfs_set_information;
     dev->query_directory = unixfs_query_directory;
 
-    Status = muwine_add_device(dev);
-
+    Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header);
     if (!NT_SUCCESS(Status)) {
-        kfree(dev->path.Buffer);
-        kfree(dev);
+        dev->header.close(&dev->header);
         return Status;
     }
 
-    return Status;
+    Status = muwine_add_device(dev);
+
+    if (!NT_SUCCESS(Status)) {
+        dev->header.close(&dev->header);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
