@@ -13,6 +13,11 @@ typedef struct {
     struct list_head children;
 } dir_object;
 
+typedef struct {
+    object_header header;
+    UNICODE_STRING dest;
+} symlink_object;
+
 dir_object dir_root;
 
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part);
@@ -368,14 +373,81 @@ NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK Desir
     return Status;
 }
 
+static void symlink_object_close(object_header* obj) {
+    symlink_object* symlink = (symlink_object*)obj;
+
+    if (symlink->dest.Buffer)
+        kfree(symlink->dest.Buffer);
+
+    if (symlink->header.path.Buffer)
+        kfree(symlink->header.path.Buffer);
+
+    kfree(symlink);
+}
+
 NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                                     PUNICODE_STRING DestinationName) {
+    NTSTATUS Status;
+    UNICODE_STRING us;
+    symlink_object* obj;
+
     printk(KERN_INFO "NtCreateSymbolicLinkObject(%lx, %x, %px, %px): stub\n", (uintptr_t)pHandle, DesiredAccess,
            ObjectAttributes, DestinationName);
 
-    // FIXME
+    if (!ObjectAttributes || !ObjectAttributes->ObjectName || !DestinationName || DestinationName->Length < sizeof(WCHAR))
+        return STATUS_INVALID_PARAMETER;
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME - RootDirectory
+
+    us.Length = ObjectAttributes->ObjectName->Length;
+    us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+    obj = kzalloc(sizeof(symlink_object), GFP_KERNEL);
+    if (!obj)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    obj->header.refcount = 1;
+    obj->header.type = muwine_object_symlink;
+
+    spin_lock_init(&obj->header.path_lock);
+    obj->header.close = symlink_object_close;
+
+    obj->header.path.Length = us.Length;
+    obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+    if (!obj->header.path.Buffer) {
+        obj->header.close(&obj->header);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
+
+    obj->dest.Length = DestinationName->Length;
+    obj->dest.Buffer = kmalloc(obj->dest.Length, GFP_KERNEL);
+
+    if (!obj->dest.Buffer) {
+        obj->header.close(&obj->header);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(obj->dest.Buffer, DestinationName->Buffer, DestinationName->Length);
+
+    Status = muwine_add_entry_in_hierarchy(&us, &obj->header);
+
+    if (!NT_SUCCESS(Status)) {
+        obj->header.close(&obj->header);
+        return Status;
+    }
+
+    Status = muwine_add_handle(&obj->header, pHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
+
+    if (!NT_SUCCESS(Status)) {
+        if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
+            obj->header.close(&obj->header);
+
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
