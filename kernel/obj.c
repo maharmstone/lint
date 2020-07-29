@@ -457,7 +457,7 @@ NTSTATUS muwine_init_objdir(void) {
     oa.Length = sizeof(oa);
     oa.RootDirectory = NULL;
     oa.ObjectName = &us;
-    oa.Attributes = OBJ_KERNEL_HANDLE;
+    oa.Attributes = OBJ_KERNEL_HANDLE | OBJ_PERMANENT;
     oa.SecurityDescriptor = NULL;
     oa.SecurityQualityOfService = NULL;
 
