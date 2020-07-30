@@ -198,6 +198,7 @@ typedef enum {
     muwine_object_directory,
     muwine_object_device,
     muwine_object_symlink,
+    muwine_object_section,
 } object_type;
 
 typedef struct _object_header {
