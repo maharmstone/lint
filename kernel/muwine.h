@@ -537,6 +537,6 @@ NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAcc
 NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj, bool resolve_symlinks);
 
 // sect.c
-NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
-                         PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
-                         HANDLE FileHandle);
+NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                              PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
+                              HANDLE FileHandle);
