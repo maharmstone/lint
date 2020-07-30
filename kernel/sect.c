@@ -72,3 +72,11 @@ NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* B
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
+    printk(KERN_INFO "NtUnmapViewOfSection(%lx, %px): stub\n", (uintptr_t)ProcessHandle, BaseAddress);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

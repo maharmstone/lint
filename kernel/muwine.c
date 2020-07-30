@@ -42,6 +42,7 @@ static struct muwine_func funcs[] = {
     { user_NtCreateSymbolicLinkObject, 4 },
     { user_NtCreateSection, 7 },
     { NtMapViewOfSection, 10 },
+    { NtUnmapViewOfSection, 2 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
