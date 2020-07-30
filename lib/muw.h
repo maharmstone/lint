@@ -30,6 +30,8 @@ typedef wchar_t WCHAR;
 typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
 typedef uint8_t UCHAR;
 typedef uint8_t BOOLEAN;
+typedef uintptr_t ULONG_PTR;
+typedef ULONG_PTR SIZE_T, *PSIZE_T;
 
 typedef struct {
     USHORT Length;
@@ -227,6 +229,11 @@ typedef enum {
     FileMaximumInformation
 } FILE_INFORMATION_CLASS;
 
+typedef enum {
+    ViewShare = 1,
+    ViewUnmap = 2
+} SECTION_INHERIT;
+
 #endif
 
 #define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
@@ -290,6 +297,10 @@ NTSTATUS __stdcall NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK Desir
 NTSTATUS __stdcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
                                    const LARGE_INTEGER* MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
                                    HANDLE FileHandle);
+NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                      SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
+                                      ULONG AllocationType, ULONG Win32Protect);
+NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
 
 #ifdef __cplusplus
 }

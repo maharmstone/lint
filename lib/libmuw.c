@@ -467,3 +467,37 @@ NTSTATUS __stdcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAcc
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATESECTION, args);
 }
+
+NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                      SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
+                                      ULONG AllocationType, ULONG Win32Protect) {
+    uintptr_t args[] = {
+        10,
+        (uintptr_t)SectionHandle,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)BaseAddress,
+        (uintptr_t)ZeroBits,
+        (uintptr_t)CommitSize,
+        (uintptr_t)SectionOffset,
+        (uintptr_t)ViewSize,
+        (uintptr_t)InheritDisposition,
+        (uintptr_t)AllocationType,
+        (uintptr_t)Win32Protect
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTMAPVIEWOFSECTION, args);
+}
+
+NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)BaseAddress
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTUNMAPVIEWOFSECTION, args);
+}
