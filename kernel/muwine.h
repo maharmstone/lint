@@ -55,6 +55,8 @@ typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef uint8_t UCHAR;
 typedef uint8_t BOOLEAN;
+typedef uintptr_t ULONG_PTR;
+typedef ULONG_PTR SIZE_T, *PSIZE_T;
 
 #ifdef __amd64 // FIXME - also aarch64
 #define KERNEL_HANDLE_MASK 0x8000000000000000
@@ -537,6 +539,14 @@ NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAcc
 NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj, bool resolve_symlinks);
 
 // sect.c
+typedef enum {
+    ViewShare = 1,
+    ViewUnmap = 2
+} SECTION_INHERIT;
+
 NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                               PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
                               HANDLE FileHandle);
+NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                            SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
+                            ULONG AllocationType, ULONG Win32Protect);
