@@ -43,6 +43,9 @@ static struct muwine_func funcs[] = {
     { user_NtCreateSection, 7 },
     { NtMapViewOfSection, 10 },
     { NtUnmapViewOfSection, 2 },
+    { NtExtendSection, 2 },
+    { NtOpenSection, 3 },
+    { NtQuerySection, 5 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
