@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(regtest)
+project(tests)
 
 set(SRC_FILES
 	regtest.c)

@@ -2,6 +2,8 @@
 #include <uchar.h>
 #include <inttypes.h>
 #include <time.h>
+#include <string.h>
+#include <stdlib.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -83,6 +85,8 @@ NTSTATUS __stdcall NtFlushKey(HANDLE KeyHandle);
 static const char16_t regpath[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs";
 static const char16_t regpath2[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\btrfs\\volatile";
 
+static const char16_t regpath3[] = u"\\Registry\\Machine\\System\\CurrentControlSet\\test\\0000";
+
 static const char16_t key_name[] = u"Start";
 static const char16_t key_name2[] = u"NewName";
 static const char16_t key_value[] = u"hello, world";
@@ -95,6 +99,41 @@ int main() {
     ULONG index, len, dispos;
     char buf[255];
     DWORD val, type;
+
+#if 0
+    us.Length = us.MaximumLength = sizeof(regpath3) - sizeof(char16_t);
+    us.Buffer = malloc(us.Length);
+
+    memcpy(us.Buffer, regpath3, us.Length);
+
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &us;
+    oa.Attributes = 0;
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    for (unsigned int i = 0; i < 1000; i++) {
+        us.Buffer[(us.Length / sizeof(char16_t)) - 3] = '0' + (i / 100);
+        us.Buffer[(us.Length / sizeof(char16_t)) - 2] = '0' + ((i / 10) % 10);
+        us.Buffer[(us.Length / sizeof(char16_t)) - 1] = '0' + (i % 10);
+
+        Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_NON_VOLATILE, &dispos);
+        if (!NT_SUCCESS(Status)) {
+            printf("NtCreateKey returned %08x\n", (int32_t)Status);
+            return 0;
+        }
+
+        Status = NtDeleteKey(h);
+        if (!NT_SUCCESS(Status)) {
+            printf("NtDeleteKey returned %08x\n", (int32_t)Status);
+            NtClose(h);
+            return 0;
+        }
+
+        NtClose(h);
+    }
+#endif
 
     us.Length = us.MaximumLength = sizeof(regpath) - sizeof(char16_t);
     us.Buffer = (char16_t*)regpath;
