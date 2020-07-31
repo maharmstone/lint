@@ -120,9 +120,9 @@ NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
     return Status;
 }
 
-NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
-                            SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
-                            ULONG AllocationType, ULONG Win32Protect) {
+static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                   SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
+                                   ULONG AllocationType, ULONG Win32Protect) {
     printk(KERN_INFO "NtMapViewOfSection(%lx, %lx, %px, %lx, %lx, %px, %px, %x, %x, %x): stub\n", (uintptr_t)SectionHandle,
            (uintptr_t)ProcessHandle, BaseAddress, ZeroBits, CommitSize, SectionOffset, ViewSize, InheritDisposition,
            AllocationType, Win32Protect);
@@ -130,6 +130,49 @@ NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* B
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                 SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
+                                 ULONG AllocationType, ULONG Win32Protect) {
+    NTSTATUS Status;
+    void* addr = NULL;
+    LARGE_INTEGER off;
+    SIZE_T size;
+
+    if (!BaseAddress || !ViewSize)
+        return STATUS_INVALID_PARAMETER;
+
+    if ((uintptr_t)SectionHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)SectionHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (get_user(addr, BaseAddress) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (SectionOffset) {
+        if (get_user(off.QuadPart, &SectionOffset->QuadPart) < 0)
+            return STATUS_ACCESS_VIOLATION;
+    } else
+        off.QuadPart = 0;
+
+    if (get_user(size, ViewSize) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    Status = NtMapViewOfSection(SectionHandle, ProcessHandle, &addr, ZeroBits, CommitSize, &off, &size, InheritDisposition, AllocationType, Win32Protect);
+
+    if (put_user(addr, BaseAddress) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (SectionOffset && put_user(off.QuadPart, &SectionOffset->QuadPart) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (put_user(size, ViewSize) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {

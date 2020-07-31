@@ -60,9 +60,15 @@ typedef ULONG_PTR SIZE_T, *PSIZE_T;
 
 #ifdef __amd64 // FIXME - also aarch64
 #define KERNEL_HANDLE_MASK 0x8000000000000000
+typedef int64_t intptr_t;
 #else
 #define KERNEL_HANDLE_MASK 0x80000000
+typedef int32_t intptr_t;
 #endif
+
+typedef intptr_t LONG_PTR;
+
+#define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1)
 
 typedef struct {
     union {
@@ -555,9 +561,9 @@ typedef enum {
 NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                               PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
                               HANDLE FileHandle);
-NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
-                            SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
-                            ULONG AllocationType, ULONG Win32Protect);
+NTSTATUS user_NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                 SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
+                                 ULONG AllocationType, ULONG Win32Protect);
 NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
 NTSTATUS NtExtendSection(HANDLE SectionHandle, PLARGE_INTEGER NewSectionSize);
 NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);

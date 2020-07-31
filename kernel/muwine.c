@@ -41,14 +41,14 @@ static struct muwine_func funcs[] = {
     { user_NtCreateDirectoryObject, 3 },
     { user_NtCreateSymbolicLinkObject, 4 },
     { user_NtCreateSection, 7 },
-    { NtMapViewOfSection, 10 },
+    { user_NtMapViewOfSection, 10 },
     { NtUnmapViewOfSection, 2 },
     { NtExtendSection, 2 },
     { NtOpenSection, 3 },
     { NtQuerySection, 5 },
 };
 
-// FIXME - compat_ioctl for 32-bit ioctls on 64-bit system
+// FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)
 
 static LIST_HEAD(pid_list);
 static DEFINE_SPINLOCK(pid_list_lock);
