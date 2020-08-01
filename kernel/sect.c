@@ -48,12 +48,23 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     file_object* file = NULL;
     section_object* obj;
     struct file* anon_file = NULL;
+    uint64_t file_size = 0;
 
     if (FileHandle) {
+        FILE_STANDARD_INFORMATION fsi;
+        IO_STATUS_BLOCK iosb;
+
         file = (file_object*)get_object_from_handle(FileHandle);
 
         if (!file || file->header.type != muwine_object_file)
             return STATUS_INVALID_HANDLE;
+
+        Status = NtQueryInformationFile(FileHandle, &iosb, &fsi, sizeof(fsi),
+                                        FileStandardInformation);
+        if (!NT_SUCCESS(Status))
+            return Status;
+
+        file_size = fsi.EndOfFile.QuadPart;
 
         __sync_add_and_fetch(&file->header.refcount, 1);
     } else {
@@ -78,8 +89,16 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     spin_lock_init(&obj->header.path_lock);
     obj->header.close = section_object_close;
 
-    if (MaximumSize)
+    if (MaximumSize && MaximumSize->QuadPart != 0) {
         obj->max_size = MaximumSize->QuadPart;
+
+        if (file && obj->max_size > file_size)
+            obj->max_size = file_size;
+    } else if (file)
+        obj->max_size = file_size;
+
+    if (obj->max_size & (PAGE_SIZE - 1))
+        obj->max_size += PAGE_SIZE - (obj->max_size & (PAGE_SIZE - 1));
 
     obj->page_protection = SectionPageProtection;
     obj->alloc_attributes = AllocationAttributes;
