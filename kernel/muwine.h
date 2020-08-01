@@ -521,6 +521,7 @@ typedef NTSTATUS (*muwine_query_directory)(file_object* obj, HANDLE Event, PIO_A
                                            PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                                            FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                                            PUNICODE_STRING FileMask, BOOLEAN RestartScan);
+typedef struct file* (*muwine_get_filp)(file_object* obj);
 
 typedef struct _device {
     object_header header;
@@ -530,6 +531,7 @@ typedef struct _device {
     muwine_query_information query_information;
     muwine_set_information set_information;
     muwine_query_directory query_directory;
+    muwine_get_filp get_filp;
 } device;
 
 void muwine_free_objs(void);

@@ -1,5 +1,6 @@
 #include "muwine.h"
 #include <linux/mman.h>
+#include <linux/shmem_fs.h>
 
 typedef struct {
     object_header header;
@@ -7,6 +8,7 @@ typedef struct {
     ULONG page_protection;
     ULONG alloc_attributes;
     file_object* file;
+    struct file* anon_file;
 } section_object;
 
 // NT_ prefix added to avoid collision with pgtable_types.h
@@ -30,6 +32,9 @@ static void section_object_close(object_header* obj) {
             sect->file->header.close(&sect->file->header);
     }
 
+    if (sect->anon_file)
+        filp_close(sect->anon_file, 0);
+
     if (sect->header.path.Buffer)
         kfree(sect->header.path.Buffer);
 
@@ -42,6 +47,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     NTSTATUS Status;
     file_object* file = NULL;
     section_object* obj;
+    struct file* anon_file = NULL;
 
     if (FileHandle) {
         file = (file_object*)get_object_from_handle(FileHandle);
@@ -50,6 +56,13 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
             return STATUS_INVALID_HANDLE;
 
         __sync_add_and_fetch(&file->header.refcount, 1);
+    } else {
+        if (!MaximumSize)
+            return STATUS_INVALID_PARAMETER;
+
+        anon_file = shmem_file_setup("ntsection", MaximumSize->QuadPart, 0);
+        if (IS_ERR(anon_file))
+            return muwine_error_to_ntstatus((int)(uintptr_t)anon_file);
     }
 
     // FIXME - make sure we're not trying to map a read-only file handle read-write
@@ -71,6 +84,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     obj->page_protection = SectionPageProtection;
     obj->alloc_attributes = AllocationAttributes;
     obj->file = file;
+    obj->anon_file = anon_file;
 
     Status = muwine_add_handle(&obj->header, SectionHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false);
@@ -137,25 +151,15 @@ NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
 static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                    SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
                                    ULONG AllocationType, ULONG Win32Protect) {
-    section_object* sect;
-    unsigned long prot, ret;
-
-    printk(KERN_INFO "NtMapViewOfSection(%lx, %lx, %px, %lx, %lx, %px, %px, %x, %x, %x): stub\n", (uintptr_t)SectionHandle,
-           (uintptr_t)ProcessHandle, BaseAddress, ZeroBits, CommitSize, SectionOffset, ViewSize, InheritDisposition,
-           AllocationType, Win32Protect);
-
-    sect = (section_object*)get_object_from_handle(SectionHandle);
+    section_object* sect = (section_object*)get_object_from_handle(SectionHandle);
+    unsigned long prot, ret, flags, len, off;
+    struct file* file;
 
     if (!sect || sect->header.type != muwine_object_section)
         return STATUS_INVALID_HANDLE;
 
     if (ProcessHandle != NtCurrentProcess()) {
         printk("NtMapViewOfSection: FIXME - support process handles\n"); // FIXME
-        return STATUS_NOT_IMPLEMENTED;
-    }
-
-    if (sect->file) {
-        printk("NtMapViewOfSection: FIXME - non-anonymous mappings\n"); // FIXME
         return STATUS_NOT_IMPLEMENTED;
     }
 
@@ -177,19 +181,46 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
         return STATUS_NOT_IMPLEMENTED;
     }
 
+    // FIXME - Windows insists on 0x10000 increments for SectionOffset?
+
     // FIXME - SEC_IMAGE
     // FIXME - inheritance
 
-    ret = vm_mmap(NULL, (uintptr_t)*BaseAddress, sect->max_size, prot,
-                  MAP_SHARED/*FIXME - not if SEC_IMAGE?*/, 0);
+    // FIXME - should we be returning error if SectionOffset more than 2^32 on x86?
 
-    printk(KERN_INFO "vm_mmap returned %lx\n", ret);
+    if (SectionOffset)
+        off = SectionOffset->QuadPart;
+    else
+        off = 0;
 
+    if (off > sect->max_size)
+        return STATUS_INVALID_PARAMETER;
+
+    if (*ViewSize == 0)
+        len = sect->max_size - off;
+    else {
+        len = *ViewSize;
+
+        if (off + len > sect->max_size)
+            len = sect->max_size - len;
+    }
+
+    flags = MAP_SHARED; // FIXME - not if SEC_IMAGE?
+
+    if (sect->file) {
+        file = sect->file->dev->get_filp(sect->file);
+
+        if (!file)
+            return STATUS_INVALID_PARAMETER;
+    } else
+        file = sect->anon_file;
+
+    ret = vm_mmap(file, (uintptr_t)*BaseAddress, len, prot, flags, off);
     if (ret < 0)
         return muwine_error_to_ntstatus(ret);
 
     *BaseAddress = (void*)(uintptr_t)ret;
-    *ViewSize = sect->max_size; // FIXME - should be actual size
+    *ViewSize = len;
 
     return STATUS_SUCCESS;
 }

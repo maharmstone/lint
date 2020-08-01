@@ -603,10 +603,10 @@ static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStat
     }
 }
 
-NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
-                                PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
-                                FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
-                                PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                       PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                       FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                                       PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
     printk(KERN_INFO "unixfs_query_directory(%px, %lx, %px, %px, %px, %px, %x, %x, %x, %px, %x): stub\n",
            obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
            FileInformation, Length, FileInformationClass, ReturnSingleEntry, FileMask,
@@ -615,6 +615,10 @@ NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static struct file* unixfs_get_filp(file_object* obj) {
+    return obj->f->f;
 }
 
 static void device_object_close(object_header* obj) {
@@ -657,6 +661,7 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->query_information = unixfs_query_information;
     dev->set_information = unixfs_set_information;
     dev->query_directory = unixfs_query_directory;
+    dev->get_filp = unixfs_get_filp;
 
     Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header, true);
     if (!NT_SUCCESS(Status)) {
