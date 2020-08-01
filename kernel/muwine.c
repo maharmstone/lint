@@ -42,7 +42,7 @@ static struct muwine_func funcs[] = {
     { user_NtCreateSymbolicLinkObject, 4 },
     { user_NtCreateSection, 7 },
     { user_NtMapViewOfSection, 10 },
-    { NtUnmapViewOfSection, 2 },
+    { user_NtUnmapViewOfSection, 2 },
     { NtExtendSection, 2 },
     { NtOpenSection, 3 },
     { NtQuerySection, 5 },
@@ -353,6 +353,8 @@ static int muwine_open(struct inode* inode, struct file* file) {
     spin_lock_init(&p->handle_list_lock);
     p->next_handle_no = MUW_FIRST_HANDLE + 4;
     muwine_make_process_token(&p->token);
+    spin_lock_init(&p->mapping_list_lock);
+    INIT_LIST_HEAD(&p->mapping_list);
 
     spin_lock(&pid_list_lock);
 
@@ -872,6 +874,21 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     spin_unlock(&pid_list_lock);
 
     if (p) {
+        // force unmapping of any sections
+
+        while (!list_empty(&p->mapping_list)) {
+            section_map* sm = list_entry(p->mapping_list.next, section_map, list);
+
+            list_del(&sm->list);
+
+            vm_munmap(sm->address, sm->length);
+
+            if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
+                sm->sect->close(sm->sect);
+
+            kfree(sm);
+        }
+
         // force close of all open handles
 
         while (!list_empty(&p->handle_list)) {
@@ -960,6 +977,8 @@ static int fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     spin_lock_init(&new_p->handle_list_lock);
     new_p->next_handle_no = p->next_handle_no;
     muwine_duplicate_token(p->token, &new_p->token);
+    spin_lock_init(&new_p->mapping_list_lock);
+    INIT_LIST_HEAD(&new_p->mapping_list);
 
     // duplicate handles
 

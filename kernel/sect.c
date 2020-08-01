@@ -154,11 +154,18 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     section_object* sect = (section_object*)get_object_from_handle(SectionHandle);
     unsigned long prot, ret, flags, len, off;
     struct file* file;
+    section_map* map;
+    process* p;
 
     if (!sect || sect->header.type != muwine_object_section)
         return STATUS_INVALID_HANDLE;
 
-    if (ProcessHandle != NtCurrentProcess()) {
+    if (ProcessHandle == NtCurrentProcess()) {
+        p = muwine_current_process();
+
+        if (!p)
+            return STATUS_INTERNAL_ERROR;
+    } else {
         printk("NtMapViewOfSection: FIXME - support process handles\n"); // FIXME
         return STATUS_NOT_IMPLEMENTED;
     }
@@ -215,9 +222,24 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     } else
         file = sect->anon_file;
 
+    map = kmalloc(sizeof(section_map), GFP_KERNEL);
+    if (!map)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
     ret = vm_mmap(file, (uintptr_t)*BaseAddress, len, prot, flags, off);
-    if (ret < 0)
+    if (ret < 0) {
+        kfree(map);
         return muwine_error_to_ntstatus(ret);
+    }
+
+    map->address = (uintptr_t)ret;
+    map->length = len;
+    map->sect = &sect->header;
+    __sync_add_and_fetch(&map->sect->refcount, 1);
+
+    spin_lock(&p->mapping_list_lock);
+    list_add_tail(&map->list, &p->mapping_list);
+    spin_unlock(&p->mapping_list_lock);
 
     *BaseAddress = (void*)(uintptr_t)ret;
     *ViewSize = len;
@@ -239,7 +261,7 @@ NTSTATUS user_NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVO
     if ((uintptr_t)SectionHandle & KERNEL_HANDLE_MASK)
         return STATUS_INVALID_HANDLE;
 
-    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)SectionHandle & KERNEL_HANDLE_MASK)
+    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)ProcessHandle & KERNEL_HANDLE_MASK)
         return STATUS_INVALID_HANDLE;
 
     if (get_user(addr, BaseAddress) < 0)
@@ -268,12 +290,51 @@ NTSTATUS user_NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVO
     return Status;
 }
 
-NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
-    printk(KERN_INFO "NtUnmapViewOfSection(%lx, %px): stub\n", (uintptr_t)ProcessHandle, BaseAddress);
+static NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
+    section_map* sm = NULL;
+    struct list_head* le;
+    process* p;
 
-    // FIXME
+    if (ProcessHandle == NtCurrentProcess()) {
+        p = muwine_current_process();
 
-    return STATUS_NOT_IMPLEMENTED;
+        if (!p)
+            return STATUS_INTERNAL_ERROR;
+    } else {
+        printk("NtUnmapViewOfSection: FIXME - support process handles\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    spin_lock(&p->mapping_list_lock);
+
+    le = p->mapping_list.next;
+    while (le != &p->mapping_list) {
+        section_map* sm2 = list_entry(le, section_map, list);
+
+        if ((uintptr_t)BaseAddress >= sm2->address && (uintptr_t)BaseAddress < sm2->address + sm2->length) {
+            sm = sm2;
+            list_del(&sm->list);
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock(&p->mapping_list_lock);
+
+    if (!sm)
+        return STATUS_INVALID_PARAMETER;
+
+    vm_munmap(sm->address, sm->length);
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS user_NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
+    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)ProcessHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    return NtUnmapViewOfSection(ProcessHandle, BaseAddress);
 }
 
 NTSTATUS NtExtendSection(HANDLE SectionHandle, PLARGE_INTEGER NewSectionSize) {

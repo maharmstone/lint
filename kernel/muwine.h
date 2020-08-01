@@ -225,6 +225,8 @@ typedef struct {
     spinlock_t handle_list_lock;
     uintptr_t next_handle_no;
     token* token;
+    spinlock_t mapping_list_lock;
+    struct list_head mapping_list;
 } process;
 
 typedef struct _device device;
@@ -560,13 +562,20 @@ typedef enum {
     MaxSectionInfoClass
 } SECTION_INFORMATION_CLASS;
 
+typedef struct {
+    struct list_head list;
+    uintptr_t address;
+    uintptr_t length;
+    object_header* sect;
+} section_map;
+
 NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                               PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
                               HANDLE FileHandle);
 NTSTATUS user_NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                  SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
                                  ULONG AllocationType, ULONG Win32Protect);
-NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
+NTSTATUS user_NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
 NTSTATUS NtExtendSection(HANDLE SectionHandle, PLARGE_INTEGER NewSectionSize);
 NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass, PVOID InformationBuffer,
