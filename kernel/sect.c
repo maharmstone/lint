@@ -227,7 +227,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
         return STATUS_INSUFFICIENT_RESOURCES;
 
     ret = vm_mmap(file, (uintptr_t)*BaseAddress, len, prot, flags, off);
-    if (ret < 0) {
+    if (IS_ERR((void*)ret)) {
         kfree(map);
         return muwine_error_to_ntstatus(ret);
     }

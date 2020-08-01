@@ -332,6 +332,9 @@ NTSTATUS muwine_error_to_ntstatus(int err) {
         case -EEXIST:
             return STATUS_OBJECT_NAME_EXISTS;
 
+        case -EINVAL:
+            return STATUS_INVALID_PARAMETER;
+
         default:
             printk(KERN_INFO "muwine: Unable to translate error %d to NTSTATUS.\n", err);
             return STATUS_INTERNAL_ERROR;
