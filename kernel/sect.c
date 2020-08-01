@@ -1,4 +1,5 @@
 #include "muwine.h"
+#include <linux/mman.h>
 
 typedef struct {
     object_header header;
@@ -7,6 +8,19 @@ typedef struct {
     ULONG alloc_attributes;
     file_object* file;
 } section_object;
+
+// NT_ prefix added to avoid collision with pgtable_types.h
+#define NT_PAGE_NOACCESS 0x01
+#define NT_PAGE_READONLY 0x02
+#define NT_PAGE_READWRITE 0x04
+#define NT_PAGE_WRITECOPY 0x08
+#define NT_PAGE_EXECUTE 0x10
+#define NT_PAGE_EXECUTE_READ 0x20
+#define NT_PAGE_EXECUTE_READWRITE 0x40
+#define NT_PAGE_EXECUTE_WRITECOPY 0x80
+#define NT_PAGE_GUARD 0x100
+#define NT_PAGE_NOCACHE 0x200
+#define NT_PAGE_WRITECOMBINE 0x400
 
 static void section_object_close(object_header* obj) {
     section_object* sect = (section_object*)obj;
@@ -123,13 +137,61 @@ NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
 static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                    SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
                                    ULONG AllocationType, ULONG Win32Protect) {
+    section_object* sect;
+    unsigned long prot, ret;
+
     printk(KERN_INFO "NtMapViewOfSection(%lx, %lx, %px, %lx, %lx, %px, %px, %x, %x, %x): stub\n", (uintptr_t)SectionHandle,
            (uintptr_t)ProcessHandle, BaseAddress, ZeroBits, CommitSize, SectionOffset, ViewSize, InheritDisposition,
            AllocationType, Win32Protect);
 
-    // FIXME
+    sect = (section_object*)get_object_from_handle(SectionHandle);
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (!sect || sect->header.type != muwine_object_section)
+        return STATUS_INVALID_HANDLE;
+
+    if (ProcessHandle != NtCurrentProcess()) {
+        printk("NtMapViewOfSection: FIXME - support process handles\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (sect->file) {
+        printk("NtMapViewOfSection: FIXME - non-anonymous mappings\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    // FIXME - ZeroBits
+
+    // FIXME - SectionOffset
+    // FIXME - make sure SectionOffset + ViewSize not more than MaximumSize
+
+    if (Win32Protect & NT_PAGE_EXECUTE_READ || Win32Protect & NT_PAGE_EXECUTE_WRITECOPY)
+        prot = PROT_EXEC | PROT_READ;
+    else if (Win32Protect & NT_PAGE_EXECUTE_READWRITE)
+        prot = PROT_EXEC | PROT_READ | PROT_WRITE;
+    else if (Win32Protect & NT_PAGE_READONLY || Win32Protect & NT_PAGE_WRITECOPY)
+        prot = PROT_READ;
+    else if (Win32Protect & NT_PAGE_READWRITE)
+        prot = PROT_READ | PROT_WRITE;
+    else {
+        printk("NtMapViewOfSection: unhandle Win32Protect value %x\n", Win32Protect);
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    // FIXME - SEC_IMAGE
+    // FIXME - inheritance
+
+    ret = vm_mmap(NULL, (uintptr_t)*BaseAddress, sect->max_size, prot,
+                  MAP_SHARED/*FIXME - not if SEC_IMAGE?*/, 0);
+
+    printk(KERN_INFO "vm_mmap returned %lx\n", ret);
+
+    if (ret < 0)
+        return muwine_error_to_ntstatus(ret);
+
+    *BaseAddress = (void*)(uintptr_t)ret;
+    *ViewSize = sect->max_size; // FIXME - should be actual size
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
