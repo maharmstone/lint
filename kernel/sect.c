@@ -1,28 +1,7 @@
-#include "muwine.h"
 #include <linux/mman.h>
 #include <linux/shmem_fs.h>
-
-typedef struct {
-    object_header header;
-    uint64_t max_size;
-    ULONG page_protection;
-    ULONG alloc_attributes;
-    file_object* file;
-    struct file* anon_file;
-} section_object;
-
-// NT_ prefix added to avoid collision with pgtable_types.h
-#define NT_PAGE_NOACCESS 0x01
-#define NT_PAGE_READONLY 0x02
-#define NT_PAGE_READWRITE 0x04
-#define NT_PAGE_WRITECOPY 0x08
-#define NT_PAGE_EXECUTE 0x10
-#define NT_PAGE_EXECUTE_READ 0x20
-#define NT_PAGE_EXECUTE_READWRITE 0x40
-#define NT_PAGE_EXECUTE_WRITECOPY 0x80
-#define NT_PAGE_GUARD 0x100
-#define NT_PAGE_NOCACHE 0x200
-#define NT_PAGE_WRITECOMBINE 0x400
+#include "muwine.h"
+#include "sect.h"
 
 static void section_object_close(object_header* obj) {
     section_object* sect = (section_object*)obj;
@@ -41,6 +20,130 @@ static void section_object_close(object_header* obj) {
     kfree(sect);
 }
 
+static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file** anon_file, uint32_t* ret_image_size) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    LARGE_INTEGER off;
+    IMAGE_DOS_HEADER dos_header;
+    IMAGE_NT_HEADERS nt_header;
+    uint32_t image_size, header_size;
+    uint8_t* buf;
+    IMAGE_SECTION_HEADER* sections;
+    struct file* file;
+    unsigned int i;
+    ssize_t written;
+    loff_t pos;
+
+    // FIXME - check error codes are right
+
+    if (file_size < sizeof(IMAGE_DOS_HEADER))
+        return STATUS_INVALID_PARAMETER;
+
+    off.QuadPart = 0;
+
+    Status = NtReadFile(file_handle, NULL, NULL, NULL, &iosb, &dos_header, sizeof(IMAGE_DOS_HEADER),
+                        &off, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    if (iosb.Information < sizeof(IMAGE_DOS_HEADER))
+        return STATUS_INVALID_PARAMETER;
+
+    if (dos_header.e_magic != IMAGE_DOS_SIGNATURE)
+        return STATUS_INVALID_PARAMETER;
+
+    if (file_size < dos_header.e_lfanew + sizeof(IMAGE_NT_HEADERS))
+        return STATUS_INVALID_PARAMETER;
+
+    off.QuadPart = dos_header.e_lfanew;
+
+    Status = NtReadFile(file_handle, NULL, NULL, NULL, &iosb, &nt_header, sizeof(IMAGE_NT_HEADERS),
+                        &off, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    if (nt_header.Signature != IMAGE_NT_SIGNATURE)
+        return STATUS_INVALID_PARAMETER;
+
+    if (nt_header.OptionalHeader32.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC &&
+        nt_header.OptionalHeader32.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (nt_header.OptionalHeader32.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+        image_size = nt_header.OptionalHeader64.SizeOfImage;
+        header_size = nt_header.OptionalHeader64.SizeOfHeaders;
+    } else {
+        image_size = nt_header.OptionalHeader32.SizeOfImage;
+        header_size = nt_header.OptionalHeader32.SizeOfHeaders;
+    }
+
+    if (file_size < header_size)
+        return STATUS_INVALID_PARAMETER;
+
+    buf = vzalloc(image_size);
+    if (!buf)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    off.QuadPart = 0;
+
+    Status = NtReadFile(file_handle, NULL, NULL, NULL, &iosb, buf, header_size,
+                        &off, NULL);
+    if (!NT_SUCCESS(Status)) {
+        vfree(buf);
+        return Status;
+    }
+
+    sections = (IMAGE_SECTION_HEADER*)(buf + dos_header.e_lfanew +
+                offsetof(IMAGE_NT_HEADERS, OptionalHeader32) +
+                nt_header.FileHeader.SizeOfOptionalHeader);
+
+    for (i = 0; i < nt_header.FileHeader.NumberOfSections; i++) {
+        if (sections[i].VirtualAddress > image_size || sections[i].VirtualAddress + sections[i].VirtualSize > image_size) {
+            vfree(buf);
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        if (sections[i].PointerToRawData > file_size || sections[i].PointerToRawData + sections[i].SizeOfRawData > file_size) {
+            vfree(buf);
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        if (sections[i].SizeOfRawData > 0) {
+            off.QuadPart = sections[i].PointerToRawData;
+
+            Status = NtReadFile(file_handle, NULL, NULL, NULL, &iosb, buf + sections[i].VirtualAddress,
+                                sections[i].SizeOfRawData, &off, NULL);
+            if (!NT_SUCCESS(Status)) {
+                vfree(buf);
+                return Status;
+            }
+        }
+    }
+
+    file = shmem_file_setup("ntsection", image_size, 0);
+    if (IS_ERR(file)) {
+        vfree(buf);
+        return muwine_error_to_ntstatus((int)(uintptr_t)file);
+    }
+
+    pos = 0;
+
+    written = kernel_write(file, buf, image_size, &pos);
+
+    vfree(buf);
+
+    if (written < 0) {
+        filp_close(file, NULL);
+        return muwine_error_to_ntstatus(written);
+    }
+
+    *anon_file = file;
+    *ret_image_size = image_size;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                                 PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
                                 HANDLE FileHandle) {
@@ -49,6 +152,9 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     section_object* obj;
     struct file* anon_file = NULL;
     uint64_t file_size = 0;
+
+    if (AllocationAttributes & SEC_IMAGE && !FileHandle)
+        return STATUS_INVALID_PARAMETER;
 
     if (FileHandle) {
         FILE_STANDARD_INFORMATION fsi;
@@ -80,6 +186,25 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
     // FIXME - add support for creating section in hierarchy
 
+    if (AllocationAttributes & SEC_IMAGE) {
+        uint32_t image_size;
+
+        Status = load_image(FileHandle, file_size, &anon_file, &image_size);
+        if (!NT_SUCCESS(Status)) {
+            if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
+                obj->header.close(&obj->header);
+
+            return Status;
+        }
+
+        if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
+            obj->header.close(&obj->header);
+
+        file = NULL;
+
+        file_size = image_size;
+    }
+
     obj = kzalloc(sizeof(section_object), GFP_KERNEL);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -92,9 +217,9 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     if (MaximumSize && MaximumSize->QuadPart != 0) {
         obj->max_size = MaximumSize->QuadPart;
 
-        if (file && obj->max_size > file_size)
+        if ((file || AllocationAttributes & SEC_IMAGE) && obj->max_size > file_size)
             obj->max_size = file_size;
-    } else if (file)
+    } else if (file || AllocationAttributes & SEC_IMAGE)
         obj->max_size = file_size;
 
     if (obj->max_size & (PAGE_SIZE - 1))
@@ -209,7 +334,6 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
 
     // FIXME - Windows insists on 0x10000 increments for SectionOffset?
 
-    // FIXME - SEC_IMAGE
     // FIXME - inheritance
 
     // FIXME - should we be returning error if SectionOffset more than 2^32 on x86?
