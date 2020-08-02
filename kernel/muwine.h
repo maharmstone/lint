@@ -437,6 +437,10 @@ typedef struct {
     WCHAR FileName[1];
 } FILE_RENAME_INFORMATION;
 
+typedef struct {
+    LARGE_INTEGER EndOfFile;
+} FILE_END_OF_FILE_INFORMATION;
+
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                       ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,

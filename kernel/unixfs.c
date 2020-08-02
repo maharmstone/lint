@@ -338,11 +338,47 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             return STATUS_SUCCESS;
         }
 
-        // FIXME - FileBasicInformation
-        // FIXME - FileInternalInformation
-        // FIXME - FileEndOfFileInformation
-        // FIXME - FileAllInformation
-        // FIXME - others not supported by Wine
+        case FileBasicInformation: {
+            printk(KERN_INFO "unixfs_query_information: unhandled class FileBasicInformation\n");
+
+            // FIXME
+
+            return STATUS_INVALID_INFO_CLASS;
+        }
+
+        case FileInternalInformation: {
+            printk(KERN_INFO "unixfs_query_information: unhandled class FileInternalInformation\n");
+
+            // FIXME
+
+            return STATUS_INVALID_INFO_CLASS;
+        }
+
+        case FileEndOfFileInformation: {
+            FILE_END_OF_FILE_INFORMATION* feofi = (FILE_END_OF_FILE_INFORMATION*)FileInformation;
+
+            if (Length < sizeof(FILE_END_OF_FILE_INFORMATION))
+                return STATUS_BUFFER_TOO_SMALL;
+
+            if (!obj->f->f->f_inode)
+                return STATUS_INTERNAL_ERROR;
+
+            feofi->EndOfFile.QuadPart = obj->f->f->f_inode->i_size;
+
+            IoStatusBlock->Information = sizeof(FILE_END_OF_FILE_INFORMATION);
+
+            return STATUS_SUCCESS;
+        }
+
+        case FileAllInformation: {
+            printk(KERN_INFO "unixfs_query_information: unhandled class FileAllInformation\n");
+
+            // FIXME
+
+            return STATUS_INVALID_INFO_CLASS;
+        }
+
+        // FIXME - others not supported by Wine?
 
         default: {
             printk(KERN_INFO "unixfs_query_information: unhandled class %x\n",
