@@ -883,14 +883,12 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     spin_unlock(&pid_list_lock);
 
     if (p) {
-        // force unmapping of any sections
+        // force remove mappings of any sections
 
         while (!list_empty(&p->mapping_list)) {
             section_map* sm = list_entry(p->mapping_list.next, section_map, list);
 
             list_del(&sm->list);
-
-            vm_munmap(sm->address, sm->length);
 
             if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
                 sm->sect->close(sm->sect);
