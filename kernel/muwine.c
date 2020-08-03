@@ -335,6 +335,12 @@ NTSTATUS muwine_error_to_ntstatus(int err) {
         case -EINVAL:
             return STATUS_INVALID_PARAMETER;
 
+        case -EISDIR:
+            return STATUS_FILE_IS_A_DIRECTORY;
+
+        case -ENOTDIR:
+            return STATUS_NOT_A_DIRECTORY;
+
         default:
             printk(KERN_INFO "muwine: Unable to translate error %d to NTSTATUS.\n", err);
             return STATUS_INTERNAL_ERROR;

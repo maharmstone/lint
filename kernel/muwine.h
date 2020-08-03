@@ -35,8 +35,10 @@ struct muwine_func {
 #define STATUS_OBJECT_PATH_INVALID          0xc0000039
 #define STATUS_OBJECT_PATH_NOT_FOUND        0xc000003a
 #define STATUS_INSUFFICIENT_RESOURCES       0xc000009a
+#define STATUS_FILE_IS_A_DIRECTORY          0xc00000ba
 #define STATUS_NOT_SAME_DEVICE              0xc00000d4
 #define STATUS_INTERNAL_ERROR               0xc00000e5
+#define STATUS_NOT_A_DIRECTORY              0xc0000103
 #define STATUS_CANNOT_DELETE                0xc0000121
 #define STATUS_REGISTRY_CORRUPT             0xc000014c
 #define STATUS_CHILD_MUST_BE_VOLATILE       0xc0000181

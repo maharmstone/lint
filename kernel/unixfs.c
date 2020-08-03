@@ -172,6 +172,9 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
             flags |= O_TRUNC;
         }
 
+        if (CreateOptions & FILE_DIRECTORY_FILE)
+            flags |= O_DIRECTORY;
+
         // FIXME - case-insensitivity
         f->f = filp_open(path, flags | O_RDWR, 0644);
         if (IS_ERR(f->f)) {
