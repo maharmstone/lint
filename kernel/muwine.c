@@ -220,7 +220,89 @@ int strnicmp(const char* string1, const char* string2, size_t count) {
     return 0;
 }
 
-NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len) {
+NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, const char* src, ULONG src_len) {
+    NTSTATUS Status = STATUS_SUCCESS;
+    uint8_t* in = (uint8_t*)src;
+    uint16_t* out = (uint16_t*)dest;
+    ULONG i, needed = 0, left = dest_max / sizeof(uint16_t);
+
+    for (i = 0; i < src_len; i++) {
+        uint32_t cp;
+
+        if (!(in[i] & 0x80))
+            cp = in[i];
+        else if ((in[i] & 0xe0) == 0xc0) {
+            if (i == src_len - 1 || (in[i+1] & 0xc0) != 0x80) {
+                cp = 0xfffd;
+                Status = STATUS_SOME_NOT_MAPPED;
+            } else {
+                cp = ((in[i] & 0x1f) << 6) | (in[i+1] & 0x3f);
+                i++;
+            }
+        } else if ((in[i] & 0xf0) == 0xe0) {
+            if (i >= src_len - 2 || (in[i+1] & 0xc0) != 0x80 || (in[i+2] & 0xc0) != 0x80) {
+                cp = 0xfffd;
+                Status = STATUS_SOME_NOT_MAPPED;
+            } else {
+                cp = ((in[i] & 0xf) << 12) | ((in[i+1] & 0x3f) << 6) | (in[i+2] & 0x3f);
+                i += 2;
+            }
+        } else if ((in[i] & 0xf8) == 0xf0) {
+            if (i >= src_len - 3 || (in[i+1] & 0xc0) != 0x80 || (in[i+2] & 0xc0) != 0x80 || (in[i+3] & 0xc0) != 0x80) {
+                cp = 0xfffd;
+                Status = STATUS_SOME_NOT_MAPPED;
+            } else {
+                cp = ((in[i] & 0x7) << 18) | ((in[i+1] & 0x3f) << 12) | ((in[i+2] & 0x3f) << 6) | (in[i+3] & 0x3f);
+                i += 3;
+            }
+        } else {
+            cp = 0xfffd;
+            Status = STATUS_SOME_NOT_MAPPED;
+        }
+
+        if (cp > 0x10ffff) {
+            cp = 0xfffd;
+            Status = STATUS_SOME_NOT_MAPPED;
+        }
+
+        if (dest) {
+            if (cp <= 0xffff) {
+                if (left < 1)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                *out = (uint16_t)cp;
+                out++;
+
+                left--;
+            } else {
+                if (left < 2)
+                    return STATUS_BUFFER_OVERFLOW;
+
+                cp -= 0x10000;
+
+                *out = 0xd800 | ((cp & 0xffc00) >> 10);
+                out++;
+
+                *out = 0xdc00 | (cp & 0x3ff);
+                out++;
+
+                left -= 2;
+            }
+        }
+
+        if (cp <= 0xffff)
+            needed += sizeof(uint16_t);
+        else
+            needed += 2 * sizeof(uint16_t);
+    }
+
+    if (dest_len)
+        *dest_len = needed;
+
+    return Status;
+}
+
+NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, const WCHAR* src, ULONG src_len) {
     NTSTATUS Status = STATUS_SUCCESS;
     uint16_t* in = (uint16_t*)src;
     uint8_t* out = (uint8_t*)dest;

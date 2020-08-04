@@ -29,6 +29,9 @@ static void file_object_close(object_header* obj) {
 
     up_write(&fcb_list_sem);
 
+    if (f->query_string.Buffer)
+        kfree(f->query_string.Buffer);
+
     if (__sync_sub_and_fetch(&f->dev->header.refcount, 1) == 0)
         f->dev->header.close(&f->dev->header);
 
@@ -374,7 +377,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     // create file object (with path)
 
-    obj = kmalloc(sizeof(file_object), GFP_KERNEL);
+    obj = kzalloc(sizeof(file_object), GFP_KERNEL);
     if (!obj) {
         down_write(&fcb_list_sem);
 
@@ -800,18 +803,154 @@ static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStat
     }
 }
 
+typedef struct {
+    struct dir_context dc;
+    void* buf;
+    unsigned int length;
+    bool single_entry;
+    FILE_INFORMATION_CLASS type;
+    NTSTATUS Status;
+    bool first;
+} query_directory_iterate;
+
+static int query_directory_iterate_func(struct dir_context* dc, const char* name, int name_len, loff_t pos,
+                                        u64 ino, unsigned int type) {
+    query_directory_iterate* qdi = (query_directory_iterate*)dc;
+    NTSTATUS Status;
+    UNICODE_STRING utf16name;
+    ULONG dest_len;
+
+    printk("query_directory_iterate_func(%px, %s, %u, %llu, %llx, %u)\n", dc, name, name_len, pos, ino, type);
+
+    if (qdi->single_entry && !qdi->first)
+        return -1;
+
+    Status = utf8_to_utf16(NULL, 0, &dest_len, name, name_len);
+    if (!NT_SUCCESS(Status)) {
+        qdi->Status = Status;
+        return -1;
+    }
+
+    utf16name.Length = dest_len;
+    utf16name.Buffer = kmalloc(dest_len, GFP_KERNEL);
+
+    if (!utf16name.Buffer) {
+        qdi->Status = STATUS_INSUFFICIENT_RESOURCES;
+        return -1;
+    }
+
+    Status = utf8_to_utf16(utf16name.Buffer, utf16name.Length, &dest_len, name, name_len);
+    if (!NT_SUCCESS(Status)) {
+        kfree(utf16name.Buffer);
+        qdi->Status = Status;
+        return -1;
+    }
+
+    // FIXME - skip if doesn't match pattern
+
+    switch (qdi->type) {
+        case FileBothDirectoryInformation: {
+            FILE_BOTH_DIR_INFORMATION* fbdi = qdi->buf;
+
+            if (qdi->length < offsetof(FILE_BOTH_DIR_INFORMATION, FileName) + utf16name.Length) {
+                if (qdi->first)
+                    qdi->Status = STATUS_BUFFER_TOO_SMALL;
+
+                kfree(utf16name.Buffer);
+
+                return -1;
+            }
+
+            memset(fbdi, 0, offsetof(FILE_BOTH_DIR_INFORMATION, FileName));
+
+            // FIXME - if not first, align buf to 8-byte boundary
+
+            // FIXME - NextEntryOffset
+//             LARGE_INTEGER CreationTime; // FIXME
+//             LARGE_INTEGER LastAccessTime; // FIXME
+//             LARGE_INTEGER LastWriteTime; // FIXME
+//             LARGE_INTEGER ChangeTime; // FIXME
+//             LARGE_INTEGER EndOfFile; // FIXME
+//             LARGE_INTEGER AllocationSize; // FIXME
+//             ULONG FileAttributes; // FIXME
+            fbdi->FileNameLength = utf16name.Length;
+//             ULONG EaSize; // FIXME
+            memcpy(fbdi->FileName, utf16name.Buffer, utf16name.Length);
+
+            qdi->buf = (uint8_t*)qdi->buf + offsetof(FILE_BOTH_DIR_INFORMATION, FileName) + utf16name.Length;
+            qdi->length -= offsetof(FILE_BOTH_DIR_INFORMATION, FileName) + utf16name.Length;
+
+            break;
+        }
+
+        default:
+            printk(KERN_INFO "query_directory_iterate_func: unhandled class %u\n", qdi->type);
+            qdi->Status = STATUS_NOT_IMPLEMENTED;
+            return -1;
+    }
+
+    qdi->first = false;
+
+    kfree(utf16name.Buffer);
+
+    return 0;
+}
+
 static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                                        PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                                        FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                                        PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+    query_directory_iterate qdi;
+    bool initial;
+
     printk(KERN_INFO "unixfs_query_directory(%px, %lx, %px, %px, %px, %px, %x, %x, %x, %px, %x): stub\n",
            obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
            FileInformation, Length, FileInformationClass, ReturnSingleEntry, FileMask,
            RestartScan);
 
-    // FIXME
+    if (RestartScan) {
+        obj->query_dir_offset = 0;
 
-    return STATUS_NOT_IMPLEMENTED;
+        if (obj->query_string.Buffer) {
+            kfree(obj->query_string.Buffer);
+            obj->query_string.Buffer = NULL;
+        }
+    }
+
+    initial = obj->query_dir_offset == 0;
+
+    qdi.dc.pos = obj->query_dir_offset;
+    qdi.dc.actor = query_directory_iterate_func;
+    qdi.buf = FileInformation;
+    qdi.length = Length;
+    qdi.single_entry = true; //ReturnSingleEntry;
+    qdi.type = FileInformationClass;
+    qdi.Status = STATUS_SUCCESS;
+    qdi.first = true;
+
+    if (obj->f->f->f_op->iterate_shared) {
+        down_read(&obj->f->f->f_inode->i_rwsem);
+        obj->f->f->f_op->iterate_shared(obj->f->f, &qdi.dc);
+        up_read(&obj->f->f->f_inode->i_rwsem);
+    } else {
+        down_write(&obj->f->f->f_inode->i_rwsem);
+        obj->f->f->f_op->iterate(obj->f->f, &qdi.dc);
+        up_write(&obj->f->f->f_inode->i_rwsem);
+    }
+
+    if (!NT_SUCCESS(qdi.Status))
+        return qdi.Status;
+
+    if (qdi.first)
+        return initial ? STATUS_NO_SUCH_FILE : STATUS_NO_MORE_FILES;
+
+    obj->query_dir_offset = qdi.dc.pos;
+
+    IoStatusBlock->Information = (uint8_t*)qdi.buf - (uint8_t*)FileInformation;
+
+    printk(KERN_INFO "IoStatusBlock->Information = %lx\n", IoStatusBlock->Information);
+
+    return STATUS_SUCCESS;
 }
 
 static struct file* unixfs_get_filp(file_object* obj) {

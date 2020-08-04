@@ -22,12 +22,14 @@ struct muwine_func {
 #define STATUS_SOME_NOT_MAPPED              0x00000107
 #define STATUS_OBJECT_NAME_EXISTS           0x40000000
 #define STATUS_BUFFER_OVERFLOW              0x80000005
+#define STATUS_NO_MORE_FILES                0x80000006
 #define STATUS_NO_MORE_ENTRIES              0x8000001a
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
 #define STATUS_INVALID_INFO_CLASS           0xc0000003
 #define STATUS_ACCESS_VIOLATION             0xc0000005
 #define STATUS_INVALID_HANDLE               0xc0000008
 #define STATUS_INVALID_PARAMETER            0xc000000d
+#define STATUS_NO_SUCH_FILE                 0xc000000f
 #define STATUS_BUFFER_TOO_SMALL             0xc0000023
 #define STATUS_OBJECT_NAME_INVALID          0xc0000033
 #define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
@@ -59,6 +61,7 @@ typedef uint8_t UCHAR;
 typedef uint8_t BOOLEAN;
 typedef uintptr_t ULONG_PTR;
 typedef ULONG_PTR SIZE_T, *PSIZE_T;
+typedef char CCHAR;
 
 #ifdef __amd64 // FIXME - also aarch64
 #define KERNEL_HANDLE_MASK 0x8000000000000000
@@ -241,7 +244,8 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
 int strnicmp(const char* string1, const char* string2, size_t count);
 process* muwine_current_process(void);
-NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, WCHAR* src, ULONG src_len);
+NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, const char* src, ULONG src_len);
+NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, const WCHAR* src, ULONG src_len);
 
 // reg.c
 NTSTATUS muwine_init_registry(void);
@@ -443,6 +447,23 @@ typedef struct {
     LARGE_INTEGER EndOfFile;
 } FILE_END_OF_FILE_INFORMATION;
 
+typedef struct {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    CCHAR ShortNameLength;
+    WCHAR ShortName[12];
+    WCHAR FileName[1];
+} FILE_BOTH_DIR_INFORMATION;
+
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                       ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
@@ -506,6 +527,8 @@ typedef struct {
     ULONG flags;
     uint64_t offset;
     device* dev;
+    loff_t query_dir_offset;
+    UNICODE_STRING query_string;
 } file_object;
 
 NTSTATUS muwine_init_unixroot(void);

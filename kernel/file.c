@@ -507,6 +507,8 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
                               PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                               FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                               PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+    NTSTATUS Status;
+
     file_object* obj = (file_object*)get_object_from_handle(FileHandle);
     if (!obj || obj->header.type != muwine_object_file)
         return STATUS_INVALID_HANDLE;
@@ -514,9 +516,13 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
     if (!obj->dev->query_directory)
         return STATUS_NOT_IMPLEMENTED;
 
-    return obj->dev->query_directory(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
+    Status = obj->dev->query_directory(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
                                      Length, FileInformationClass, ReturnSingleEntry, FileMask,
                                      RestartScan);
+
+    printk(KERN_INFO "query_directory returned %08x\n", Status);
+
+    return Status;
 }
 
 NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
