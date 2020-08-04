@@ -594,12 +594,44 @@ NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS Informat
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PULONG NumberOfBytesToProtect,
-                                ULONG NewAccessProtection, PULONG OldAccessProtection) {
+static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PULONG NumberOfBytesToProtect,
+                                       ULONG NewAccessProtection, PULONG OldAccessProtection) {
     printk(KERN_INFO "NtProtectVirtualMemory(%lx, %px, %px, %x, %px): stub\n", (uintptr_t)ProcessHandle,
            BaseAddress, NumberOfBytesToProtect, NewAccessProtection, OldAccessProtection);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PULONG NumberOfBytesToProtect,
+                                     ULONG NewAccessProtection, PULONG OldAccessProtection) {
+    NTSTATUS Status;
+    void* addr;
+    ULONG size, old;
+
+    if (!BaseAddress || !NumberOfBytesToProtect || !OldAccessProtection)
+        return STATUS_INVALID_PARAMETER;
+
+    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)ProcessHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (get_user(addr, BaseAddress) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (get_user(size, NumberOfBytesToProtect) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    Status = NtProtectVirtualMemory(ProcessHandle, &addr, &size, NewAccessProtection, &old);
+
+    if (put_user(addr, BaseAddress) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (put_user(size, NumberOfBytesToProtect) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (put_user(old, OldAccessProtection) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
