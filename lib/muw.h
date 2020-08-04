@@ -33,6 +33,7 @@ typedef uint8_t BOOLEAN;
 typedef uintptr_t ULONG_PTR;
 typedef ULONG_PTR SIZE_T, *PSIZE_T;
 typedef intptr_t LONG_PTR;
+typedef char CCHAR;
 
 typedef struct {
     USHORT Length;
@@ -304,6 +305,23 @@ typedef enum {
 #define FILE_OPEN_REPARSE_POINT           0x00200000
 #define FILE_OPEN_NO_RECALL               0x00400000
 #define FILE_OPEN_FOR_FREE_SPACE_QUERY    0x00800000
+
+typedef struct {
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    CCHAR ShortNameLength;
+    WCHAR ShortName[12];
+    WCHAR FileName[1];
+} FILE_BOTH_DIR_INFORMATION;
 
 #endif
 
