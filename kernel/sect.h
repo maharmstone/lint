@@ -7,6 +7,19 @@
 #define IMAGE_NT_OPTIONAL_HDR64_MAGIC   0x20b
 
 typedef struct {
+    char Name[8];
+    uint32_t VirtualSize;
+    uint32_t VirtualAddress;
+    uint32_t SizeOfRawData;
+    uint32_t PointerToRawData;
+    uint32_t PointerToRelocations;
+    uint32_t PointerToLinenumbers;
+    uint16_t NumberOfRelocations;
+    uint16_t NumberOfLinenumbers;
+    uint32_t Characteristics;
+} IMAGE_SECTION_HEADER;
+
+typedef struct {
     object_header header;
     uint64_t max_size;
     ULONG page_protection;
@@ -15,6 +28,8 @@ typedef struct {
     struct file* anon_file;
     void* preferred_base;
     bool fixed_base;
+    unsigned int num_sections;
+    IMAGE_SECTION_HEADER sections[1];
 } section_object;
 
 // NT_ prefix added to avoid collision with pgtable_types.h
@@ -40,6 +55,9 @@ typedef struct {
 #define SEC_LARGE_PAGES 0x80000000
 
 #define IMAGE_FILE_RELOCS_STRIPPED 0x0001
+
+#define IMAGE_SCN_MEM_WRITE 0x80000000
+#define IMAGE_SCN_MEM_EXECUTE 0x20000000
 
 typedef struct {
     uint16_t e_magic;
@@ -154,15 +172,3 @@ typedef struct {
     };
 } IMAGE_NT_HEADERS;
 
-typedef struct {
-    char Name[8];
-    uint32_t VirtualSize;
-    uint32_t VirtualAddress;
-    uint32_t SizeOfRawData;
-    uint32_t PointerToRawData;
-    uint32_t PointerToRelocations;
-    uint32_t PointerToLinenumbers;
-    uint16_t NumberOfRelocations;
-    uint16_t NumberOfLinenumbers;
-    uint32_t Characteristics;
-} IMAGE_SECTION_HEADER;

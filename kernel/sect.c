@@ -12,7 +12,7 @@ static void section_object_close(object_header* obj) {
     }
 
     if (sect->anon_file)
-        filp_close(sect->anon_file, 0);
+        filp_close(sect->anon_file, NULL);
 
     if (sect->header.path.Buffer)
         kfree(sect->header.path.Buffer);
@@ -21,7 +21,7 @@ static void section_object_close(object_header* obj) {
 }
 
 static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file** anon_file,
-                           uint32_t* ret_image_size, void** base, bool* fixed_base) {
+                           uint32_t* ret_image_size, section_object** obj) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
@@ -34,6 +34,7 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     unsigned int i;
     ssize_t written;
     loff_t pos;
+    section_object* sect;
 
     // FIXME - check error codes are right
 
@@ -139,22 +140,35 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
 
     written = kernel_write(file, buf, image_size, &pos);
 
-    vfree(buf);
-
     if (written < 0) {
         filp_close(file, NULL);
+        vfree(buf);
         return muwine_error_to_ntstatus(written);
+    }
+
+    sect = kzalloc(offsetof(section_object, sections) + (nt_header.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER)), GFP_KERNEL);
+    if (!sect) {
+        filp_close(file, NULL);
+        vfree(buf);
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     *anon_file = file;
     *ret_image_size = image_size;
 
     if (nt_header.OptionalHeader32.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
-        *base = (void*)(uintptr_t)nt_header.OptionalHeader64.ImageBase;
+        sect->preferred_base = (void*)(uintptr_t)nt_header.OptionalHeader64.ImageBase;
     else
-        *base = (void*)(uintptr_t)nt_header.OptionalHeader32.ImageBase;
+        sect->preferred_base = (void*)(uintptr_t)nt_header.OptionalHeader32.ImageBase;
 
-    *fixed_base = nt_header.FileHeader.Characteristics & IMAGE_FILE_RELOCS_STRIPPED;
+    sect->fixed_base = nt_header.FileHeader.Characteristics & IMAGE_FILE_RELOCS_STRIPPED;
+
+    sect->num_sections = nt_header.FileHeader.NumberOfSections;
+    memcpy(sect->sections, sections, sect->num_sections * sizeof(IMAGE_SECTION_HEADER));
+
+    vfree(buf);
+
+    *obj = sect;
 
     return STATUS_SUCCESS;
 }
@@ -167,8 +181,6 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     section_object* obj;
     struct file* anon_file = NULL;
     uint64_t file_size = 0;
-    void* base = NULL;
-    bool fixed_base = false;
 
     if (AllocationAttributes & SEC_IMAGE && !FileHandle)
         return STATUS_INVALID_PARAMETER;
@@ -206,25 +218,34 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     if (AllocationAttributes & SEC_IMAGE) {
         uint32_t image_size;
 
-        Status = load_image(FileHandle, file_size, &anon_file, &image_size, &base, &fixed_base);
+        Status = load_image(FileHandle, file_size, &anon_file, &image_size, &obj);
         if (!NT_SUCCESS(Status)) {
             if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
-                obj->header.close(&obj->header);
+                file->header.close(&file->header);
 
             return Status;
         }
 
         if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
-            obj->header.close(&obj->header);
+            file->header.close(&file->header);
 
         file = NULL;
 
         file_size = image_size;
-    }
+    } else {
+        obj = kzalloc(offsetof(section_object, sections), GFP_KERNEL);
+        if (!obj) {
+            if (file) {
+                if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
+                    file->header.close(&file->header);
+            }
 
-    obj = kzalloc(sizeof(section_object), GFP_KERNEL);
-    if (!obj)
-        return STATUS_INSUFFICIENT_RESOURCES;
+            if (anon_file)
+                filp_close(anon_file, NULL);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
 
     obj->header.refcount = 1;
     obj->header.type = muwine_object_section;
@@ -246,8 +267,6 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     obj->alloc_attributes = AllocationAttributes;
     obj->file = file;
     obj->anon_file = anon_file;
-    obj->preferred_base = base;
-    obj->fixed_base = fixed_base;
 
     Status = muwine_add_handle(&obj->header, SectionHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false);
@@ -405,6 +424,45 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
         return muwine_error_to_ntstatus(ret);
     }
 
+    addr = (void*)(uintptr_t)ret;
+
+    if (sect->alloc_attributes & SEC_IMAGE) {
+        unsigned int i;
+
+        for (i = 0; i < sect->num_sections; i++) {
+            uint32_t section_size = sect->sections[i].VirtualSize;
+
+            if (section_size % PAGE_SIZE)
+                section_size += PAGE_SIZE - (section_size % PAGE_SIZE);
+
+            if (sect->sections[i].VirtualAddress < off + len &&
+                sect->sections[i].VirtualAddress + section_size > off) {
+                uint32_t off2 = off, end = sect->sections[i].VirtualAddress + section_size;
+
+                if (sect->sections[i].VirtualAddress > off2)
+                    off2 = sect->sections[i].VirtualAddress;
+
+                if (end > off + len)
+                    end = off + len;
+
+                prot = PROT_READ;
+
+                if (sect->sections[i].Characteristics & IMAGE_SCN_MEM_WRITE)
+                    prot |= PROT_WRITE;
+
+                if (sect->sections[i].Characteristics & IMAGE_SCN_MEM_EXECUTE)
+                    prot |= PROT_EXEC;
+
+                ret = vm_mmap(file, (uintptr_t)addr + off2 - off, end - off2, prot,
+                              flags | MAP_FIXED, off2);
+                if (IS_ERR((void*)ret)) {
+                    kfree(map);
+                    return muwine_error_to_ntstatus(ret);
+                }
+            }
+        }
+    }
+
     map->address = (uintptr_t)ret;
     map->length = len;
     map->sect = &sect->header;
@@ -414,7 +472,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     list_add_tail(&map->list, &p->mapping_list);
     spin_unlock(&p->mapping_list_lock);
 
-    *BaseAddress = (void*)(uintptr_t)ret;
+    *BaseAddress = addr;
     *ViewSize = len;
 
     return STATUS_SUCCESS;
