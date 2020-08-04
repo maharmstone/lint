@@ -687,17 +687,15 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     dest[last_slash] = 0;
     fn = dest + last_slash + 1;
 
-    // FIXME - open case-insensitively
-    dest_dir = filp_open(dest, 0, 0);
-    if (IS_ERR(dest_dir)) {
-        int err = (int)(uintptr_t)dest_dir;
+    Status = open_file(dest, &dest_dir, true);
 
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
+        filp_close(dest_dir, NULL);
         kfree(dest);
-
-        if (err == -ENOENT)
-            return STATUS_OBJECT_PATH_NOT_FOUND;
-        else
-            return muwine_error_to_ntstatus(err);
+        return Status;
+    } else if (!NT_SUCCESS(Status)) {
+        kfree(dest);
+        return Status;
     }
 
     if (obj->f->f->f_inode->i_sb != dest_dir->f_inode->i_sb) { // FIXME
