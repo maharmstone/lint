@@ -74,7 +74,7 @@ static int open_file_dir_iterate(struct dir_context* dc, const char* name, int n
     return -1; // stop iterating
 }
 
-static NTSTATUS open_file(const char* fn, struct file** ret) {
+static NTSTATUS open_file(const char* fn, struct file** ret, bool is_dir) {
     struct path root;
     struct file* parent;
     open_file_iterate ofi;
@@ -86,7 +86,7 @@ static NTSTATUS open_file(const char* fn, struct file** ret) {
     get_fs_root(init_task.fs, &root);
     task_unlock(&init_task);
 
-    parent = file_open_root(root.dentry, root.mnt, "", 0, 0);
+    parent = file_open_root(root.dentry, root.mnt, "", O_DIRECTORY, 0);
     if (IS_ERR(parent))
         return muwine_error_to_ntstatus((int)(uintptr_t)parent);
 
@@ -94,6 +94,7 @@ static NTSTATUS open_file(const char* fn, struct file** ret) {
 
     do {
         struct file* new_parent;
+        unsigned int flags;
 
         ofi.dc.pos = 0;
         ofi.part = fn;
@@ -125,8 +126,13 @@ static NTSTATUS open_file(const char* fn, struct file** ret) {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
+        if (fn[ofi.part_len] != 0 || is_dir) // directory
+            flags = O_DIRECTORY;
+        else
+            flags = O_RDWR;
+
         new_parent = file_open_root(parent->f_path.dentry, parent->f_path.mnt,
-                                    ofi.found_part, 0, 0);
+                                    ofi.found_part, flags, 0);
 
         kfree(ofi.found_part);
         filp_close(parent, NULL);
@@ -214,7 +220,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     path[as_len] = 0;
 
-    Status = open_file(path, &file);
+    Status = open_file(path, &file, CreateOptions & FILE_DIRECTORY_FILE);
 
     if (NT_SUCCESS(Status) && CreateDisposition == FILE_CREATE) {
         kfree(path);
@@ -279,6 +285,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         umode_t mode = 0644;
         unsigned int pos = as_len - 1;
         const char* fn = path;
+        unsigned int flags;
 
         if (CreateOptions & FILE_DIRECTORY_FILE)
             mode |= S_IFDIR;
@@ -292,8 +299,13 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
             pos--;
         }
 
+        flags = O_CREAT | O_EXCL;
+
+        if (!(CreateOptions & FILE_DIRECTORY_FILE))
+            flags |= O_RDWR;
+
         new_file = file_open_root(file->f_path.dentry, file->f_path.mnt,
-                                  fn, O_CREAT, mode);
+                                  fn, flags, mode);
 
         filp_close(file, NULL);
 
