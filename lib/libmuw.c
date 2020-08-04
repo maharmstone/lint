@@ -502,7 +502,7 @@ NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress)
     return ioctl(muwine_fd, MUWINE_IOCTL_NTUNMAPVIEWOFSECTION, args);
 }
 
-NTSTATUS __stdcall NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PULONG NumberOfBytesToProtect,
+NTSTATUS __stdcall NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
                                           ULONG NewAccessProtection, PULONG OldAccessProtection) {
     uintptr_t args[] = {
         5,
