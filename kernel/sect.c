@@ -20,7 +20,8 @@ static void section_object_close(object_header* obj) {
     kfree(sect);
 }
 
-static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file** anon_file, uint32_t* ret_image_size) {
+static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file** anon_file,
+                           uint32_t* ret_image_size, void** base, bool* fixed_base) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
@@ -148,6 +149,13 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     *anon_file = file;
     *ret_image_size = image_size;
 
+    if (nt_header.OptionalHeader32.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+        *base = (void*)(uintptr_t)nt_header.OptionalHeader64.ImageBase;
+    else
+        *base = (void*)(uintptr_t)nt_header.OptionalHeader32.ImageBase;
+
+    *fixed_base = nt_header.FileHeader.Characteristics & IMAGE_FILE_RELOCS_STRIPPED;
+
     return STATUS_SUCCESS;
 }
 
@@ -159,6 +167,8 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     section_object* obj;
     struct file* anon_file = NULL;
     uint64_t file_size = 0;
+    void* base = NULL;
+    bool fixed_base = false;
 
     if (AllocationAttributes & SEC_IMAGE && !FileHandle)
         return STATUS_INVALID_PARAMETER;
@@ -196,7 +206,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     if (AllocationAttributes & SEC_IMAGE) {
         uint32_t image_size;
 
-        Status = load_image(FileHandle, file_size, &anon_file, &image_size);
+        Status = load_image(FileHandle, file_size, &anon_file, &image_size, &base, &fixed_base);
         if (!NT_SUCCESS(Status)) {
             if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
                 obj->header.close(&obj->header);
@@ -236,6 +246,8 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     obj->alloc_attributes = AllocationAttributes;
     obj->file = file;
     obj->anon_file = anon_file;
+    obj->preferred_base = base;
+    obj->fixed_base = fixed_base;
 
     Status = muwine_add_handle(&obj->header, SectionHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false);
@@ -307,6 +319,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     struct file* file;
     section_map* map;
     process* p;
+    void* addr;
 
     if (!sect || sect->header.type != muwine_object_section)
         return STATUS_INVALID_HANDLE;
@@ -376,7 +389,17 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     if (!map)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    ret = vm_mmap(file, (uintptr_t)*BaseAddress, len, prot, flags, off);
+    addr = *BaseAddress;
+
+    if (sect->alloc_attributes & SEC_IMAGE && (!addr || sect->fixed_base))
+        addr = (uint8_t*)sect->preferred_base + off;
+
+    if (sect->alloc_attributes & SEC_IMAGE && sect->fixed_base)
+        flags |= MAP_FIXED;
+
+    // FIXME - fail if MAP_FIXED, and we've already mapped something here? Or do we unmap it?
+
+    ret = vm_mmap(file, (uintptr_t)addr, len, prot, flags, off);
     if (IS_ERR((void*)ret)) {
         kfree(map);
         return muwine_error_to_ntstatus(ret);

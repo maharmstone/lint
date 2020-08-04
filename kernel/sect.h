@@ -13,6 +13,8 @@ typedef struct {
     ULONG alloc_attributes;
     file_object* file;
     struct file* anon_file;
+    void* preferred_base;
+    bool fixed_base;
 } section_object;
 
 // NT_ prefix added to avoid collision with pgtable_types.h
@@ -36,6 +38,8 @@ typedef struct {
 #define SEC_NOCACHE 0x10000000
 #define SEC_WRITECOMBINE 0x40000000
 #define SEC_LARGE_PAGES 0x80000000
+
+#define IMAGE_FILE_RELOCS_STRIPPED 0x0001
 
 typedef struct {
     uint16_t e_magic;
