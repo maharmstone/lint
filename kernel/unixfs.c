@@ -1,5 +1,6 @@
 #include "muwine.h"
 #include <linux/namei.h>
+#include <linux/fs_struct.h>
 
 #define SECTOR_SIZE 0x1000
 
@@ -12,34 +13,6 @@ typedef struct _fcb {
 
 static LIST_HEAD(fcb_list);
 static DECLARE_RWSEM(fcb_list_sem);
-
-static int stricmp(char* s1, char* s2) {
-    // FIXME - do this properly (including Greek, Cyrillic, etc.)
-
-    while (true) {
-        char c1 = *s1;
-        char c2 = *s2;
-
-        if (c1 >= 'A' && c1 <= 'Z')
-            c1 = c1 - 'A' + 'a';
-
-        if (c2 >= 'A' && c2 <= 'Z')
-            c2 = c2 - 'A' + 'a';
-
-        if (c1 < c2)
-            return -1;
-        else if (c2 < c1)
-            return 1;
-
-        if (c1 == 0 || c2 == 0)
-            break;
-
-        s1++;
-        s2++;
-    }
-
-    return 0;
-}
 
 static void file_object_close(object_header* obj) {
     file_object* f = (file_object*)obj;
@@ -65,6 +38,116 @@ static void file_object_close(object_header* obj) {
     kfree(f);
 }
 
+typedef struct {
+    struct dir_context dc;
+    const char* part;
+    unsigned int part_len;
+    bool found;
+    char* found_part;
+} open_file_iterate;
+
+static int open_file_dir_iterate(struct dir_context* dc, const char* name, int name_len, loff_t pos,
+                                 u64 ino, unsigned int type) {
+    open_file_iterate* ofi = (open_file_iterate*)dc;
+
+    if (name_len == 1 && name[0] == '.')
+        return 0;
+
+    if (name_len == 2 && name[0] == '.' && name[1] == '.')
+        return 0;
+
+    if (name_len != ofi->part_len)
+        return 0;
+
+    if (strnicmp(name, ofi->part, name_len))
+        return 0;
+
+    ofi->found = true;
+
+    ofi->found_part = kmalloc(name_len + 1, GFP_KERNEL);
+    if (!ofi->found_part)
+        return -1;
+
+    memcpy(ofi->found_part, name, name_len);
+    ofi->found_part[name_len] = 0;
+
+    return -1; // stop iterating
+}
+
+static NTSTATUS open_file(const char* fn, struct file** ret) {
+    struct path root;
+    struct file* parent;
+    open_file_iterate ofi;
+
+    if (fn[0] == '/')
+        fn++;
+
+    task_lock(&init_task);
+    get_fs_root(init_task.fs, &root);
+    task_unlock(&init_task);
+
+    parent = file_open_root(root.dentry, root.mnt, "", 0, 0);
+    if (IS_ERR(parent))
+        return muwine_error_to_ntstatus((int)(uintptr_t)parent);
+
+    ofi.dc.actor = open_file_dir_iterate;
+
+    do {
+        struct file* new_parent;
+
+        ofi.dc.pos = 0;
+        ofi.part = fn;
+        ofi.part_len = 0;
+        ofi.found_part = NULL;
+        ofi.found = false;
+
+        while (fn[ofi.part_len] != 0 && fn[ofi.part_len] != '/') {
+            ofi.part_len++;
+        }
+
+        if (parent->f_op->iterate_shared)
+            parent->f_op->iterate_shared(parent, &ofi.dc);
+        else
+            parent->f_op->iterate(parent, &ofi.dc);
+
+        if (!ofi.found) {
+            if (fn[ofi.part_len] != 0) {
+                filp_close(parent, NULL);
+                return STATUS_OBJECT_PATH_NOT_FOUND;
+            } else {
+                *ret = parent;
+                return STATUS_OBJECT_NAME_NOT_FOUND;
+            }
+        }
+
+        if (!ofi.found_part) {
+            filp_close(parent, NULL);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        new_parent = file_open_root(parent->f_path.dentry, parent->f_path.mnt,
+                                    ofi.found_part, 0, 0);
+
+        kfree(ofi.found_part);
+        filp_close(parent, NULL);
+
+        if (IS_ERR(new_parent))
+            return muwine_error_to_ntstatus((int)(uintptr_t)new_parent);
+
+        parent = new_parent;
+        fn += ofi.part_len;
+
+        if (fn[0] == 0)
+            break;
+
+        fn++;
+    } while (true);
+
+    *ret = parent;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK DesiredAccess, const UNICODE_STRING* us,
                                    PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                                    ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
@@ -76,8 +159,12 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     struct list_head* le;
     fcb* f = NULL;
     file_object* obj;
+    struct file* file;
+    bool name_exists;
 
     // FIXME - ADS
+
+    // FIXME - handle symlinks
 
     // FIXME - handle creating files
     // FIXME - how do ECPs get passed?
@@ -91,6 +178,9 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         CreateDisposition != FILE_OVERWRITE && CreateDisposition != FILE_OVERWRITE_IF) {
         return STATUS_INVALID_PARAMETER;
     }
+
+    if (CreateOptions & FILE_DIRECTORY_FILE && CreateDisposition == FILE_SUPERSEDE)
+        return STATUS_INVALID_PARAMETER;
 
     if (us->Buffer[0] != '\\')
         return STATUS_INVALID_PARAMETER;
@@ -118,39 +208,107 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
             path[i] = '/';
     }
 
+    while (as_len > 0 && path[as_len - 1] == '/') {
+        as_len--;
+    }
+
     path[as_len] = 0;
+
+    Status = open_file(path, &file);
+
+    if (NT_SUCCESS(Status) && CreateDisposition == FILE_CREATE) {
+        kfree(path);
+        filp_close(file, NULL);
+        return STATUS_OBJECT_NAME_COLLISION;
+    }
+
+    if (!NT_SUCCESS(Status) && Status != STATUS_OBJECT_NAME_NOT_FOUND) {
+        kfree(path);
+        return Status;
+    }
+
+    name_exists = Status != STATUS_OBJECT_NAME_NOT_FOUND;
+
+    if (!name_exists && (CreateDisposition == FILE_OPEN || CreateDisposition == FILE_OVERWRITE)) {
+        kfree(path);
+        filp_close(file, NULL);
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
+    if (name_exists && CreateOptions & FILE_DIRECTORY_FILE && !S_ISDIR(file->f_inode->i_mode)) {
+        kfree(path);
+        filp_close(file, NULL);
+        return STATUS_NOT_A_DIRECTORY;
+    } else if (name_exists && CreateOptions & FILE_NON_DIRECTORY_FILE && S_ISDIR(file->f_inode->i_mode)) {
+        kfree(path);
+        filp_close(file, NULL);
+        return STATUS_FILE_IS_A_DIRECTORY;
+    }
 
     // loop through list of FCBs, and increase refcount if found; otherwise, do filp_open
 
+    // FIXME - if need to create new file, this should be done outside of lock
+
     down_write(&fcb_list_sem);
 
-    le = fcb_list.next;
-    while (le != &fcb_list) {
-        fcb* f2 = list_entry(le, fcb, list);
+    if (name_exists) {
+        le = fcb_list.next;
+        while (le != &fcb_list) {
+            fcb* f2 = list_entry(le, fcb, list);
 
-        // FIXME - should be by mount point and inode no.
-        if (!stricmp(f2->path, path)) {
-            if (CreateDisposition == FILE_SUPERSEDE) {
-                up_write(&fcb_list_sem);
-                kfree(path);
-                return STATUS_CANNOT_DELETE;
-            } else if (CreateDisposition == FILE_CREATE) {
-                up_write(&fcb_list_sem);
-                kfree(path);
-                return STATUS_OBJECT_NAME_EXISTS;
+            if (f2->f->f_inode == file->f_inode) {
+                if (CreateDisposition == FILE_SUPERSEDE) {
+                    up_write(&fcb_list_sem);
+                    kfree(path);
+                    filp_close(file, NULL);
+                    return STATUS_CANNOT_DELETE;
+                }
+
+                f2->refcount++;
+                f = f2;
+                filp_close(file, NULL);
+                break;
             }
 
-            f2->refcount++;
-            f = f2;
-            break;
+            le = le->next;
+        }
+    }
+
+    if (!name_exists) {
+        struct file* new_file;
+        umode_t mode = 0644;
+        unsigned int pos = as_len - 1;
+        const char* fn = path;
+
+        if (CreateOptions & FILE_DIRECTORY_FILE)
+            mode |= S_IFDIR;
+
+        while (pos > 0) {
+            if (path[pos] == '/') {
+                fn = &path[pos+1];
+                break;
+            }
+
+            pos--;
         }
 
-        le = le->next;
+        new_file = file_open_root(file->f_path.dentry, file->f_path.mnt,
+                                  fn, O_CREAT, mode);
+
+        filp_close(file, NULL);
+
+        if (IS_ERR(new_file)) {
+            up_write(&fcb_list_sem);
+            kfree(path);
+            return muwine_error_to_ntstatus((int)(uintptr_t)new_file);
+        }
+
+        file = new_file;
+
+        // FIXME - change uid and gid
     }
 
     if (!f) {
-        unsigned int flags;
-
         f = kmalloc(offsetof(fcb, path) + as_len + 1, GFP_KERNEL);
         if (!f) {
             up_write(&fcb_list_sem);
@@ -160,35 +318,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
         f->refcount = 1;
 
-        if (CreateDisposition == FILE_SUPERSEDE || CreateDisposition == FILE_OPEN_IF || CreateDisposition == FILE_OVERWRITE_IF)
-            flags = O_CREAT;
-        else if (CreateDisposition == FILE_CREATE || CreateDisposition == FILE_OVERWRITE)
-            flags = O_CREAT | O_EXCL;
-        else
-            flags = 0;
-
-        if (CreateDisposition == FILE_OVERWRITE || CreateDisposition == FILE_OVERWRITE_IF ||
-            CreateDisposition == FILE_SUPERSEDE) {
-            flags |= O_TRUNC;
-        }
-
-        if (CreateOptions & FILE_DIRECTORY_FILE)
-            flags |= O_DIRECTORY;
-
-        // FIXME - case-insensitivity
-        f->f = filp_open(path, flags | O_RDWR, 0644);
-        if (IS_ERR(f->f)) {
-            int err = (int)(uintptr_t)f->f;
-
-            up_write(&fcb_list_sem);
-
-            kfree(f);
-            kfree(path);
-
-            return muwine_error_to_ntstatus(err);
-        }
-
-        // FIXME - if new file, change uid and gid
+        f->f = file;
 
         memcpy(f->path, path, as_len + 1);
 
@@ -199,14 +329,33 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     kfree(path);
 
-    // FIXME - truncate if re-opened currently open file, and FILE_OVERWRITE, FILE_OVERWRITE_IF, or FILE_SUPERSEDE
+    if (name_exists &&
+        (CreateDisposition == FILE_SUPERSEDE || CreateDisposition == FILE_OVERWRITE_IF ||
+            CreateDisposition == FILE_OVERWRITE)) {
+        int ret = vfs_truncate(&file->f_path, 0);
+
+        if (ret < 0) {
+            down_write(&fcb_list_sem);
+
+            f->refcount--;
+
+            if (f->refcount == 0) {
+                filp_close(f->f, NULL);
+                list_del(&f->list);
+                kfree(f);
+            }
+
+            up_write(&fcb_list_sem);
+
+            return muwine_error_to_ntstatus(ret);
+        }
+    }
 
     // FIXME - if supersede, should get rid of xattrs etc.(?)
 
     // FIXME - check xattr for SD, and check process has permissions for requested access
     // FIXME - check share access
 
-    // FIXME - FILE_DIRECTORY_FILE and FILE_NON_DIRECTORY_FILE
     // FIXME - oplocks
     // FIXME - EAs
     // FIXME - other options
@@ -295,7 +444,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         return Status;
     }
 
-    if (f->f->f_mode & FMODE_CREATED)
+    if (!name_exists)
         IoStatusBlock->Information = FILE_CREATED;
     else {
         switch (CreateDisposition) {
@@ -574,7 +723,6 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
             filp_close(dest_dir, NULL);
 
             kfree(dest);
-
 
             return STATUS_OBJECT_NAME_COLLISION;
         }
