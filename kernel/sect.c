@@ -593,3 +593,13 @@ NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS Informat
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PULONG NumberOfBytesToProtect,
+                                ULONG NewAccessProtection, PULONG OldAccessProtection) {
+    printk(KERN_INFO "NtProtectVirtualMemory(%lx, %px, %px, %x, %px): stub\n", (uintptr_t)ProcessHandle,
+           BaseAddress, NumberOfBytesToProtect, NewAccessProtection, OldAccessProtection);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
