@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #ifdef _WIN32
 typedef enum {
@@ -24,6 +25,9 @@ NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle
                                       ULONG AllocationType, ULONG Win32Protect);
 NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
 #endif
+
+#define STATUS_NO_SUCH_FILE                 (NTSTATUS)0xc000000f
+#define STATUS_NO_MORE_FILES                (NTSTATUS)0x80000006
 
 #if 0
 static size_t wchar_len(const WCHAR* s) {
@@ -128,8 +132,69 @@ static void test_section() {
     NtClose(sect);
 }
 
+static void test_query_dir() {
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+    UNICODE_STRING us;
+    IO_STATUS_BLOCK iosb;
+    HANDLE h;
+    uint8_t buf[0x1000];
+
+    static const WCHAR dir[] = L"\\Device\\UnixRoot\\root";
+
+    us.Length = us.MaximumLength = sizeof(dir) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)dir;
+
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &us;
+    oa.Attributes = 0;
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    Status = NtOpenFile(&h, 0, &oa, &iosb, 0, FILE_DIRECTORY_FILE);
+    if (!NT_SUCCESS(Status)) {
+        fprintf(stderr, "NtOpenFile returned %08x\n", Status);
+        return;
+    }
+
+    do {
+        FILE_BOTH_DIR_INFORMATION* fbdi = (FILE_BOTH_DIR_INFORMATION*)buf;
+
+        Status = NtQueryDirectoryFile(h, NULL, NULL, NULL, &iosb, buf, sizeof(buf), FileBothDirectoryInformation,
+                                    false, NULL, false);
+
+        if (!NT_SUCCESS(Status)) {
+            if (Status != STATUS_NO_MORE_FILES)
+                fprintf(stderr, "NtQueryDirectoryFile returned %08x\n", Status);
+
+            break;
+        }
+
+        do {
+            char s[255];
+            unsigned int i;
+
+            for (i = 0; i < fbdi->FileNameLength / sizeof(WCHAR); i++) {
+                s[i] = (char)fbdi->FileName[i];
+            }
+            s[i] = 0;
+
+            printf("file: %s\n", s);
+
+            if (fbdi->NextEntryOffset == 0)
+                break;
+
+            fbdi = (FILE_BOTH_DIR_INFORMATION*)((uint8_t*)fbdi + fbdi->NextEntryOffset);
+        } while (true);
+    } while (true);
+
+    NtClose(h);
+}
+
 int main() {
     test_section();
+    test_query_dir();
 
     return 0;
 }
