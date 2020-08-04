@@ -110,10 +110,17 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
         }
 
         if (sections[i].SizeOfRawData > 0) {
+            uint32_t section_size;
+
             off.QuadPart = sections[i].PointerToRawData;
 
+            section_size = sections[i].VirtualSize;
+
+            if (sections[i].SizeOfRawData < section_size)
+                section_size = sections[i].SizeOfRawData;
+
             Status = NtReadFile(file_handle, NULL, NULL, NULL, &iosb, buf + sections[i].VirtualAddress,
-                                sections[i].SizeOfRawData, &off, NULL);
+                                section_size, &off, NULL);
             if (!NT_SUCCESS(Status)) {
                 vfree(buf);
                 return Status;
