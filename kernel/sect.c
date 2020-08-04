@@ -594,7 +594,7 @@ NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS Informat
     return STATUS_NOT_IMPLEMENTED;
 }
 
-static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PULONG NumberOfBytesToProtect,
+static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
                                        ULONG NewAccessProtection, PULONG OldAccessProtection) {
     printk(KERN_INFO "NtProtectVirtualMemory(%lx, %px, %px, %x, %px): stub\n", (uintptr_t)ProcessHandle,
            BaseAddress, NumberOfBytesToProtect, NewAccessProtection, OldAccessProtection);
@@ -604,11 +604,12 @@ static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PULONG NumberOfBytesToProtect,
+NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
                                      ULONG NewAccessProtection, PULONG OldAccessProtection) {
     NTSTATUS Status;
     void* addr;
-    ULONG size, old;
+    SIZE_T size;
+    ULONG old;
 
     if (!BaseAddress || !NumberOfBytesToProtect || !OldAccessProtection)
         return STATUS_INVALID_PARAMETER;
