@@ -534,3 +534,17 @@ NTSTATUS __stdcall NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddr
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTALLOCATEVIRTUALMEMORY, args);
 }
+
+NTSTATUS __stdcall NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess,
+                                 const OBJECT_ATTRIBUTES* ObjectAttributes) {
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)SectionHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENSECTION, args);
+}

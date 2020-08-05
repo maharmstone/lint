@@ -394,6 +394,8 @@ NTSTATUS __stdcall NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddre
                                           ULONG NewAccessProtection, PULONG OldAccessProtection);
 NTSTATUS __stdcall NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                            PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
+NTSTATUS __stdcall NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess,
+                                 const OBJECT_ATTRIBUTES* ObjectAttributes);
 
 #ifdef __cplusplus
 }
