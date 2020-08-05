@@ -517,3 +517,20 @@ NTSTATUS __stdcall NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddre
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTPROTECTVIRTUALMEMORY, args);
 }
+
+NTSTATUS __stdcall NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                           PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)BaseAddress,
+        (uintptr_t)ZeroBits,
+        (uintptr_t)RegionSize,
+        (uintptr_t)AllocationType,
+        (uintptr_t)Protect
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTALLOCATEVIRTUALMEMORY, args);
+}

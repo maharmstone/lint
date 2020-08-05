@@ -392,6 +392,8 @@ NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle
 NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
 NTSTATUS __stdcall NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
                                           ULONG NewAccessProtection, PULONG OldAccessProtection);
+NTSTATUS __stdcall NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                           PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
 
 #ifdef __cplusplus
 }
