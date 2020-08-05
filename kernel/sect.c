@@ -606,12 +606,53 @@ NTSTATUS NtExtendSection(HANDLE SectionHandle, PLARGE_INTEGER NewSectionSize) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
     printk(KERN_INFO "NtOpenSection(%px, %x, %px): stub\n", SectionHandle, DesiredAccess, ObjectAttributes);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE h;
+
+    if (!SectionHandle || !ObjectAttributes)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtOpenSection(&h, DesiredAccess, &oa);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, SectionHandle) < 0) {
+        if (NT_SUCCESS(Status))
+            NtClose(h);
+
+        Status = STATUS_ACCESS_VIOLATION;
+    }
+
+    return Status;
 }
 
 NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass, PVOID InformationBuffer,
