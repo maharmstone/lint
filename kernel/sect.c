@@ -339,6 +339,8 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     section_map* map;
     process* p;
     void* addr;
+    struct list_head* le;
+    unsigned int i;
 
     if (!sect || sect->header.type != muwine_object_section)
         return STATUS_INVALID_HANDLE;
@@ -394,7 +396,10 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
             len = sect->max_size - len;
     }
 
-    flags = MAP_SHARED; // FIXME - not if SEC_IMAGE?
+    if (len % PAGE_SIZE != 0)
+        len += PAGE_SIZE - (len % PAGE_SIZE);
+
+    flags = MAP_SHARED;
 
     if (sect->file) {
         file = sect->file->dev->get_filp(sect->file);
@@ -404,7 +409,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     } else
         file = sect->anon_file;
 
-    map = kmalloc(sizeof(section_map), GFP_KERNEL);
+    map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * (len / PAGE_SIZE)), GFP_KERNEL);
     if (!map)
         return STATUS_INSUFFICIENT_RESOURCES;
 
@@ -418,6 +423,8 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
 
     // FIXME - fail if MAP_FIXED, and we've already mapped something here? Or do we unmap it?
 
+    map->file_offset = off;
+
     ret = vm_mmap(file, (uintptr_t)addr, len, prot, flags, off);
     if (IS_ERR((void*)ret)) {
         kfree(map);
@@ -426,9 +433,14 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
 
     addr = (void*)(uintptr_t)ret;
 
-    if (sect->alloc_attributes & SEC_IMAGE) {
-        unsigned int i;
+    for (i = 0; i < len / PAGE_SIZE; i++) {
+        map->prots[i] = prot;
+    }
 
+    map->address = (uintptr_t)addr;
+    map->length = len;
+
+    if (sect->alloc_attributes & SEC_IMAGE) {
         for (i = 0; i < sect->num_sections; i++) {
             uint32_t section_size = sect->sections[i].VirtualSize;
 
@@ -438,6 +450,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
             if (sect->sections[i].VirtualAddress < off + len &&
                 sect->sections[i].VirtualAddress + section_size > off) {
                 uint32_t off2 = off, end = sect->sections[i].VirtualAddress + section_size;
+                unsigned int j;
 
                 if (sect->sections[i].VirtualAddress > off2)
                     off2 = sect->sections[i].VirtualAddress;
@@ -459,21 +472,38 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
                     kfree(map);
                     return muwine_error_to_ntstatus(ret);
                 }
+
+                for (j = (off2 - off) / PAGE_SIZE; j < (end - off) / PAGE_SIZE; j++) {
+                    map->prots[j] = prot;
+                }
             }
         }
     }
 
-    map->address = (uintptr_t)ret;
-    map->length = len;
     map->sect = &sect->header;
     __sync_add_and_fetch(&map->sect->refcount, 1);
 
-    spin_lock(&p->mapping_list_lock);
-    list_add_tail(&map->list, &p->mapping_list);
-    spin_unlock(&p->mapping_list_lock);
-
     *BaseAddress = addr;
     *ViewSize = len;
+
+    down_write(&p->mapping_list_sem);
+
+    le = p->mapping_list.next;
+    while (le != &p->mapping_list) {
+        section_map* sm2 = list_entry(le, section_map, list);
+
+        if (sm2->address > map->address) {
+            list_add(&map->list, le->prev);
+            up_write(&p->mapping_list_sem);
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->next;
+    }
+
+    list_add_tail(&map->list, &p->mapping_list);
+    up_write(&p->mapping_list_sem);
 
     return STATUS_SUCCESS;
 }
@@ -536,7 +566,7 @@ static NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    spin_lock(&p->mapping_list_lock);
+    down_write(&p->mapping_list_sem);
 
     le = p->mapping_list.next;
     while (le != &p->mapping_list) {
@@ -551,7 +581,7 @@ static NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
         le = le->next;
     }
 
-    spin_unlock(&p->mapping_list_lock);
+    up_write(&p->mapping_list_sem);
 
     if (!sm)
         return STATUS_INVALID_PARAMETER;
@@ -596,12 +626,123 @@ NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS Informat
 
 static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
                                        ULONG NewAccessProtection, PULONG OldAccessProtection) {
-    printk(KERN_INFO "NtProtectVirtualMemory(%lx, %px, %px, %x, %px): stub\n", (uintptr_t)ProcessHandle,
-           BaseAddress, NumberOfBytesToProtect, NewAccessProtection, OldAccessProtection);
+    process* p;
+    uintptr_t addr = (uintptr_t)*BaseAddress;
+    size_t size = *NumberOfBytesToProtect;
+    struct list_head* le;
+    unsigned long prot;
 
-    // FIXME
+    if (ProcessHandle == NtCurrentProcess()) {
+        p = muwine_current_process();
 
-    return STATUS_NOT_IMPLEMENTED;
+        if (!p)
+            return STATUS_INTERNAL_ERROR;
+    } else {
+        printk("NtProtectVirtualMemory: FIXME - support process handles\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (addr % PAGE_SIZE) {
+        size += addr % PAGE_SIZE;
+        addr -= addr % PAGE_SIZE;
+    }
+
+    if (size % PAGE_SIZE)
+        size += PAGE_SIZE - (size % PAGE_SIZE);
+
+    *BaseAddress = (void*)addr;
+    *NumberOfBytesToProtect = size;
+
+    if (NewAccessProtection & NT_PAGE_EXECUTE_READ || NewAccessProtection & NT_PAGE_EXECUTE_WRITECOPY)
+        prot = PROT_EXEC | PROT_READ;
+    else if (NewAccessProtection & NT_PAGE_EXECUTE_READWRITE)
+        prot = PROT_EXEC | PROT_READ | PROT_WRITE;
+    else if (NewAccessProtection & NT_PAGE_READONLY || NewAccessProtection & NT_PAGE_WRITECOPY)
+        prot = PROT_READ;
+    else if (NewAccessProtection & NT_PAGE_READWRITE)
+        prot = PROT_READ | PROT_WRITE;
+    else {
+        printk("NtProtectVirtualMemory: unhandled NewAccessProtection value %x\n", NewAccessProtection);
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    *OldAccessProtection = 0;
+
+    down_write(&p->mapping_list_sem);
+
+    le = p->mapping_list.next;
+    while (le != &p->mapping_list) {
+        section_map* sm2 = list_entry(le, section_map, list);
+
+        if (sm2->address < addr + size && sm2->address + sm2->length > addr) {
+            section_object* sect;
+            unsigned long map_start, map_end, ret;
+            struct file* file;
+            unsigned int i;
+
+            map_start = addr;
+
+            if (sm2->address > map_start)
+                map_start = sm2->address;
+
+            map_end = addr + size;
+
+            if (sm2->address + sm2->length < map_end)
+                map_end = sm2->address + sm2->length;
+
+            sect = (section_object*)sm2->sect;
+
+            if (sect->file) {
+                file = sect->file->dev->get_filp(sect->file);
+
+                if (!file) {
+                    up_write(&p->mapping_list_sem);
+                    return STATUS_INVALID_PARAMETER;
+                }
+            } else
+                file = sect->anon_file;
+
+            ret = vm_mmap(file, map_start, map_end - map_start, prot, MAP_SHARED | MAP_FIXED,
+                          sm2->file_offset + map_start - sm2->address);
+            if (IS_ERR((void*)ret)) {
+                up_write(&p->mapping_list_sem);
+                return muwine_error_to_ntstatus(ret);
+            }
+
+            if (*OldAccessProtection == 0)
+                *OldAccessProtection = sm2->prots[(map_start - sm2->address) / PAGE_SIZE];
+
+            for (i = (map_start - sm2->address) / PAGE_SIZE; i < (map_end - map_start) / PAGE_SIZE; i++) {
+                sm2->prots[i] = prot;
+            }
+
+            if (addr + size == map_end)
+                break;
+
+            size = addr + size - map_end;
+            addr = map_end;
+        }
+
+        le = le->next;
+    }
+
+    up_write(&p->mapping_list_sem);
+
+    if (*OldAccessProtection == 0)
+        return STATUS_INVALID_PARAMETER;
+
+    if (*OldAccessProtection == PROT_READ)
+        *OldAccessProtection = NT_PAGE_READONLY;
+    else if (*OldAccessProtection == (PROT_READ | PROT_WRITE))
+        *OldAccessProtection = NT_PAGE_READWRITE;
+    else if (*OldAccessProtection == (PROT_READ | PROT_EXEC))
+        *OldAccessProtection = NT_PAGE_EXECUTE_READ;
+    else if (*OldAccessProtection == (PROT_READ | PROT_WRITE | PROT_EXEC))
+        *OldAccessProtection = NT_PAGE_EXECUTE_READWRITE;
+    else
+        *OldAccessProtection = 0;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,

@@ -445,7 +445,7 @@ static int muwine_open(struct inode* inode, struct file* file) {
     spin_lock_init(&p->handle_list_lock);
     p->next_handle_no = MUW_FIRST_HANDLE + 4;
     muwine_make_process_token(&p->token);
-    spin_lock_init(&p->mapping_list_lock);
+    init_rwsem(&p->mapping_list_sem);
     INIT_LIST_HEAD(&p->mapping_list);
 
     spin_lock(&pid_list_lock);
@@ -1067,7 +1067,7 @@ static int fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     spin_lock_init(&new_p->handle_list_lock);
     new_p->next_handle_no = p->next_handle_no;
     muwine_duplicate_token(p->token, &new_p->token);
-    spin_lock_init(&new_p->mapping_list_lock);
+    init_rwsem(&new_p->mapping_list_sem);
     INIT_LIST_HEAD(&new_p->mapping_list);
 
     // duplicate handles

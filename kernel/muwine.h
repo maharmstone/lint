@@ -230,7 +230,7 @@ typedef struct {
     spinlock_t handle_list_lock;
     uintptr_t next_handle_no;
     token* token;
-    spinlock_t mapping_list_lock;
+    struct rw_semaphore mapping_list_sem;
     struct list_head mapping_list;
 } process;
 
@@ -596,6 +596,8 @@ typedef struct {
     uintptr_t address;
     uintptr_t length;
     object_header* sect;
+    unsigned long file_offset;
+    unsigned long prots[1];
 } section_map;
 
 NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
