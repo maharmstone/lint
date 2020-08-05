@@ -780,12 +780,50 @@ NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, S
 
 static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                         PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
-    printk("NtAllocateVirtualMemory(%lx, %px, %lx, %px, %x, %x): stub\n", (uintptr_t)ProcessHandle,
-           BaseAddress, ZeroBits, RegionSize, AllocationType, Protect);
+    process* p;
+    uintptr_t addr = (uintptr_t)*BaseAddress;
+    size_t size = *RegionSize;
+    unsigned long ret, prot;
 
-    // FIXME
+    if (ProcessHandle == NtCurrentProcess()) {
+        p = muwine_current_process();
 
-    return STATUS_NOT_IMPLEMENTED;
+        if (!p)
+            return STATUS_INTERNAL_ERROR;
+    } else {
+        printk("NtAllocateVirtualMemory: FIXME - support process handles\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (addr % PAGE_SIZE) {
+        size += addr % PAGE_SIZE;
+        addr -= addr % PAGE_SIZE;
+    }
+
+    if (size % PAGE_SIZE)
+        size += PAGE_SIZE - (size % PAGE_SIZE);
+
+    if (Protect & NT_PAGE_EXECUTE_READ || Protect & NT_PAGE_EXECUTE_WRITECOPY)
+        prot = PROT_EXEC | PROT_READ;
+    else if (Protect & NT_PAGE_EXECUTE_READWRITE)
+        prot = PROT_EXEC | PROT_READ | PROT_WRITE;
+    else if (Protect & NT_PAGE_READONLY || Protect & NT_PAGE_WRITECOPY)
+        prot = PROT_READ;
+    else if (Protect & NT_PAGE_READWRITE)
+        prot = PROT_READ | PROT_WRITE;
+    else {
+        printk("NtAllocateVirtualMemory: unhandled Protect value %x\n", Protect);
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    ret = vm_mmap(NULL, (uintptr_t)addr, size, prot, MAP_PRIVATE, 0);
+    if (IS_ERR((void*)ret))
+        return muwine_error_to_ntstatus(ret);
+
+    *BaseAddress = (void*)ret;
+    *RegionSize = size;
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
