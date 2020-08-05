@@ -778,12 +778,42 @@ NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, S
     return Status;
 }
 
-NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
-                                 PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
+static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                        PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
     printk("NtAllocateVirtualMemory(%lx, %px, %lx, %px, %x, %x): stub\n", (uintptr_t)ProcessHandle,
            BaseAddress, ZeroBits, RegionSize, AllocationType, Protect);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                      PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
+    NTSTATUS Status;
+    void* addr;
+    SIZE_T size;
+
+    if (!BaseAddress || !RegionSize)
+        return STATUS_INVALID_PARAMETER;
+
+    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)ProcessHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (get_user(addr, BaseAddress) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (get_user(size, RegionSize) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    Status = NtAllocateVirtualMemory(ProcessHandle, &addr, ZeroBits, &size,
+                                     AllocationType, Protect);
+
+    if (put_user(addr, BaseAddress) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (put_user(size, RegionSize) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
