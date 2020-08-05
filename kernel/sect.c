@@ -777,3 +777,13 @@ NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, S
 
     return Status;
 }
+
+NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                 PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
+    printk("NtAllocateVirtualMemory(%lx, %px, %lx, %px, %x, %x): stub\n", (uintptr_t)ProcessHandle,
+           BaseAddress, ZeroBits, RegionSize, AllocationType, Protect);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
