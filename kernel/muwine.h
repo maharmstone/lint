@@ -518,8 +518,8 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
                                    PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                                    FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                                    PUNICODE_STRING FileMask, BOOLEAN RestartScan);
-NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
-                                      ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
+NTSTATUS user_NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
+                                           ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
 
 // handle.c
 typedef struct {

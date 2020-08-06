@@ -48,7 +48,7 @@ static struct muwine_func funcs[] = {
     { NtQuerySection, 5 },
     { user_NtProtectVirtualMemory, 5 },
     { user_NtAllocateVirtualMemory, 6 },
-    { NtQueryVolumeInformationFile, 5 },
+    { user_NtQueryVolumeInformationFile, 5 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)

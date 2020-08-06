@@ -574,12 +574,47 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
     return Status;
 }
 
-NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
-                                      ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
+static NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
+                                             ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
     printk(KERN_INFO "NtQueryVolumeInformationFile(%lx, %px, %px, %x, %x): stub\n", (uintptr_t)FileHandle,
            IoStatusBlock, FsInformation, Length, FsInformationClass);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
+                                           ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    void* buf = NULL;
+
+    if (!IoStatusBlock || !FsInformation)
+        return STATUS_INVALID_PARAMETER;
+
+    if ((uintptr_t)FileHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    iosb.Information = 0;
+
+    Status = NtQueryVolumeInformationFile(FileHandle, &iosb, buf, Length, FsInformationClass);
+
+    if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (buf) {
+        if (copy_to_user(FsInformation, buf, iosb.Information) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(buf);
+    }
+
+    return Status;
 }
