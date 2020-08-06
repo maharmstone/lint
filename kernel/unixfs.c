@@ -1,6 +1,7 @@
 #include "muwine.h"
 #include <linux/namei.h>
 #include <linux/fs_struct.h>
+#include <linux/mount.h>
 
 #define SECTOR_SIZE 0x1000
 
@@ -951,7 +952,7 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
         case FileBothDirectoryInformation: {
             FILE_BOTH_DIR_INFORMATION* fbdi;
             unsigned int nudge = 0;
-            struct file* file;
+            struct inode* inode;
 
             if (!qdi->first && (uintptr_t)qdi->buf % 8 != 0) {
                 nudge = 8 - ((uintptr_t)qdi->buf % 8);
@@ -971,35 +972,34 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
 
             memset(fbdi, 0, offsetof(FILE_BOTH_DIR_INFORMATION, FileName));
 
-            // FIXME - is name guaranteed to be null-terminated?
-            file = file_open_root(qdi->dir_file->f_path.dentry, qdi->dir_file->f_path.mnt,
-                                  name, O_PATH, 0);
-            if (!IS_ERR(file)) {
+            // FIXME - what about filesystems like Btrfs, which can have duplicate inodes?
+            inode = iget_locked(qdi->dir_file->f_path.mnt->mnt_sb, ino);
+            if (!IS_ERR(inode)) {
                 // FIXME - can we get otime, to populate CreationTime?
 
-                fbdi->LastAccessTime.QuadPart = unix_time_to_win(&file->f_inode->i_atime);
-                fbdi->LastWriteTime.QuadPart = unix_time_to_win(&file->f_inode->i_mtime);
-                fbdi->ChangeTime.QuadPart = unix_time_to_win(&file->f_inode->i_ctime);
+                fbdi->LastAccessTime.QuadPart = unix_time_to_win(&inode->i_atime);
+                fbdi->LastWriteTime.QuadPart = unix_time_to_win(&inode->i_mtime);
+                fbdi->ChangeTime.QuadPart = unix_time_to_win(&inode->i_ctime);
 
                 if (type == DT_REG) {
-                    fbdi->EndOfFile.QuadPart = file->f_inode->i_size;
+                    fbdi->EndOfFile.QuadPart = inode->i_size;
                     fbdi->AllocationSize.QuadPart = (fbdi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
                 }
 
-                // FIXME - get FileAttributes from xattr if set
-
-                if (type == DT_DIR)
-                    fbdi->FileAttributes = FILE_ATTRIBUTE_DIRECTORY;
-                else if (type == DT_LNK)
-                    fbdi->FileAttributes = FILE_ATTRIBUTE_REPARSE_POINT;
-
-                fbdi->FileAttributes |= FILE_ATTRIBUTE_ARCHIVE;
-
-                if (name[0] == '.' && (name_len >= 3 || (name_len == 2 && name[1] != '.')))
-                    fbdi->FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
-
-                filp_close(file, NULL);
+                iput(inode);
             }
+
+            // FIXME - get FileAttributes from xattr if set
+
+            if (type == DT_DIR)
+                fbdi->FileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+            else if (type == DT_LNK)
+                fbdi->FileAttributes = FILE_ATTRIBUTE_REPARSE_POINT;
+
+            fbdi->FileAttributes |= FILE_ATTRIBUTE_ARCHIVE;
+
+            if (name[0] == '.' && (name_len >= 3 || (name_len == 2 && name[1] != '.')))
+                fbdi->FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
 
             fbdi->FileNameLength = utf16name.Length;
 //             ULONG EaSize; // FIXME - get from xattr
