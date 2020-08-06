@@ -811,6 +811,7 @@ NTSTATUS muwine_init_objdir(void) {
 
     static const WCHAR device_dir[] = L"\\Device";
     static const WCHAR global_dir[] = L"\\GLOBAL??";
+    static const WCHAR kernel_objects[] = L"\\KernelObjects";
     static const WCHAR global_global[] = L"\\GLOBAL??\\Global";
     static const WCHAR qmqm[] = L"\\??";
     static const WCHAR dosdevices[] = L"\\DosDevices";
@@ -847,6 +848,17 @@ NTSTATUS muwine_init_objdir(void) {
 
     us.Buffer = (WCHAR*)global_dir;
     us.Length = us.MaximumLength = sizeof(global_dir) - sizeof(WCHAR);
+
+    Status = NtCreateDirectoryObject(&dir, 0, &oa);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    NtClose(dir);
+
+    // create \\KernelObjects dir
+
+    us.Buffer = (WCHAR*)kernel_objects;
+    us.Length = us.MaximumLength = sizeof(kernel_objects) - sizeof(WCHAR);
 
     Status = NtCreateDirectoryObject(&dir, 0, &oa);
     if (!NT_SUCCESS(Status))
