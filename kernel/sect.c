@@ -213,8 +213,6 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
     // FIXME - make sure we're not trying to map a read-only file handle read-write
 
-    // FIXME - add support for creating section in hierarchy
-
     if (AllocationAttributes & SEC_IMAGE) {
         uint32_t image_size;
 
@@ -267,6 +265,60 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     obj->alloc_attributes = AllocationAttributes;
     obj->file = file;
     obj->anon_file = anon_file;
+
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        UNICODE_STRING us;
+        bool us_alloc = false;
+
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+        Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
+        if (!NT_SUCCESS(Status)) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
+                obj->header.close(&obj->header);
+
+            return Status;
+        }
+
+        if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
+                obj->header.close(&obj->header);
+
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        obj->header.path.Length = us.Length;
+        obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+        if (!obj->header.path.Buffer) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
+                obj->header.close(&obj->header);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        Status = muwine_add_entry_in_hierarchy(&obj->header.path, &obj->header, false);
+        if (!NT_SUCCESS(Status)) {
+            if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
+                obj->header.close(&obj->header);
+
+            return Status;
+        }
+    }
 
     Status = muwine_add_handle(&obj->header, SectionHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false);
@@ -954,4 +1006,36 @@ NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, 
         Status = STATUS_ACCESS_VIOLATION;
 
     return Status;
+}
+
+NTSTATUS muwine_init_user_shared_data(void) {
+    NTSTATUS Status;
+    HANDLE h;
+    LARGE_INTEGER size;
+    UNICODE_STRING us;
+    OBJECT_ATTRIBUTES oa;
+
+    static const WCHAR usd[] = L"\\KernelObjects\\__wine_user_shared_data";
+
+    us.Buffer = (WCHAR*)usd;
+    us.Length = us.MaximumLength = sizeof(usd) - sizeof(WCHAR);
+
+    oa.Length = sizeof(oa);
+    oa.RootDirectory = NULL;
+    oa.ObjectName = &us;
+    oa.Attributes = OBJ_KERNEL_HANDLE | OBJ_PERMANENT;
+    oa.SecurityDescriptor = NULL;
+    oa.SecurityQualityOfService = NULL;
+
+    size.QuadPart = PAGE_SIZE; // FIXME - should be size of KUSER_SHARED_DATA struct
+
+    Status = NtCreateSection(&h, SECTION_MAP_WRITE, &oa, &size, NT_PAGE_READWRITE, SEC_COMMIT, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    NtClose(h);
+
+    // FIXME - spawn thread updating time every second
+
+    return STATUS_SUCCESS;
 }

@@ -38,7 +38,7 @@ void muwine_free_objs(void) {
         dir_root.header.close(&dir_root.header);
 }
 
-static NTSTATUS resolve_symlinks(UNICODE_STRING* us, bool* done_alloc) {
+NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc) {
     UNICODE_STRING us2;
     bool alloc = false;
     unsigned int count = 0;
@@ -140,7 +140,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
     us2.Length = us->Length;
     us2.Buffer = us->Buffer;
 
-    Status = resolve_symlinks(&us2, &us_alloc);
+    Status = muwine_resolve_obj_symlinks(&us2, &us_alloc);
     if (!NT_SUCCESS(Status))
         return Status;
 
@@ -345,7 +345,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
     us2.Length = us->Length;
 
     if (do_resolve_symlinks) {
-        Status = resolve_symlinks(&us2, &us_alloc);
+        Status = muwine_resolve_obj_symlinks(&us2, &us_alloc);
         if (!NT_SUCCESS(Status))
             return Status;
     } else
@@ -656,7 +656,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     us.Length = ObjectAttributes->ObjectName->Length;
     us.Buffer = ObjectAttributes->ObjectName->Buffer;
 
-    Status = resolve_symlinks(&us, &us_alloc);
+    Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
     if (!NT_SUCCESS(Status)) {
         if (us_alloc)
             kfree(us.Buffer);

@@ -1162,6 +1162,12 @@ static int __init muwine_init(void) {
         return -ENOMEM;
     }
 
+    Status = muwine_init_user_shared_data();
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "muwine_init_user_shared_data returned %08x\n", Status);
+        return -ENOMEM;
+    }
+
     printk(KERN_INFO "muwine module loaded with device major number %d\n", major_num);
 
     return 0;

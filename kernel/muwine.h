@@ -577,6 +577,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                                          PUNICODE_STRING DestinationName);
 NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj, bool resolve_symlinks);
+NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc);
 
 // sect.c
 typedef enum {
@@ -615,3 +616,4 @@ NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, S
                                      ULONG NewAccessProtection, PULONG OldAccessProtection);
 NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                       PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
+NTSTATUS muwine_init_user_shared_data(void);
