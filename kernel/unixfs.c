@@ -917,8 +917,6 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
     UNICODE_STRING utf16name;
     ULONG dest_len;
 
-    printk("query_directory_iterate_func(%px, %s, %u, %llu, %llx, %u)\n", dc, name, name_len, pos, ino, type);
-
     if (qdi->single_entry && !qdi->first)
         return -1;
 
@@ -1035,11 +1033,6 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
                                        PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
     query_directory_iterate qdi;
     bool initial;
-
-    printk(KERN_INFO "unixfs_query_directory(%px, %lx, %px, %px, %px, %px, %x, %x, %x, %px, %x): stub\n",
-           obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
-           FileInformation, Length, FileInformationClass, ReturnSingleEntry, FileMask,
-           RestartScan);
 
     if (RestartScan) {
         obj->query_dir_offset = 0;
