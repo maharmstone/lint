@@ -232,6 +232,20 @@ typedef enum {
     FileMaximumInformation
 } FILE_INFORMATION_CLASS;
 
+typedef enum {
+    FileFsVolumeInformation = 1,
+    FileFsLabelInformation,
+    FileFsSizeInformation,
+    FileFsDeviceInformation,
+    FileFsAttributeInformation,
+    FileFsControlInformation,
+    FileFsFullSizeInformation,
+    FileFsObjectIdInformation,
+    FileFsDriverPathInformation,
+    FileFsVolumeFlagsInformation,
+    FileFsMaximumInformation
+} FS_INFORMATION_CLASS;
+
 #define SECTION_QUERY 0x0001
 #define SECTION_MAP_WRITE 0x0002
 #define SECTION_MAP_READ 0x0004
@@ -396,6 +410,8 @@ NTSTATUS __stdcall NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddr
                                            PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
 NTSTATUS __stdcall NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess,
                                  const OBJECT_ATTRIBUTES* ObjectAttributes);
+NTSTATUS __stdcall NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
+                                                ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
 
 #ifdef __cplusplus
 }

@@ -548,3 +548,19 @@ NTSTATUS __stdcall NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAcces
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENSECTION, args);
 }
+
+NTSTATUS __stdcall NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
+                                                ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)FileHandle,
+        (uintptr_t)IoStatusBlock,
+        (uintptr_t)FsInformation,
+        (uintptr_t)Length,
+        (uintptr_t)FsInformationClass
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYVOLUMEINFORMATIONFILE, args);
+}
