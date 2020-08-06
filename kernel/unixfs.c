@@ -1069,6 +1069,9 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
 
     initial = obj->query_dir_offset == 0;
 
+    // FIXME - struct file might be shared between multiple open NT files
+    vfs_llseek(obj->f->f, obj->query_dir_offset, SEEK_SET);
+
     qdi.dc.pos = obj->query_dir_offset;
     qdi.dc.actor = query_directory_iterate_func;
     qdi.buf = FileInformation;
