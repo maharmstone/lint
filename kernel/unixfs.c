@@ -970,8 +970,6 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
         case FileBothDirectoryInformation: {
             FILE_BOTH_DIR_INFORMATION* fbdi;
             unsigned int nudge = 0;
-            struct dentry* dentry;
-            struct qstr q = QSTR_INIT(name, name_len);
 
             if (!qdi->first && (uintptr_t)qdi->buf % 8 != 0) {
                 nudge = 8 - ((uintptr_t)qdi->buf % 8);
@@ -991,33 +989,49 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
 
             memset(fbdi, 0, offsetof(FILE_BOTH_DIR_INFORMATION, FileName));
 
-            dentry = d_alloc(file_dentry(qdi->dir_file), &q);
-            if (!IS_ERR(dentry)) {
-                struct dentry* old;
+            if (name_len == 1 && name[0] == '.') {
+                fbdi->LastAccessTime.QuadPart = unix_time_to_win(&qdi->dir_file->f_inode->i_atime);
+                fbdi->LastWriteTime.QuadPart = unix_time_to_win(&qdi->dir_file->f_inode->i_mtime);
+                fbdi->ChangeTime.QuadPart = unix_time_to_win(&qdi->dir_file->f_inode->i_ctime);
+            } else if (name_len == 2 && name[0] == '.' && name[1] == '.') {
+                struct dentry* parent = dget_parent(qdi->dir_file->f_path.dentry);
+                struct inode* inode = d_real_inode(parent);
 
-                old = qdi->dir_file->f_inode->i_op->lookup(qdi->dir_file->f_inode, dentry, 0);
-                if (old) {
-                    dput(dentry);
-                    dentry = old;
-                }
+                fbdi->LastAccessTime.QuadPart = unix_time_to_win(&inode->i_atime);
+                fbdi->LastWriteTime.QuadPart = unix_time_to_win(&inode->i_mtime);
+                fbdi->ChangeTime.QuadPart = unix_time_to_win(&inode->i_ctime);
 
+                dput(parent);
+            } else {
+                struct dentry* dentry;
+                struct qstr q = QSTR_INIT(name, name_len);
+
+                dentry = d_alloc(file_dentry(qdi->dir_file), &q);
                 if (!IS_ERR(dentry)) {
-                    struct inode* inode = d_real_inode(dentry);
+                    struct dentry* old;
 
-                    // FIXME - also get times for . and ..
-
-                    if (inode) {
-                        fbdi->LastAccessTime.QuadPart = unix_time_to_win(&inode->i_atime);
-                        fbdi->LastWriteTime.QuadPart = unix_time_to_win(&inode->i_mtime);
-                        fbdi->ChangeTime.QuadPart = unix_time_to_win(&inode->i_ctime);
-
-                        if (type == DT_REG) {
-                            fbdi->EndOfFile.QuadPart = inode->i_size;
-                            fbdi->AllocationSize.QuadPart = (fbdi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
-                        }
+                    old = qdi->dir_file->f_inode->i_op->lookup(qdi->dir_file->f_inode, dentry, 0);
+                    if (old) {
+                        dput(dentry);
+                        dentry = old;
                     }
 
-                    dput(dentry);
+                    if (!IS_ERR(dentry)) {
+                        struct inode* inode = d_real_inode(dentry);
+
+                        if (inode) {
+                            fbdi->LastAccessTime.QuadPart = unix_time_to_win(&inode->i_atime);
+                            fbdi->LastWriteTime.QuadPart = unix_time_to_win(&inode->i_mtime);
+                            fbdi->ChangeTime.QuadPart = unix_time_to_win(&inode->i_ctime);
+
+                            if (type == DT_REG) {
+                                fbdi->EndOfFile.QuadPart = inode->i_size;
+                                fbdi->AllocationSize.QuadPart = (fbdi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
+                            }
+                        }
+
+                        dput(dentry);
+                    }
                 }
             }
 
