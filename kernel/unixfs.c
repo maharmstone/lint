@@ -116,10 +116,27 @@ static NTSTATUS open_file(const char* fn, struct file** ret, bool is_dir) {
             ofi.part_len++;
         }
 
-        if (parent->f_op->iterate_shared)
+        if (parent->f_op->iterate_shared) {
+            int ret = down_read_killable(&parent->f_inode->i_rwsem);
+
+            if (ret < 0) {
+                filp_close(parent, NULL);
+                return muwine_error_to_ntstatus(ret);
+            }
+
             parent->f_op->iterate_shared(parent, &ofi.dc);
-        else
+            up_read(&parent->f_inode->i_rwsem);
+        } else {
+            int ret = down_write_killable(&parent->f_inode->i_rwsem);
+
+            if (ret < 0) {
+                filp_close(parent, NULL);
+                return muwine_error_to_ntstatus(ret);
+            }
+
             parent->f_op->iterate(parent, &ofi.dc);
+            up_write(&parent->f_inode->i_rwsem);
+        }
 
         if (!ofi.found) {
             if (fn[ofi.part_len] != 0) {
@@ -950,7 +967,8 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
         case FileBothDirectoryInformation: {
             FILE_BOTH_DIR_INFORMATION* fbdi;
             unsigned int nudge = 0;
-            struct inode* inode;
+            struct dentry* dentry;
+            struct qstr q = QSTR_INIT(name, name_len);
 
             if (!qdi->first && (uintptr_t)qdi->buf % 8 != 0) {
                 nudge = 8 - ((uintptr_t)qdi->buf % 8);
@@ -970,21 +988,34 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
 
             memset(fbdi, 0, offsetof(FILE_BOTH_DIR_INFORMATION, FileName));
 
-            // FIXME - what about filesystems like Btrfs, which can have duplicate inodes?
-            inode = iget_locked(qdi->dir_file->f_path.mnt->mnt_sb, ino);
-            if (!IS_ERR(inode)) {
-                // FIXME - can we get otime, to populate CreationTime?
+            dentry = d_alloc(file_dentry(qdi->dir_file), &q);
+            if (!IS_ERR(dentry)) {
+                struct dentry* old;
 
-                fbdi->LastAccessTime.QuadPart = unix_time_to_win(&inode->i_atime);
-                fbdi->LastWriteTime.QuadPart = unix_time_to_win(&inode->i_mtime);
-                fbdi->ChangeTime.QuadPart = unix_time_to_win(&inode->i_ctime);
-
-                if (type == DT_REG) {
-                    fbdi->EndOfFile.QuadPart = inode->i_size;
-                    fbdi->AllocationSize.QuadPart = (fbdi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
+                old = qdi->dir_file->f_inode->i_op->lookup(qdi->dir_file->f_inode, dentry, 0);
+                if (old) {
+                    dput(dentry);
+                    dentry = old;
                 }
 
-                iput(inode);
+                if (!IS_ERR(dentry)) {
+                    struct inode* inode = d_real_inode(dentry);
+
+                    // FIXME - also get times for . and ..
+
+                    if (inode) {
+                        fbdi->LastAccessTime.QuadPart = unix_time_to_win(&inode->i_atime);
+                        fbdi->LastWriteTime.QuadPart = unix_time_to_win(&inode->i_mtime);
+                        fbdi->ChangeTime.QuadPart = unix_time_to_win(&inode->i_ctime);
+
+                        if (type == DT_REG) {
+                            fbdi->EndOfFile.QuadPart = inode->i_size;
+                            fbdi->AllocationSize.QuadPart = (fbdi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
+                        }
+                    }
+
+                    dput(dentry);
+                }
             }
 
             // FIXME - get FileAttributes from xattr if set
