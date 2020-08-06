@@ -573,3 +573,13 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
 
     return Status;
 }
+
+NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
+                                      ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
+    printk(KERN_INFO "NtQueryVolumeInformationFile(%lx, %px, %px, %x, %x): stub\n", (uintptr_t)FileHandle,
+           IoStatusBlock, FsInformation, Length, FsInformationClass);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

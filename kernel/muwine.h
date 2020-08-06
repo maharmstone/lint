@@ -464,6 +464,20 @@ typedef struct {
     WCHAR FileName[1];
 } FILE_BOTH_DIR_INFORMATION;
 
+typedef enum {
+    FileFsVolumeInformation = 1,
+    FileFsLabelInformation,
+    FileFsSizeInformation,
+    FileFsDeviceInformation,
+    FileFsAttributeInformation,
+    FileFsControlInformation,
+    FileFsFullSizeInformation,
+    FileFsObjectIdInformation,
+    FileFsDriverPathInformation,
+    FileFsVolumeFlagsInformation,
+    FileFsMaximumInformation
+} FS_INFORMATION_CLASS;
+
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                       ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
@@ -504,6 +518,8 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
                                    PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                                    FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                                    PUNICODE_STRING FileMask, BOOLEAN RestartScan);
+NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
+                                      ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
 
 // handle.c
 typedef struct {
