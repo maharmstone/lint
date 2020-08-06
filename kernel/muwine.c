@@ -426,6 +426,9 @@ NTSTATUS muwine_error_to_ntstatus(int err) {
         case -ENOTDIR:
             return STATUS_NOT_A_DIRECTORY;
 
+        case -EACCES:
+            return STATUS_ACCESS_DENIED;
+
         default:
             printk(KERN_INFO "muwine: Unable to translate error %d to NTSTATUS.\n", err);
             return STATUS_INTERNAL_ERROR;

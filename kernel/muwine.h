@@ -30,6 +30,7 @@ struct muwine_func {
 #define STATUS_INVALID_HANDLE               0xc0000008
 #define STATUS_INVALID_PARAMETER            0xc000000d
 #define STATUS_NO_SUCH_FILE                 0xc000000f
+#define STATUS_ACCESS_DENIED                0xc0000022
 #define STATUS_BUFFER_TOO_SMALL             0xc0000023
 #define STATUS_OBJECT_NAME_INVALID          0xc0000033
 #define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
