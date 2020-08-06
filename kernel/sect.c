@@ -607,11 +607,70 @@ NTSTATUS NtExtendSection(HANDLE SectionHandle, PLARGE_INTEGER NewSectionSize) {
 }
 
 static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
-    printk(KERN_INFO "NtOpenSection(%px, %x, %px): stub\n", SectionHandle, DesiredAccess, ObjectAttributes);
+    NTSTATUS Status;
+    UNICODE_STRING us, after;
+    WCHAR* oa_us_alloc = NULL;
+    section_object* sect;
+    bool after_alloc = false;
 
-    // FIXME
+    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES) || !ObjectAttributes->ObjectName)
+        return STATUS_INVALID_PARAMETER;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (ObjectAttributes->RootDirectory) {
+        object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory);
+        if (!obj || obj->type != muwine_object_file)
+            return STATUS_INVALID_HANDLE;
+
+        spin_lock(&obj->path_lock);
+
+        us.Length = obj->path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
+        us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
+
+        if (!us.Buffer) {
+            spin_unlock(&obj->path_lock);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memcpy(us.Buffer, obj->path.Buffer, obj->path.Length);
+        us.Buffer[obj->path.Length / sizeof(WCHAR)] = '\\';
+        memcpy(&us.Buffer[(obj->path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
+               ObjectAttributes->ObjectName->Length);
+
+        spin_unlock(&obj->path_lock);
+    } else {
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+    }
+
+    Status = muwine_open_object(&us, (object_header**)&sect, &after, &after_alloc);
+    if (!NT_SUCCESS(Status))
+        goto end;
+
+    if (sect->header.type != muwine_object_section || after.Length != 0) {
+        if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)
+            sect->header.close(&sect->header);
+
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    Status = muwine_add_handle(&sect->header, SectionHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
+
+    if (!NT_SUCCESS(Status)) {
+        if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)
+            sect->header.close(&sect->header);
+
+        goto end;
+    }
+
+end:
+    if (oa_us_alloc)
+        kfree(oa_us_alloc);
+
+    if (after_alloc)
+        kfree(after.Buffer);
+
+    return Status;
 }
 
 NTSTATUS user_NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
