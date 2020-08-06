@@ -895,13 +895,21 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
                 fbdi->ChangeTime.QuadPart = unix_time_to_win(&file->f_inode->i_ctime);
     //             LARGE_INTEGER EndOfFile; // FIXME
     //             LARGE_INTEGER AllocationSize; // FIXME
-    //             ULONG FileAttributes; // FIXME
+
+                // FIXME - get FileAttributes from xattr if set
+
+                if (type == DT_DIR)
+                    fbdi->FileAttributes = FILE_ATTRIBUTE_DIRECTORY;
+                else if (type == DT_LNK)
+                    fbdi->FileAttributes = FILE_ATTRIBUTE_REPARSE_POINT;
+
+                fbdi->FileAttributes |= FILE_ATTRIBUTE_ARCHIVE;
 
                 filp_close(file, NULL);
             }
 
             fbdi->FileNameLength = utf16name.Length;
-//             ULONG EaSize; // FIXME
+//             ULONG EaSize; // FIXME - get from xattr
             memcpy(fbdi->FileName, utf16name.Buffer, utf16name.Length);
 
             if (qdi->last_offset)
