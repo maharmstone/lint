@@ -908,6 +908,9 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
 
                 fbdi->FileAttributes |= FILE_ATTRIBUTE_ARCHIVE;
 
+                if (name[0] == '.' && (name_len >= 3 || (name_len == 2 && name[1] != '.')))
+                    fbdi->FileAttributes |= FILE_ATTRIBUTE_HIDDEN;
+
                 filp_close(file, NULL);
             }
 
