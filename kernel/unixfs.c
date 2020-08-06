@@ -48,6 +48,7 @@ typedef struct {
     unsigned int part_len;
     bool found;
     char* found_part;
+    unsigned int found_type;
 } open_file_iterate;
 
 static int open_file_dir_iterate(struct dir_context* dc, const char* name, int name_len, loff_t pos,
@@ -67,6 +68,7 @@ static int open_file_dir_iterate(struct dir_context* dc, const char* name, int n
         return 0;
 
     ofi->found = true;
+    ofi->found_type = type;
 
     ofi->found_part = kmalloc(name_len + 1, GFP_KERNEL);
     if (!ofi->found_part)
@@ -75,10 +77,11 @@ static int open_file_dir_iterate(struct dir_context* dc, const char* name, int n
     memcpy(ofi->found_part, name, name_len);
     ofi->found_part[name_len] = 0;
 
+
     return -1; // stop iterating
 }
 
-static NTSTATUS open_file(const char* fn, struct file** ret, bool is_dir) {
+static NTSTATUS open_file(const char* fn, struct file** ret) {
     struct path root;
     struct file* parent;
     open_file_iterate ofi;
@@ -153,9 +156,9 @@ static NTSTATUS open_file(const char* fn, struct file** ret, bool is_dir) {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        if (fn[ofi.part_len] != 0 || is_dir) // directory
+        if (ofi.found_type == DT_DIR)
             flags = O_DIRECTORY;
-        else
+        else if (ofi.found_type == DT_REG)
             flags = O_RDWR;
 
         new_parent = file_open_root(parent->f_path.dentry, parent->f_path.mnt,
@@ -247,7 +250,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     path[as_len] = 0;
 
-    Status = open_file(path, &file, CreateOptions & FILE_DIRECTORY_FILE);
+    Status = open_file(path, &file);
 
     if (NT_SUCCESS(Status) && CreateDisposition == FILE_CREATE) {
         kfree(path);
@@ -714,7 +717,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     dest[last_slash] = 0;
     fn = dest + last_slash + 1;
 
-    Status = open_file(dest, &dest_dir, true);
+    Status = open_file(dest, &dest_dir);
 
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         filp_close(dest_dir, NULL);
