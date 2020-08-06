@@ -817,6 +817,7 @@ typedef struct {
     FILE_INFORMATION_CLASS type;
     NTSTATUS Status;
     bool first;
+    ULONG* last_offset;
 } query_directory_iterate;
 
 static int query_directory_iterate_func(struct dir_context* dc, const char* name, int name_len, loff_t pos,
@@ -856,9 +857,17 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
 
     switch (qdi->type) {
         case FileBothDirectoryInformation: {
-            FILE_BOTH_DIR_INFORMATION* fbdi = qdi->buf;
+            FILE_BOTH_DIR_INFORMATION* fbdi;
+            unsigned int nudge = 0;
 
-            if (qdi->length < offsetof(FILE_BOTH_DIR_INFORMATION, FileName) + utf16name.Length) {
+            if (!qdi->first && (uintptr_t)qdi->buf % 8 != 0) {
+                nudge = 8 - ((uintptr_t)qdi->buf % 8);
+                qdi->buf += nudge;
+            }
+
+            fbdi = qdi->buf;
+
+            if (qdi->length < nudge + offsetof(FILE_BOTH_DIR_INFORMATION, FileName) + utf16name.Length) {
                 if (qdi->first)
                     qdi->Status = STATUS_BUFFER_TOO_SMALL;
 
@@ -871,7 +880,6 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
 
             // FIXME - if not first, align buf to 8-byte boundary
 
-            // FIXME - NextEntryOffset
 //             LARGE_INTEGER CreationTime; // FIXME
 //             LARGE_INTEGER LastAccessTime; // FIXME
 //             LARGE_INTEGER LastWriteTime; // FIXME
@@ -883,8 +891,13 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
 //             ULONG EaSize; // FIXME
             memcpy(fbdi->FileName, utf16name.Buffer, utf16name.Length);
 
+            if (qdi->last_offset)
+                *qdi->last_offset = (uint8_t*)fbdi - (uint8_t*)qdi->last_offset;
+
+            qdi->last_offset = &fbdi->NextEntryOffset;
+
             qdi->buf = (uint8_t*)qdi->buf + offsetof(FILE_BOTH_DIR_INFORMATION, FileName) + utf16name.Length;
-            qdi->length -= offsetof(FILE_BOTH_DIR_INFORMATION, FileName) + utf16name.Length;
+            qdi->length -= nudge + offsetof(FILE_BOTH_DIR_INFORMATION, FileName) + utf16name.Length;
 
             break;
         }
@@ -929,10 +942,11 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
     qdi.dc.actor = query_directory_iterate_func;
     qdi.buf = FileInformation;
     qdi.length = Length;
-    qdi.single_entry = true; //ReturnSingleEntry;
+    qdi.single_entry = ReturnSingleEntry;
     qdi.type = FileInformationClass;
     qdi.Status = STATUS_SUCCESS;
     qdi.first = true;
+    qdi.last_offset = NULL;
 
     if (obj->f->f->f_op->iterate_shared) {
         down_read(&obj->f->f->f_inode->i_rwsem);
@@ -952,7 +966,7 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
 
     obj->query_dir_offset = qdi.dc.pos;
 
-    IoStatusBlock->Information = (uint8_t*)qdi.buf - (uint8_t*)FileInformation;
+    IoStatusBlock->Information = Length - qdi.length;
 
     printk(KERN_INFO "IoStatusBlock->Information = %lx\n", IoStatusBlock->Information);
 
