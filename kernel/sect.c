@@ -473,6 +473,10 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     if (sect->alloc_attributes & SEC_IMAGE && sect->fixed_base)
         flags |= MAP_FIXED;
 
+    // HACK - make sure KUSER_SHARED_DATA always gets put at right place
+    if (addr == (void*)0x7ffe0000 && len == PAGE_SIZE)
+        flags |= MAP_FIXED;
+
     // FIXME - fail if MAP_FIXED, and we've already mapped something here? Or do we unmap it?
 
     map->file_offset = off;
