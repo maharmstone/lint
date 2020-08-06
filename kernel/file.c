@@ -576,12 +576,15 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
 
 static NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                              ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
-    printk(KERN_INFO "NtQueryVolumeInformationFile(%lx, %px, %px, %x, %x): stub\n", (uintptr_t)FileHandle,
-           IoStatusBlock, FsInformation, Length, FsInformationClass);
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
+    if (!obj || obj->header.type != muwine_object_file)
+        return STATUS_INVALID_HANDLE;
 
-    // FIXME
+    if (!obj->dev->query_volume_information)
+        return STATUS_NOT_IMPLEMENTED;
 
-    return STATUS_NOT_IMPLEMENTED;
+    return obj->dev->query_volume_information(obj, IoStatusBlock, FsInformation, Length,
+                                              FsInformationClass);
 }
 
 NTSTATUS user_NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,

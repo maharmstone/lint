@@ -953,6 +953,16 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS unixfs_query_volume_info(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
+                                         ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
+    printk(KERN_INFO "unixfs_query_volume_info(%px, %px, %px, %x, %x): stub\n", obj,
+           IoStatusBlock, FsInformation, Length, FsInformationClass);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 static struct file* unixfs_get_filp(file_object* obj) {
     return obj->f->f;
 }
@@ -997,6 +1007,7 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->query_information = unixfs_query_information;
     dev->set_information = unixfs_set_information;
     dev->query_directory = unixfs_query_directory;
+    dev->query_volume_information = unixfs_query_volume_info;
     dev->get_filp = unixfs_get_filp;
 
     Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header, true);
