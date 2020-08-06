@@ -823,7 +823,91 @@ typedef struct {
     bool first;
     ULONG* last_offset;
     struct file* dir_file;
+    UNICODE_STRING* pattern_mask;
 } query_directory_iterate;
+
+static bool wchar_compare(WCHAR c1, WCHAR c2) {
+    // FIXME - do this properly
+
+    if (c1 >= 'a' && c1 <= 'z')
+        c1 = c1 - 'a' + 'A';
+
+    if (c2 >= 'a' && c2 <= 'z')
+        c2 = c2 - 'a' + 'A';
+
+    return c1 == c2;
+}
+
+// adapted from Wine's dll/ntdll/directory.c
+static bool match_filename(const UNICODE_STRING* name_str, const UNICODE_STRING* mask_str) {
+    const WCHAR* name = name_str->Buffer;
+    const WCHAR* mask = mask_str->Buffer;
+    const WCHAR* name_end = name + name_str->Length / sizeof(WCHAR);
+    const WCHAR* mask_end = mask + mask_str->Length / sizeof(WCHAR);
+    const WCHAR* lastjoker = NULL;
+    const WCHAR* next_to_retry = NULL;
+
+    while (name < name_end && mask < mask_end) {
+        switch (*mask) {
+            case '*':
+                mask++;
+
+                while (mask < mask_end && *mask == '*') { // Skip consecutive '*'
+                    mask++;
+                }
+
+                if (mask == mask_end) // end of mask is all '*', so match
+                    return true;
+
+                lastjoker = mask;
+
+                // skip to the next match after the joker(s)
+                while (name < name_end && wchar_compare(*name, *mask)) {
+                    name++;
+                }
+
+                next_to_retry = name;
+            break;
+
+            case '?':
+                mask++;
+                name++;
+            break;
+
+            default: {
+                if (wchar_compare(*name, *mask)) {
+                    mask++;
+                    name++;
+
+                    if (mask == mask_end) {
+                        if (name == name_end)
+                            return true;
+
+                        if (lastjoker)
+                            mask = lastjoker;
+                    }
+                } else { // mismatch!
+                    if (lastjoker) { // we had an '*', so we can try unlimitedly
+                        mask = lastjoker;
+
+                        // this scan sequence was a mismatch, so restart 1 char after the first char we checked last time
+                        next_to_retry++;
+                        name = next_to_retry;
+                    } else
+                        return false; // bad luck
+                }
+
+                break;
+            }
+        }
+    }
+
+    while (mask < mask_end && (*mask == '.' || *mask == '*')) {
+        mask++; // Ignore trailing '.' or '*' in mask
+    }
+
+    return name == name_end && mask == mask_end;
+}
 
 static int query_directory_iterate_func(struct dir_context* dc, const char* name, int name_len, loff_t pos,
                                         u64 ino, unsigned int type) {
@@ -858,7 +942,10 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
         return -1;
     }
 
-    // FIXME - skip if doesn't match pattern
+    if (qdi->pattern_mask && !match_filename(&utf16name, qdi->pattern_mask)) {
+        kfree(utf16name.Buffer);
+        return 0;
+    }
 
     switch (qdi->type) {
         case FileBothDirectoryInformation: {
@@ -961,6 +1048,23 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
             kfree(obj->query_string.Buffer);
             obj->query_string.Buffer = NULL;
         }
+
+        obj->query_string.Length = obj->query_string.MaximumLength = 0;
+    }
+
+    if (FileMask && FileMask->Length > 0) {
+        if (obj->query_string.Buffer) {
+            kfree(obj->query_string.Buffer);
+            obj->query_string.Buffer = NULL;
+        }
+
+        obj->query_string.Buffer = kmalloc(FileMask->Length, GFP_KERNEL);
+        if (!obj->query_string.Buffer)
+            return STATUS_INSUFFICIENT_RESOURCES;
+
+        obj->query_string.Length = obj->query_string.MaximumLength = FileMask->Length;
+
+        memcpy(obj->query_string.Buffer, FileMask->Buffer, FileMask->Length);
     }
 
     initial = obj->query_dir_offset == 0;
@@ -975,6 +1079,7 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
     qdi.first = true;
     qdi.last_offset = NULL;
     qdi.dir_file = obj->f->f;
+    qdi.pattern_mask = obj->query_string.Length > 0 ? &obj->query_string : NULL;
 
     if (obj->f->f->f_op->iterate_shared) {
         down_read(&obj->f->f->f_inode->i_rwsem);
