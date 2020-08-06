@@ -62,6 +62,7 @@ typedef uint8_t BOOLEAN;
 typedef uintptr_t ULONG_PTR;
 typedef ULONG_PTR SIZE_T, *PSIZE_T;
 typedef char CCHAR;
+typedef ULONG DEVICE_TYPE;
 
 #ifdef __amd64 // FIXME - also aarch64
 #define KERNEL_HANDLE_MASK 0x8000000000000000
@@ -477,6 +478,15 @@ typedef enum {
     FileFsVolumeFlagsInformation,
     FileFsMaximumInformation
 } FS_INFORMATION_CLASS;
+
+typedef struct {
+    DEVICE_TYPE DeviceType;
+    ULONG Characteristics;
+} FILE_FS_DEVICE_INFORMATION;
+
+#define FILE_DEVICE_DISK_FILE_SYSTEM 0x00000008
+
+#define FILE_DEVICE_IS_MOUNTED 0x00000020
 
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,

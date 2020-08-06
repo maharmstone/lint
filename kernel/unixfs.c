@@ -955,12 +955,53 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
 
 static NTSTATUS unixfs_query_volume_info(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                          ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
-    printk(KERN_INFO "unixfs_query_volume_info(%px, %px, %px, %x, %x): stub\n", obj,
-           IoStatusBlock, FsInformation, Length, FsInformationClass);
+    switch (FsInformationClass) {
+        case FileFsSizeInformation:
+            printk("unixfs_query_volume_info: FIXME - FileFsSizeInformation\n"); // FIXME
+            return STATUS_INVALID_INFO_CLASS;
 
-    // FIXME
+        case FileFsDeviceInformation:
+        {
+            FILE_FS_DEVICE_INFORMATION* ffdi = FsInformation;
 
-    return STATUS_NOT_IMPLEMENTED;
+            if (Length < sizeof(FILE_FS_DEVICE_INFORMATION))
+                return STATUS_BUFFER_TOO_SMALL;
+
+            ffdi->DeviceType = FILE_DEVICE_DISK_FILE_SYSTEM; // FIXME - FILE_DEVICE_CD_ROM_FILE_SYSTEM if CD
+            ffdi->Characteristics = FILE_DEVICE_IS_MOUNTED;
+
+            // FIXME - set FILE_REMOVABLE_MEDIA if CD or USB (etc.)
+            // FIXME - identify remote mounts as well?
+
+            IoStatusBlock->Information = sizeof(FILE_FS_DEVICE_INFORMATION);
+
+            return STATUS_SUCCESS;
+        }
+
+        case FileFsAttributeInformation:
+            printk("unixfs_query_volume_info: FIXME - FileFsAttributeInformation\n"); // FIXME
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileFsVolumeInformation:
+            printk("unixfs_query_volume_info: FIXME - FileFsVolumeInformation\n"); // FIXME
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileFsControlInformation:
+            printk("unixfs_query_volume_info: FIXME - FileFsControlInformation\n"); // FIXME
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileFsFullSizeInformation:
+            printk("unixfs_query_volume_info: FIXME - FileFsFullSizeInformation\n"); // FIXME
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileFsObjectIdInformation:
+            printk("unixfs_query_volume_info: FIXME - FileFsObjectIdInformation\n"); // FIXME
+            return STATUS_INVALID_INFO_CLASS;
+
+        default:
+            printk("unixfs_query_volume_info: unhandled info class %x\n", FsInformationClass);
+            return STATUS_INVALID_INFO_CLASS;
+    }
 }
 
 static struct file* unixfs_get_filp(file_object* obj) {
