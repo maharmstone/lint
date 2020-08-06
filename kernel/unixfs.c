@@ -93,6 +93,12 @@ static NTSTATUS open_file(const char* fn, struct file** ret, bool is_dir) {
     if (IS_ERR(parent))
         return muwine_error_to_ntstatus((int)(uintptr_t)parent);
 
+    if (fn[0] == 0) { // root
+        *ret = parent;
+
+        return STATUS_SUCCESS;
+    }
+
     ofi.dc.actor = open_file_dir_iterate;
 
     do {
