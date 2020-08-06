@@ -809,6 +809,10 @@ static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStat
     }
 }
 
+static __inline uint64_t unix_time_to_win(struct timespec64* t) {
+    return (t->tv_sec * 10000000) + (t->tv_nsec / 100) + 116444736000000000;
+}
+
 typedef struct {
     struct dir_context dc;
     void* buf;
@@ -818,6 +822,7 @@ typedef struct {
     NTSTATUS Status;
     bool first;
     ULONG* last_offset;
+    struct file* dir_file;
 } query_directory_iterate;
 
 static int query_directory_iterate_func(struct dir_context* dc, const char* name, int name_len, loff_t pos,
@@ -859,6 +864,7 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
         case FileBothDirectoryInformation: {
             FILE_BOTH_DIR_INFORMATION* fbdi;
             unsigned int nudge = 0;
+            struct file* file;
 
             if (!qdi->first && (uintptr_t)qdi->buf % 8 != 0) {
                 nudge = 8 - ((uintptr_t)qdi->buf % 8);
@@ -878,15 +884,22 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
 
             memset(fbdi, 0, offsetof(FILE_BOTH_DIR_INFORMATION, FileName));
 
-            // FIXME - if not first, align buf to 8-byte boundary
+            // FIXME - is name guaranteed to be null-terminated?
+            file = file_open_root(qdi->dir_file->f_path.dentry, qdi->dir_file->f_path.mnt,
+                                  name, O_PATH, 0);
+            if (!IS_ERR(file)) {
+                // FIXME - can we get otime, to populate CreationTime?
 
-//             LARGE_INTEGER CreationTime; // FIXME
-//             LARGE_INTEGER LastAccessTime; // FIXME
-//             LARGE_INTEGER LastWriteTime; // FIXME
-//             LARGE_INTEGER ChangeTime; // FIXME
-//             LARGE_INTEGER EndOfFile; // FIXME
-//             LARGE_INTEGER AllocationSize; // FIXME
-//             ULONG FileAttributes; // FIXME
+                fbdi->LastAccessTime.QuadPart = unix_time_to_win(&file->f_inode->i_atime);
+                fbdi->LastWriteTime.QuadPart = unix_time_to_win(&file->f_inode->i_mtime);
+                fbdi->ChangeTime.QuadPart = unix_time_to_win(&file->f_inode->i_ctime);
+    //             LARGE_INTEGER EndOfFile; // FIXME
+    //             LARGE_INTEGER AllocationSize; // FIXME
+    //             ULONG FileAttributes; // FIXME
+
+                filp_close(file, NULL);
+            }
+
             fbdi->FileNameLength = utf16name.Length;
 //             ULONG EaSize; // FIXME
             memcpy(fbdi->FileName, utf16name.Buffer, utf16name.Length);
@@ -947,6 +960,7 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
     qdi.Status = STATUS_SUCCESS;
     qdi.first = true;
     qdi.last_offset = NULL;
+    qdi.dir_file = obj->f->f;
 
     if (obj->f->f->f_op->iterate_shared) {
         down_read(&obj->f->f->f_inode->i_rwsem);
@@ -967,8 +981,6 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
     obj->query_dir_offset = qdi.dc.pos;
 
     IoStatusBlock->Information = Length - qdi.length;
-
-    printk(KERN_INFO "IoStatusBlock->Information = %lx\n", IoStatusBlock->Information);
 
     return STATUS_SUCCESS;
 }

@@ -520,8 +520,6 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
                                      Length, FileInformationClass, ReturnSingleEntry, FileMask,
                                      RestartScan);
 
-    printk(KERN_INFO "query_directory returned %08x\n", Status);
-
     return Status;
 }
 
