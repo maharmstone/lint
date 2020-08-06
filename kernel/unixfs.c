@@ -893,8 +893,11 @@ static int query_directory_iterate_func(struct dir_context* dc, const char* name
                 fbdi->LastAccessTime.QuadPart = unix_time_to_win(&file->f_inode->i_atime);
                 fbdi->LastWriteTime.QuadPart = unix_time_to_win(&file->f_inode->i_mtime);
                 fbdi->ChangeTime.QuadPart = unix_time_to_win(&file->f_inode->i_ctime);
-    //             LARGE_INTEGER EndOfFile; // FIXME
-    //             LARGE_INTEGER AllocationSize; // FIXME
+
+                if (type == DT_REG) {
+                    fbdi->EndOfFile.QuadPart = file->f_inode->i_size;
+                    fbdi->AllocationSize.QuadPart = (fbdi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
+                }
 
                 // FIXME - get FileAttributes from xattr if set
 
