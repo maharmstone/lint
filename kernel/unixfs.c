@@ -810,6 +810,10 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
 static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                        ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     switch (FileInformationClass) {
+        case FileBasicInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FileBasicInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
         case FileRenameInformation: {
             FILE_RENAME_INFORMATION* fri = FileInformation;
 
@@ -821,6 +825,38 @@ static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStat
 
             return unixfs_rename(obj, fri);
         }
+
+        case FileLinkInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FileLinkInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileDispositionInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FileDispositionInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FilePositionInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FilePositionInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileEndOfFileInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FileEndOfFileInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileCompletionInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FileCompletionInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileValidDataLengthInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FileValidDataLengthInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileIoCompletionNotificationInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FileIoCompletionNotificationInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileIoPriorityHintInformation:
+            printk(KERN_INFO "unixfs_set_information: FIXME - FileIoPriorityHintInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
 
         default:
             printk(KERN_INFO "unixfs_set_information: unhandled class %x\n",
