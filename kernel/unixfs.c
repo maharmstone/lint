@@ -512,6 +512,10 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                          ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     switch (FileInformationClass) {
+        case FileBasicInformation:
+            printk(KERN_INFO "unixfs_query_information: FIXME - FileBasicInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
         case FileStandardInformation: {
             FILE_STANDARD_INFORMATION* fsi = (FILE_STANDARD_INFORMATION*)FileInformation;
 
@@ -532,21 +536,25 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             return STATUS_SUCCESS;
         }
 
-        case FileBasicInformation: {
-            printk(KERN_INFO "unixfs_query_information: unhandled class FileBasicInformation\n");
-
-            // FIXME
-
+        case FileInternalInformation:
+            printk(KERN_INFO "unixfs_query_information: FIXME - FileInternalInformation\n");
             return STATUS_INVALID_INFO_CLASS;
-        }
 
-        case FileInternalInformation: {
-            printk(KERN_INFO "unixfs_query_information: unhandled class FileInternalInformation\n");
-
-            // FIXME
-
+        case FileEaInformation:
+            printk(KERN_INFO "unixfs_query_information: FIXME - FileEaInformation\n");
             return STATUS_INVALID_INFO_CLASS;
-        }
+
+        case FileNameInformation:
+            printk(KERN_INFO "unixfs_query_information: FIXME - FileNameInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FilePositionInformation:
+            printk(KERN_INFO "unixfs_query_information: FIXME - FilePositionInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
+
+        case FileAllInformation:
+            printk(KERN_INFO "unixfs_query_information: FIXME - FileAllInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
 
         case FileEndOfFileInformation: {
             FILE_END_OF_FILE_INFORMATION* feofi = (FILE_END_OF_FILE_INFORMATION*)FileInformation;
@@ -564,15 +572,13 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             return STATUS_SUCCESS;
         }
 
-        case FileAllInformation: {
-            printk(KERN_INFO "unixfs_query_information: unhandled class FileAllInformation\n");
-
-            // FIXME
-
+        case FileNetworkOpenInformation:
+            printk(KERN_INFO "unixfs_query_information: FIXME - FileNetworkOpenInformation\n");
             return STATUS_INVALID_INFO_CLASS;
-        }
 
-        // FIXME - others not supported by Wine?
+        case FileAttributeTagInformation:
+            printk(KERN_INFO "unixfs_query_information: FIXME - FileAttributeTagInformation\n");
+            return STATUS_INVALID_INFO_CLASS;
 
         default: {
             printk(KERN_INFO "unixfs_query_information: unhandled class %x\n",
