@@ -1012,13 +1012,43 @@ NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, 
     return Status;
 }
 
-NTSTATUS NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType) {
+static NTSTATUS NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
+                                    PSIZE_T RegionSize, ULONG FreeType) {
     printk(KERN_INFO "NtFreeVirtualMemory(%lx, %px, %px, %x): stub\n", (uintptr_t)ProcessHandle,
            BaseAddress, RegionSize, FreeType);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize,
+                                  ULONG FreeType) {
+    NTSTATUS Status;
+    void* addr;
+    size_t size;
+
+    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)ProcessHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (!BaseAddress || !RegionSize)
+        return STATUS_INVALID_PARAMETER;
+
+    if (get_user(addr, BaseAddress) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (get_user(size, RegionSize) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    Status = NtFreeVirtualMemory(ProcessHandle, &addr, &size, FreeType);
+
+    if (put_user(addr, BaseAddress) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (put_user(size, RegionSize) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS muwine_init_user_shared_data(void) {
