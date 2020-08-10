@@ -646,4 +646,5 @@ NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, S
                                      ULONG NewAccessProtection, PULONG OldAccessProtection);
 NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                       PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
+NTSTATUS NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType);
 NTSTATUS muwine_init_user_shared_data(void);

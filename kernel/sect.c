@@ -1012,6 +1012,15 @@ NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, 
     return Status;
 }
 
+NTSTATUS NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType) {
+    printk(KERN_INFO "NtFreeVirtualMemory(%lx, %px, %px, %x): stub\n", (uintptr_t)ProcessHandle,
+           BaseAddress, RegionSize, FreeType);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS muwine_init_user_shared_data(void) {
     NTSTATUS Status;
     HANDLE h;
