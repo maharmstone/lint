@@ -564,3 +564,17 @@ NTSTATUS __stdcall NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BL
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYVOLUMEINFORMATIONFILE, args);
 }
+
+NTSTATUS __stdcall NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType) {
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)BaseAddress,
+        (uintptr_t)RegionSize,
+        (uintptr_t)FreeType
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTFREEVIRTUALMEMORY, args);
+}

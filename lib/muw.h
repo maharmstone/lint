@@ -412,6 +412,7 @@ NTSTATUS __stdcall NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAcces
                                  const OBJECT_ATTRIBUTES* ObjectAttributes);
 NTSTATUS __stdcall NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                                 ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
+NTSTATUS __stdcall NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType);
 
 #ifdef __cplusplus
 }
