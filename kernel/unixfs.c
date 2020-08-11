@@ -9,14 +9,18 @@ typedef struct _fcb {
     struct list_head list;
     unsigned int refcount;
     struct file* f;
-    char path[1];
 } fcb;
+
+typedef struct {
+    file_object fileobj;
+    fcb* f;
+} unixfs_file_object;
 
 static LIST_HEAD(fcb_list);
 static DECLARE_RWSEM(fcb_list_sem);
 
 static void file_object_close(object_header* obj) {
-    file_object* f = (file_object*)obj;
+    unixfs_file_object* f = (unixfs_file_object*)obj;
 
     down_write(&fcb_list_sem);
 
@@ -30,14 +34,14 @@ static void file_object_close(object_header* obj) {
 
     up_write(&fcb_list_sem);
 
-    if (f->query_string.Buffer)
-        kfree(f->query_string.Buffer);
+    if (f->fileobj.query_string.Buffer)
+        kfree(f->fileobj.query_string.Buffer);
 
-    if (__sync_sub_and_fetch(&f->dev->header.refcount, 1) == 0)
-        f->dev->header.close(&f->dev->header);
+    if (__sync_sub_and_fetch(&f->fileobj.dev->header.refcount, 1) == 0)
+        f->fileobj.dev->header.close(&f->fileobj.dev->header);
 
-    if (f->header.path.Buffer)
-        kfree(f->header.path.Buffer);
+    if (f->fileobj.header.path.Buffer)
+        kfree(f->fileobj.header.path.Buffer);
 
     kfree(f);
 }
@@ -194,7 +198,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     unsigned int i;
     struct list_head* le;
     fcb* f = NULL;
-    file_object* obj;
+    unixfs_file_object* obj;
     struct file* file;
     bool name_exists;
 
@@ -351,7 +355,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     }
 
     if (!f) {
-        f = kmalloc(offsetof(fcb, path) + as_len + 1, GFP_KERNEL);
+        f = kmalloc(sizeof(fcb), GFP_KERNEL);
         if (!f) {
             up_write(&fcb_list_sem);
             kfree(path);
@@ -361,8 +365,6 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         f->refcount = 1;
 
         f->f = file;
-
-        memcpy(f->path, path, as_len + 1);
 
         list_add_tail(&f->list, &fcb_list);
     }
@@ -404,7 +406,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     // create file object (with path)
 
-    obj = kzalloc(sizeof(file_object), GFP_KERNEL);
+    obj = kzalloc(sizeof(unixfs_file_object), GFP_KERNEL);
     if (!obj) {
         down_write(&fcb_list_sem);
 
@@ -421,14 +423,14 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    obj->header.refcount = 1;
-    obj->header.type = muwine_object_file;
+    obj->fileobj.header.refcount = 1;
+    obj->fileobj.header.type = muwine_object_file;
 
-    spin_lock_init(&obj->header.path_lock);
-    obj->header.path.Length = obj->header.path.MaximumLength = us->Length + dev->header.path.Length;
-    obj->header.path.Buffer = kmalloc(obj->header.path.Length, GFP_KERNEL);
+    spin_lock_init(&obj->fileobj.header.path_lock);
+    obj->fileobj.header.path.Length = obj->fileobj.header.path.MaximumLength = us->Length + dev->header.path.Length;
+    obj->fileobj.header.path.Buffer = kmalloc(obj->fileobj.header.path.Length, GFP_KERNEL);
 
-    if (!obj->header.path.Buffer) {
+    if (!obj->fileobj.header.path.Buffer) {
         down_write(&fcb_list_sem);
 
         f->refcount--;
@@ -446,23 +448,23 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    memcpy(obj->header.path.Buffer, dev->header.path.Buffer, dev->header.path.Length);
-    memcpy(&obj->header.path.Buffer[dev->header.path.Length / sizeof(WCHAR)], us->Buffer, us->Length);
+    memcpy(obj->fileobj.header.path.Buffer, dev->header.path.Buffer, dev->header.path.Length);
+    memcpy(&obj->fileobj.header.path.Buffer[dev->header.path.Length / sizeof(WCHAR)], us->Buffer, us->Length);
 
-    obj->header.close = file_object_close;
+    obj->fileobj.header.close = file_object_close;
     obj->f = f;
-    obj->flags = 0;
-    obj->offset = 0;
-    obj->dev = dev;
+    obj->fileobj.flags = 0;
+    obj->fileobj.offset = 0;
+    obj->fileobj.dev = dev;
 
     __sync_add_and_fetch(&dev->header.refcount, 1);
 
     if (CreateOptions & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
-        obj->flags |= FO_SYNCHRONOUS_IO;
+        obj->fileobj.flags |= FO_SYNCHRONOUS_IO;
 
     // return handle
 
-    Status = muwine_add_handle(&obj->header, FileHandle, oa_attributes & OBJ_KERNEL_HANDLE);
+    Status = muwine_add_handle(&obj->fileobj.header, FileHandle, oa_attributes & OBJ_KERNEL_HANDLE);
 
     if (!NT_SUCCESS(Status)) {
         down_write(&fcb_list_sem);
@@ -477,10 +479,10 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
         up_write(&fcb_list_sem);
 
-        if (__sync_sub_and_fetch(&obj->dev->header.refcount, 1) == 0)
-            obj->dev->header.close(&obj->dev->header);
+        if (__sync_sub_and_fetch(&obj->fileobj.dev->header.refcount, 1) == 0)
+            obj->fileobj.dev->header.close(&obj->fileobj.dev->header);
 
-        kfree(obj->header.path.Buffer);
+        kfree(obj->fileobj.header.path.Buffer);
         kfree(obj);
 
         return Status;
@@ -532,6 +534,8 @@ static ULONG get_file_attributes(fcb* f) {
 
 static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                          ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
+
     switch (FileInformationClass) {
         case FileBasicInformation: {
             FILE_BASIC_INFORMATION* fbi = (FILE_BASIC_INFORMATION*)FileInformation;
@@ -539,14 +543,14 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             if (Length < sizeof(FILE_BASIC_INFORMATION))
                 return STATUS_BUFFER_TOO_SMALL;
 
-            if (!obj->f->f->f_inode)
+            if (!ufo->f->f->f_inode)
                 return STATUS_INTERNAL_ERROR;
 
             fbi->CreationTime.QuadPart = 0; // FIXME?
-            fbi->LastAccessTime.QuadPart = unix_time_to_win(&obj->f->f->f_inode->i_atime);
-            fbi->LastWriteTime.QuadPart = unix_time_to_win(&obj->f->f->f_inode->i_mtime);
-            fbi->ChangeTime.QuadPart = unix_time_to_win(&obj->f->f->f_inode->i_ctime);
-            fbi->FileAttributes = get_file_attributes(obj->f);
+            fbi->LastAccessTime.QuadPart = unix_time_to_win(&ufo->f->f->f_inode->i_atime);
+            fbi->LastWriteTime.QuadPart = unix_time_to_win(&ufo->f->f->f_inode->i_mtime);
+            fbi->ChangeTime.QuadPart = unix_time_to_win(&ufo->f->f->f_inode->i_ctime);
+            fbi->FileAttributes = get_file_attributes(ufo->f);
 
             IoStatusBlock->Information = sizeof(FILE_BASIC_INFORMATION);
 
@@ -559,12 +563,12 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             if (Length < sizeof(FILE_STANDARD_INFORMATION))
                 return STATUS_BUFFER_TOO_SMALL;
 
-            if (!obj->f->f->f_inode)
+            if (!ufo->f->f->f_inode)
                 return STATUS_INTERNAL_ERROR;
 
-            fsi->EndOfFile.QuadPart = obj->f->f->f_inode->i_size;
+            fsi->EndOfFile.QuadPart = ufo->f->f->f_inode->i_size;
             fsi->AllocationSize.QuadPart = (fsi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
-            fsi->NumberOfLinks = obj->f->f->f_inode->i_nlink;
+            fsi->NumberOfLinks = ufo->f->f->f_inode->i_nlink;
             fsi->DeletePending = false; // FIXME
             fsi->Directory = false; // FIXME
 
@@ -592,24 +596,24 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
 
             // FIXME - handle fake symlinked drives, like C:
 
-            spin_lock(&obj->dev->header.path_lock);
-            dev_name_len = obj->dev->header.path.Length;
-            spin_unlock(&obj->dev->header.path_lock);
+            spin_lock(&ufo->fileobj.dev->header.path_lock);
+            dev_name_len = ufo->fileobj.dev->header.path.Length;
+            spin_unlock(&ufo->fileobj.dev->header.path_lock);
 
-            spin_lock(&obj->header.path_lock);
+            spin_lock(&ufo->fileobj.header.path_lock);
 
-            fni->FileNameLength = obj->header.path.Length - dev_name_len;
+            fni->FileNameLength = ufo->fileobj.header.path.Length - dev_name_len;
 
             if (name_len < fni->FileNameLength) {
-                memcpy(fni->FileName, obj->header.path.Buffer + (dev_name_len / sizeof(WCHAR)), name_len);
-                spin_unlock(&obj->header.path_lock);
+                memcpy(fni->FileName, ufo->fileobj.header.path.Buffer + (dev_name_len / sizeof(WCHAR)), name_len);
+                spin_unlock(&ufo->fileobj.header.path_lock);
 
                 IoStatusBlock->Information = offsetof(FILE_NAME_INFORMATION, FileName) + name_len;
                 return STATUS_BUFFER_OVERFLOW;
             }
 
-            memcpy(fni->FileName, obj->header.path.Buffer + (dev_name_len / sizeof(WCHAR)), fni->FileNameLength);
-            spin_unlock(&obj->header.path_lock);
+            memcpy(fni->FileName, ufo->fileobj.header.path.Buffer + (dev_name_len / sizeof(WCHAR)), fni->FileNameLength);
+            spin_unlock(&ufo->fileobj.header.path_lock);
 
             IoStatusBlock->Information = offsetof(FILE_NAME_INFORMATION, FileName) + fni->FileNameLength;
 
@@ -630,10 +634,10 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             if (Length < sizeof(FILE_END_OF_FILE_INFORMATION))
                 return STATUS_BUFFER_TOO_SMALL;
 
-            if (!obj->f->f->f_inode)
+            if (!ufo->f->f->f_inode)
                 return STATUS_INTERNAL_ERROR;
 
-            feofi->EndOfFile.QuadPart = obj->f->f->f_inode->i_size;
+            feofi->EndOfFile.QuadPart = ufo->f->f->f_inode->i_size;
 
             IoStatusBlock->Information = sizeof(FILE_END_OF_FILE_INFORMATION);
 
@@ -660,6 +664,7 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
 static NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                             PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                             PULONG Key) {
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
     ssize_t read;
     loff_t pos;
 
@@ -671,22 +676,22 @@ static NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcR
 
     if (ByteOffset)
         pos = ByteOffset->QuadPart;
-    else if (obj->flags & FO_SYNCHRONOUS_IO)
-        pos = obj->offset;
+    else if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO)
+        pos = ufo->fileobj.offset;
     else
         return STATUS_INVALID_PARAMETER;
 
-    read = kernel_read(obj->f->f, Buffer, Length, &pos);
+    read = kernel_read(ufo->f->f, Buffer, Length, &pos);
 
     if (read < 0) {
-        if (obj->flags & FO_SYNCHRONOUS_IO && ByteOffset)
-            obj->offset = ByteOffset->QuadPart;
+        if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO && ByteOffset)
+            ufo->fileobj.offset = ByteOffset->QuadPart;
 
         return muwine_error_to_ntstatus(read);
     }
 
-    if (obj->flags & FO_SYNCHRONOUS_IO)
-        obj->offset = pos;
+    if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO)
+        ufo->fileobj.offset = pos;
 
     IoStatusBlock->Information = read;
 
@@ -696,6 +701,7 @@ static NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcR
 static NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                              PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                              PULONG Key) {
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
     ssize_t written;
     loff_t pos;
 
@@ -709,22 +715,22 @@ static NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE Apc
 
     if (ByteOffset)
         pos = ByteOffset->QuadPart;
-    else if (obj->flags & FO_SYNCHRONOUS_IO)
-        pos = obj->offset;
+    else if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO)
+        pos = ufo->fileobj.offset;
     else
         return STATUS_INVALID_PARAMETER;
 
-    written = kernel_write(obj->f->f, Buffer, Length, &pos);
+    written = kernel_write(ufo->f->f, Buffer, Length, &pos);
 
     if (written < 0) {
-        if (obj->flags & FO_SYNCHRONOUS_IO && ByteOffset)
-            obj->offset = ByteOffset->QuadPart;
+        if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO && ByteOffset)
+            ufo->fileobj.offset = ByteOffset->QuadPart;
 
         return muwine_error_to_ntstatus(written);
     }
 
-    if (obj->flags & FO_SYNCHRONOUS_IO)
-        obj->offset = pos;
+    if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO)
+        ufo->fileobj.offset = pos;
 
     IoStatusBlock->Information = written;
 
@@ -750,6 +756,7 @@ static int dir_iterate(struct dir_context* dc, const char* name, int name_len, l
 }
 
 static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
     NTSTATUS Status;
     ULONG dest_len;
     char* dest;
@@ -802,7 +809,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
         return Status;
     }
 
-    if (obj->f->f->f_inode->i_sb != dest_dir->f_inode->i_sb) { // FIXME
+    if (ufo->f->f->f_inode->i_sb != dest_dir->f_inode->i_sb) { // FIXME
         printk(KERN_ALERT "unixfs_rename: FIXME - handle moving files across filesystems\n");
         filp_close(dest_dir, NULL);
         kfree(dest);
@@ -816,7 +823,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    lock_rename(file_dentry(obj->f->f)->d_parent, file_dentry(dest_dir));
+    lock_rename(file_dentry(ufo->f->f)->d_parent, file_dentry(dest_dir));
 
     ri.dc.actor = dir_iterate;
     ri.dc.pos = 0;
@@ -830,7 +837,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
 
     if (ri.found) {
         if (!fri->ReplaceIfExists) {
-            unlock_rename(file_dentry(obj->f->f)->d_parent, file_dentry(dest_dir));
+            unlock_rename(file_dentry(ufo->f->f)->d_parent, file_dentry(dest_dir));
 
             d_invalidate(new_dentry);
 
@@ -845,10 +852,10 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
         // FIXME - delete (in case file exists but differs by case)
     }
 
-    ret = vfs_rename(file_dentry(obj->f->f)->d_parent->d_inode, file_dentry(obj->f->f), dest_dir->f_inode,
+    ret = vfs_rename(file_dentry(ufo->f->f)->d_parent->d_inode, file_dentry(ufo->f->f), dest_dir->f_inode,
                      new_dentry, NULL, 0);
 
-    unlock_rename(file_dentry(obj->f->f)->d_parent, file_dentry(dest_dir));
+    unlock_rename(file_dentry(ufo->f->f)->d_parent, file_dentry(dest_dir));
 
     d_invalidate(new_dentry);
 
@@ -859,24 +866,24 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     if (ret < 0)
         return muwine_error_to_ntstatus(ret);
 
-    spin_lock(&obj->header.path_lock);
+    spin_lock(&ufo->fileobj.header.path_lock);
 
-    new_path.Length = obj->dev->header.path.Length + fri->FileNameLength;
+    new_path.Length = ufo->fileobj.dev->header.path.Length + fri->FileNameLength;
     new_path.Buffer = kmalloc(new_path.Length, GFP_KERNEL);
 
     if (!new_path.Buffer) {
-        spin_unlock(&obj->header.path_lock);
+        spin_unlock(&ufo->fileobj.header.path_lock);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    kfree(obj->header.path.Buffer);
-    obj->header.path = new_path;
+    kfree(ufo->fileobj.header.path.Buffer);
+    ufo->fileobj.header.path = new_path;
 
-    memcpy(obj->header.path.Buffer, obj->dev->header.path.Buffer, obj->dev->header.path.Length);
-    memcpy(obj->header.path.Buffer + (obj->dev->header.path.Length / sizeof(WCHAR)),
+    memcpy(ufo->fileobj.header.path.Buffer, ufo->fileobj.dev->header.path.Buffer, ufo->fileobj.dev->header.path.Length);
+    memcpy(ufo->fileobj.header.path.Buffer + (ufo->fileobj.dev->header.path.Length / sizeof(WCHAR)),
         fri->FileName, fri->FileNameLength);
 
-    spin_unlock(&obj->header.path_lock);
+    spin_unlock(&ufo->fileobj.header.path_lock);
 
     return STATUS_SUCCESS;
 }
@@ -1185,41 +1192,42 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
                                        PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                                        FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                                        PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
     query_directory_iterate qdi;
     bool initial;
 
     if (RestartScan) {
-        obj->query_dir_offset = 0;
+        ufo->fileobj.query_dir_offset = 0;
 
-        if (obj->query_string.Buffer) {
-            kfree(obj->query_string.Buffer);
-            obj->query_string.Buffer = NULL;
+        if (ufo->fileobj.query_string.Buffer) {
+            kfree(ufo->fileobj.query_string.Buffer);
+            ufo->fileobj.query_string.Buffer = NULL;
         }
 
-        obj->query_string.Length = obj->query_string.MaximumLength = 0;
+        ufo->fileobj.query_string.Length = ufo->fileobj.query_string.MaximumLength = 0;
     }
 
     if (FileMask && FileMask->Length > 0) {
-        if (obj->query_string.Buffer) {
-            kfree(obj->query_string.Buffer);
-            obj->query_string.Buffer = NULL;
+        if (ufo->fileobj.query_string.Buffer) {
+            kfree(ufo->fileobj.query_string.Buffer);
+            ufo->fileobj.query_string.Buffer = NULL;
         }
 
-        obj->query_string.Buffer = kmalloc(FileMask->Length, GFP_KERNEL);
-        if (!obj->query_string.Buffer)
+        ufo->fileobj.query_string.Buffer = kmalloc(FileMask->Length, GFP_KERNEL);
+        if (!ufo->fileobj.query_string.Buffer)
             return STATUS_INSUFFICIENT_RESOURCES;
 
-        obj->query_string.Length = obj->query_string.MaximumLength = FileMask->Length;
+        ufo->fileobj.query_string.Length = ufo->fileobj.query_string.MaximumLength = FileMask->Length;
 
-        memcpy(obj->query_string.Buffer, FileMask->Buffer, FileMask->Length);
+        memcpy(ufo->fileobj.query_string.Buffer, FileMask->Buffer, FileMask->Length);
     }
 
-    initial = obj->query_dir_offset == 0;
+    initial = ufo->fileobj.query_dir_offset == 0;
 
     // FIXME - struct file might be shared between multiple open NT files
-    vfs_llseek(obj->f->f, obj->query_dir_offset, SEEK_SET);
+    vfs_llseek(ufo->f->f, ufo->fileobj.query_dir_offset, SEEK_SET);
 
-    qdi.dc.pos = obj->query_dir_offset;
+    qdi.dc.pos = ufo->fileobj.query_dir_offset;
     qdi.dc.actor = query_directory_iterate_func;
     qdi.buf = FileInformation;
     qdi.length = Length;
@@ -1228,17 +1236,17 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
     qdi.Status = STATUS_SUCCESS;
     qdi.first = true;
     qdi.last_offset = NULL;
-    qdi.dir_file = obj->f->f;
-    qdi.pattern_mask = obj->query_string.Length > 0 ? &obj->query_string : NULL;
+    qdi.dir_file = ufo->f->f;
+    qdi.pattern_mask = ufo->fileobj.query_string.Length > 0 ? &ufo->fileobj.query_string : NULL;
 
-    if (obj->f->f->f_op->iterate_shared) {
-        down_read(&obj->f->f->f_inode->i_rwsem);
-        obj->f->f->f_op->iterate_shared(obj->f->f, &qdi.dc);
-        up_read(&obj->f->f->f_inode->i_rwsem);
+    if (ufo->f->f->f_op->iterate_shared) {
+        down_read(&ufo->f->f->f_inode->i_rwsem);
+        ufo->f->f->f_op->iterate_shared(ufo->f->f, &qdi.dc);
+        up_read(&ufo->f->f->f_inode->i_rwsem);
     } else {
-        down_write(&obj->f->f->f_inode->i_rwsem);
-        obj->f->f->f_op->iterate(obj->f->f, &qdi.dc);
-        up_write(&obj->f->f->f_inode->i_rwsem);
+        down_write(&ufo->f->f->f_inode->i_rwsem);
+        ufo->f->f->f_op->iterate(ufo->f->f, &qdi.dc);
+        up_write(&ufo->f->f->f_inode->i_rwsem);
     }
 
     if (!NT_SUCCESS(qdi.Status))
@@ -1247,7 +1255,7 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
     if (qdi.first)
         return initial ? STATUS_NO_SUCH_FILE : STATUS_NO_MORE_FILES;
 
-    obj->query_dir_offset = qdi.dc.pos;
+    ufo->fileobj.query_dir_offset = qdi.dc.pos;
 
     IoStatusBlock->Information = Length - qdi.length;
 
@@ -1306,7 +1314,9 @@ static NTSTATUS unixfs_query_volume_info(file_object* obj, PIO_STATUS_BLOCK IoSt
 }
 
 static struct file* unixfs_get_filp(file_object* obj) {
-    return obj->f->f;
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
+
+    return ufo->f->f;
 }
 
 static void device_object_close(object_header* obj) {

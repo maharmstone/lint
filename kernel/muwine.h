@@ -560,11 +560,8 @@ object_header* get_object_from_handle(HANDLE h);
 void muwine_free_kernel_handles(void);
 
 // unixfs.c
-typedef struct _fcb fcb;
-
 typedef struct {
     object_header header;
-    fcb* f;
     ULONG flags;
     uint64_t offset;
     device* dev;
