@@ -946,7 +946,7 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
     process* p;
     uintptr_t addr = (uintptr_t)*BaseAddress;
     size_t size = *RegionSize;
-    unsigned long ret, prot;
+    unsigned long ret, prot, flags;
     section_map* map;
     struct list_head* le;
     unsigned int i;
@@ -957,7 +957,7 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
         if (!p)
             return STATUS_INTERNAL_ERROR;
     } else {
-        printk("NtAllocateVirtualMemory: FIXME - support process handles\n"); // FIXME
+        printk(KERN_INFO "NtAllocateVirtualMemory: FIXME - support process handles\n"); // FIXME
         return STATUS_NOT_IMPLEMENTED;
     }
 
@@ -969,7 +969,20 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
     if (size % PAGE_SIZE)
         size += PAGE_SIZE - (size % PAGE_SIZE);
 
-    if (Protect & NT_PAGE_EXECUTE_READ || Protect & NT_PAGE_EXECUTE_WRITECOPY)
+    if (!(AllocationType & (MEM_COMMIT | MEM_RESERVE | MEM_RESET)))
+        return STATUS_INVALID_PARAMETER;
+
+    if (AllocationType & MEM_RESET && (MEM_COMMIT | MEM_RESERVE))
+        return STATUS_INVALID_PARAMETER;
+
+    if (AllocationType & MEM_RESET) {
+        printk(KERN_INFO "NtAllocateVirtualMemory: FIXME - MEM_RESET\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (AllocationType & MEM_RESERVE && !(AllocationType & MEM_COMMIT))
+        prot = PROT_NONE;
+    else if (Protect & NT_PAGE_EXECUTE_READ || Protect & NT_PAGE_EXECUTE_WRITECOPY)
         prot = PROT_EXEC | PROT_READ;
     else if (Protect & NT_PAGE_EXECUTE_READWRITE)
         prot = PROT_EXEC | PROT_READ | PROT_WRITE;
@@ -982,15 +995,136 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
         return STATUS_NOT_IMPLEMENTED;
     }
 
+    // check if committing previously reserved memory
+    if (addr && !(AllocationType & MEM_RESERVE)) {
+        down_write(&p->mapping_list_sem);
+
+        le = p->mapping_list.next;
+        while (le != &p->mapping_list) {
+            section_map* sm2 = list_entry(le, section_map, list);
+
+            if (sm2->address <= addr && sm2->address + sm2->length >= addr + size && !sm2->sect) {
+                unsigned long off = (addr - sm2->address) / PAGE_SIZE;
+                unsigned long num_pages = size / PAGE_SIZE;
+                bool commit = true;
+
+                for (i = off; i < off + num_pages; i++) {
+                    if (sm2->prots[i] != PROT_NONE) {
+                        commit = false;
+                        break;
+                    }
+                }
+
+                if (commit) {
+                    ret = vm_mmap(NULL, (uintptr_t)addr, size, prot, MAP_PRIVATE | MAP_FIXED, 0);
+                    if (IS_ERR((void*)ret))
+                        return muwine_error_to_ntstatus(ret);
+
+                    if (addr == sm2->address && size == sm2->length) { // commiting whole entry
+                        for (i = off; i < off + num_pages; i++) {
+                            sm2->prots[i] = prot;
+                        }
+                    } else {
+                        unsigned long* prots = sm2->prots;
+
+                        if (off > 0) { // add entry before
+                            map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * off), GFP_KERNEL);
+                            if (!map) {
+                                up_write(&p->mapping_list_sem);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+
+                            map->address = sm2->address;
+                            map->length = addr - sm2->address;
+                            map->sect = NULL;
+                            map->file_offset = 0;
+
+                            memcpy(map->prots, sm2->prots, sizeof(unsigned long) * off);
+
+                            list_add(&map->list, sm2->list.prev);
+
+                            prots = &sm2->prots[off];
+                            sm2->length -= addr - sm2->address;
+                            sm2->address = addr;
+                        }
+
+                        // add new entry
+
+                        map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * num_pages), GFP_KERNEL);
+                        if (!map) {
+                            up_write(&p->mapping_list_sem);
+                            return STATUS_INSUFFICIENT_RESOURCES;
+                        }
+
+                        map->address = addr;
+                        map->length = size;
+                        map->sect = NULL;
+                        map->file_offset = 0;
+
+                        for (i = 0; i < num_pages; i++) {
+                            map->prots[i] = prot;
+                        }
+
+                        list_add(&map->list, sm2->list.prev);
+
+                        // add entry after
+
+                        if (addr + size < sm2->address + sm2->length) {
+                            unsigned long num_pages2 = (sm2->address + sm2->length - addr - size) / PAGE_SIZE;
+
+                            map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * num_pages2), GFP_KERNEL);
+                            if (!map) {
+                                up_write(&p->mapping_list_sem);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+
+                            map->address = addr + size;
+                            map->length = sm2->address + sm2->length - addr - size;
+                            map->sect = NULL;
+                            map->file_offset = 0;
+
+                            memcpy(map->prots, &prots[(map->address - sm2->address) / PAGE_SIZE],
+                                   sizeof(unsigned long) * num_pages2);
+
+                            list_add(&map->list, sm2->list.prev);
+                        }
+
+                        list_del(&sm2->list);
+                        kfree(sm2);
+                    }
+
+                    *BaseAddress = (void*)addr;
+                    *RegionSize = size;
+
+                    up_write(&p->mapping_list_sem);
+
+                    return STATUS_SUCCESS;
+                }
+            }
+
+            le = le->next;
+        }
+
+        up_write(&p->mapping_list_sem);
+    }
+
     map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * (size / PAGE_SIZE)), GFP_KERNEL);
     if (!map)
         return STATUS_INSUFFICIENT_RESOURCES;
 
+    flags = MAP_PRIVATE;
 
-    ret = vm_mmap(NULL, (uintptr_t)addr, size, prot, MAP_PRIVATE, 0);
+    if (addr)
+        flags |= MAP_FIXED_NOREPLACE;
+
+    ret = vm_mmap(NULL, addr, size, prot, flags, 0);
     if (IS_ERR((void*)ret)) {
         kfree(map);
-        return muwine_error_to_ntstatus(ret);
+
+        if (ret == -EEXIST)
+            return STATUS_CONFLICTING_ADDRESSES;
+        else
+            return muwine_error_to_ntstatus(ret);
     }
 
     map->address = ret;
