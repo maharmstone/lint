@@ -448,6 +448,11 @@ typedef struct {
 } FILE_STANDARD_INFORMATION;
 
 typedef struct {
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} FILE_NAME_INFORMATION;
+
+typedef struct {
     BOOLEAN ReplaceIfExists;
     HANDLE RootDirectory;
     ULONG FileNameLength;

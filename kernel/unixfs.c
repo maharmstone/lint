@@ -581,9 +581,40 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             printk(KERN_INFO "unixfs_query_information: FIXME - FileEaInformation\n");
             return STATUS_INVALID_INFO_CLASS;
 
-        case FileNameInformation:
-            printk(KERN_INFO "unixfs_query_information: FIXME - FileNameInformation\n");
-            return STATUS_INVALID_INFO_CLASS;
+        case FileNameInformation: {
+            FILE_NAME_INFORMATION* fni = (FILE_NAME_INFORMATION*)FileInformation;
+            ULONG name_len, dev_name_len;
+
+            if (Length < offsetof(FILE_NAME_INFORMATION, FileName))
+                return STATUS_BUFFER_TOO_SMALL;
+
+            name_len = Length - offsetof(FILE_NAME_INFORMATION, FileName);
+
+            // FIXME - handle fake symlinked drives, like C:
+
+            spin_lock(&obj->dev->header.path_lock);
+            dev_name_len = obj->dev->header.path.Length;
+            spin_unlock(&obj->dev->header.path_lock);
+
+            spin_lock(&obj->header.path_lock);
+
+            fni->FileNameLength = obj->header.path.Length - dev_name_len;
+
+            if (name_len < fni->FileNameLength) {
+                memcpy(fni->FileName, obj->header.path.Buffer + (dev_name_len / sizeof(WCHAR)), name_len);
+                spin_unlock(&obj->header.path_lock);
+
+                IoStatusBlock->Information = offsetof(FILE_NAME_INFORMATION, FileName) + name_len;
+                return STATUS_BUFFER_OVERFLOW;
+            }
+
+            memcpy(fni->FileName, obj->header.path.Buffer + (dev_name_len / sizeof(WCHAR)), fni->FileNameLength);
+            spin_unlock(&obj->header.path_lock);
+
+            IoStatusBlock->Information = offsetof(FILE_NAME_INFORMATION, FileName) + fni->FileNameLength;
+
+            return STATUS_SUCCESS;
+        }
 
         case FilePositionInformation:
             printk(KERN_INFO "unixfs_query_information: FIXME - FilePositionInformation\n");
