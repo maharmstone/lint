@@ -979,8 +979,10 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
 
             list_del(&sm->list);
 
-            if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
-                sm->sect->close(sm->sect);
+            if (sm->sect) {
+                if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
+                    sm->sect->close(sm->sect);
+            }
 
             kfree(sm);
         }

@@ -628,7 +628,7 @@ static NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
     while (le != &p->mapping_list) {
         section_map* sm2 = list_entry(le, section_map, list);
 
-        if ((uintptr_t)BaseAddress >= sm2->address && (uintptr_t)BaseAddress < sm2->address + sm2->length) {
+        if ((uintptr_t)BaseAddress >= sm2->address && (uintptr_t)BaseAddress < sm2->address + sm2->length && sm2->sect) {
             sm = sm2;
             list_del(&sm->list);
             break;
@@ -643,6 +643,11 @@ static NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
         return STATUS_INVALID_PARAMETER;
 
     vm_munmap(sm->address, sm->length);
+
+    if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
+        sm->sect->close(sm->sect);
+
+    kfree(sm);
 
     return STATUS_SUCCESS;
 }
@@ -846,6 +851,8 @@ static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
             if (sm2->address + sm2->length < map_end)
                 map_end = sm2->address + sm2->length;
 
+            // FIXME - non-section mappings
+
             sect = (section_object*)sm2->sect;
 
             if (sect->file) {
@@ -940,6 +947,9 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
     uintptr_t addr = (uintptr_t)*BaseAddress;
     size_t size = *RegionSize;
     unsigned long ret, prot;
+    section_map* map;
+    struct list_head* le;
+    unsigned int i;
 
     if (ProcessHandle == NtCurrentProcess()) {
         p = muwine_current_process();
@@ -972,12 +982,47 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
         return STATUS_NOT_IMPLEMENTED;
     }
 
+    map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * (size / PAGE_SIZE)), GFP_KERNEL);
+    if (!map)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+
     ret = vm_mmap(NULL, (uintptr_t)addr, size, prot, MAP_PRIVATE, 0);
-    if (IS_ERR((void*)ret))
+    if (IS_ERR((void*)ret)) {
+        kfree(map);
         return muwine_error_to_ntstatus(ret);
+    }
+
+    map->address = ret;
+    map->length = size;
+    map->sect = NULL;
+    map->file_offset = 0;
+
+    for (i = 0; i < size / PAGE_SIZE; i++) {
+        map->prots[i] = prot;
+    }
 
     *BaseAddress = (void*)ret;
     *RegionSize = size;
+
+    down_write(&p->mapping_list_sem);
+
+    le = p->mapping_list.next;
+    while (le != &p->mapping_list) {
+        section_map* sm2 = list_entry(le, section_map, list);
+
+        if (sm2->address > map->address) {
+            list_add(&map->list, le->prev);
+            up_write(&p->mapping_list_sem);
+
+            return STATUS_SUCCESS;
+        }
+
+        le = le->next;
+    }
+
+    list_add_tail(&map->list, &p->mapping_list);
+    up_write(&p->mapping_list_sem);
 
     return STATUS_SUCCESS;
 }
@@ -1014,12 +1059,58 @@ NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, 
 
 static NTSTATUS NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
                                     PSIZE_T RegionSize, ULONG FreeType) {
-    printk(KERN_INFO "NtFreeVirtualMemory(%lx, %px, %px, %x): stub\n", (uintptr_t)ProcessHandle,
-           BaseAddress, RegionSize, FreeType);
+    process* p;
+    uintptr_t addr = (uintptr_t)*BaseAddress;
+    size_t size = *RegionSize;
+    struct list_head* le;
+    section_map* sm;
 
-    // FIXME
+    if (ProcessHandle == NtCurrentProcess()) {
+        p = muwine_current_process();
 
-    return STATUS_NOT_IMPLEMENTED;
+        if (!p)
+            return STATUS_INTERNAL_ERROR;
+    } else {
+        printk("NtFreeVirtualMemory: FIXME - support process handles\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (addr % PAGE_SIZE) {
+        size += addr % PAGE_SIZE;
+        addr -= addr % PAGE_SIZE;
+    }
+
+    if (size % PAGE_SIZE)
+        size += PAGE_SIZE - (size % PAGE_SIZE);
+
+    down_write(&p->mapping_list_sem);
+
+    le = p->mapping_list.next;
+    while (le != &p->mapping_list) {
+        section_map* sm2 = list_entry(le, section_map, list);
+
+        if (addr >= sm2->address && addr < sm2->address + sm2->length && !sm2->sect) {
+            sm = sm2;
+            list_del(&sm->list);
+            break;
+        }
+
+        le = le->next;
+    }
+
+    up_write(&p->mapping_list_sem);
+
+    if (!sm)
+        return STATUS_INVALID_PARAMETER;
+
+    vm_munmap(sm->address, sm->length);
+
+    *BaseAddress = (void*)sm->address;
+    *RegionSize = sm->length;
+
+    kfree(sm);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize,
