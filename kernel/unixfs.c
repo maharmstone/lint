@@ -509,12 +509,49 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     return Status;
 }
 
+static __inline uint64_t unix_time_to_win(struct timespec64* t) {
+    return (t->tv_sec * 10000000) + (t->tv_nsec / 100) + 116444736000000000;
+}
+
+static ULONG get_file_attributes(fcb* f) {
+    ULONG atts;
+
+    // FIXME - get FileAttributes from xattr if set
+
+    if (S_ISDIR(f->f->f_inode->i_mode))
+        atts = FILE_ATTRIBUTE_DIRECTORY;
+    else if (S_ISLNK(f->f->f_inode->i_mode))
+        atts = FILE_ATTRIBUTE_REPARSE_POINT;
+
+    atts |= FILE_ATTRIBUTE_ARCHIVE;
+
+    // FIXME - add FILE_ATTRIBUTE_HIDDEN if dot file
+
+    return atts;
+}
+
 static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                          ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     switch (FileInformationClass) {
-        case FileBasicInformation:
-            printk(KERN_INFO "unixfs_query_information: FIXME - FileBasicInformation\n");
-            return STATUS_INVALID_INFO_CLASS;
+        case FileBasicInformation: {
+            FILE_BASIC_INFORMATION* fbi = (FILE_BASIC_INFORMATION*)FileInformation;
+
+            if (Length < sizeof(FILE_BASIC_INFORMATION))
+                return STATUS_BUFFER_TOO_SMALL;
+
+            if (!obj->f->f->f_inode)
+                return STATUS_INTERNAL_ERROR;
+
+            fbi->CreationTime.QuadPart = 0; // FIXME?
+            fbi->LastAccessTime.QuadPart = unix_time_to_win(&obj->f->f->f_inode->i_atime);
+            fbi->LastWriteTime.QuadPart = unix_time_to_win(&obj->f->f->f_inode->i_mtime);
+            fbi->ChangeTime.QuadPart = unix_time_to_win(&obj->f->f->f_inode->i_ctime);
+            fbi->FileAttributes = get_file_attributes(obj->f);
+
+            IoStatusBlock->Information = sizeof(FILE_BASIC_INFORMATION);
+
+            return STATUS_SUCCESS;
+        }
 
         case FileStandardInformation: {
             FILE_STANDARD_INFORMATION* fsi = (FILE_STANDARD_INFORMATION*)FileInformation;
@@ -870,10 +907,6 @@ static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStat
 
             return STATUS_INVALID_INFO_CLASS;
     }
-}
-
-static __inline uint64_t unix_time_to_win(struct timespec64* t) {
-    return (t->tv_sec * 10000000) + (t->tv_nsec / 100) + 116444736000000000;
 }
 
 typedef struct {

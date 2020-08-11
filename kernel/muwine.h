@@ -432,6 +432,14 @@ typedef enum {
 } FILE_INFORMATION_CLASS;
 
 typedef struct {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    ULONG FileAttributes;
+} FILE_BASIC_INFORMATION;
+
+typedef struct {
     LARGE_INTEGER AllocationSize;
     LARGE_INTEGER EndOfFile;
     ULONG NumberOfLinks;
