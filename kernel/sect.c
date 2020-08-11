@@ -20,6 +20,67 @@ static void section_object_close(object_header* obj) {
     kfree(sect);
 }
 
+static char* get_sect_name(HANDLE file_handle) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    FILE_NAME_INFORMATION fni;
+    FILE_NAME_INFORMATION* fni2;
+    ULONG as_len;
+    char* s;
+    unsigned int i, bs;
+
+    Status = NtQueryInformationFile(file_handle, &iosb, &fni, offsetof(FILE_NAME_INFORMATION, FileName),
+                                    FileNameInformation);
+    if (!NT_SUCCESS(Status) && Status != STATUS_BUFFER_OVERFLOW)
+        return NULL;
+
+    fni2 = kmalloc(offsetof(FILE_NAME_INFORMATION, FileName) + fni.FileNameLength, GFP_KERNEL);
+    if (!fni2)
+        return NULL;
+
+    Status = NtQueryInformationFile(file_handle, &iosb, fni2,
+                                    offsetof(FILE_NAME_INFORMATION, FileName) + fni.FileNameLength,
+                                    FileNameInformation);
+    if (!NT_SUCCESS(Status)) {
+        kfree(fni2);
+        return NULL;
+    }
+
+    if (!NT_SUCCESS(utf16_to_utf8(NULL, 0, &as_len, fni2->FileName, fni2->FileNameLength))) {
+        kfree(fni2);
+        return NULL;
+    }
+
+    s = kmalloc(as_len + 1, GFP_KERNEL);
+    if (!s) {
+        kfree(fni2);
+        return NULL;
+    }
+
+    if (!NT_SUCCESS(utf16_to_utf8(s, as_len, &as_len, fni2->FileName, fni2->FileNameLength))) {
+        kfree(s);
+        kfree(fni2);
+        return NULL;
+    }
+
+    kfree(fni2);
+
+    s[as_len] = 0;
+
+    // remove all but filename
+
+    bs = as_len;
+    for (i = 0; i < as_len; i++) {
+        if (s[i] == '\\')
+            bs = i;
+    }
+
+    if (bs != as_len)
+        memcpy(s, &s[bs + 1], as_len - bs);
+
+    return s;
+}
+
 static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file** anon_file,
                            uint32_t* ret_image_size, section_object** obj) {
     NTSTATUS Status;
@@ -35,6 +96,7 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     ssize_t written;
     loff_t pos;
     section_object* sect;
+    char* sect_name;
 
     // FIXME - check error codes are right
 
@@ -130,11 +192,19 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
         }
     }
 
-    file = shmem_file_setup("ntsection", image_size, 0);
+    sect_name = get_sect_name(file_handle);
+
+    file = shmem_file_setup(sect_name ? sect_name : "ntsection", image_size, 0);
     if (IS_ERR(file)) {
+        if (sect_name)
+            kfree(sect_name);
+
         vfree(buf);
         return muwine_error_to_ntstatus((int)(uintptr_t)file);
     }
+
+    if (sect_name)
+        kfree(sect_name);
 
     pos = 0;
 
