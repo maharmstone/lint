@@ -813,7 +813,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             up_read(&hive_list_sem);
 
-            Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
+            Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
             if (!NT_SUCCESS(Status)) {
                 if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
@@ -3621,7 +3621,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->is_volatile = is_volatile;
     k->parent_is_volatile = parent_is_volatile;
 
-    Status = muwine_add_handle(&k->header, KeyHandle, oa_attributes & OBJ_KERNEL_HANDLE);
+    Status = muwine_add_handle(&k->header, KeyHandle, oa_attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
         if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)

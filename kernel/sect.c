@@ -394,7 +394,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     }
 
     Status = muwine_add_handle(&obj->header, SectionHandle,
-                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false);
+                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, 0);
 
     if (!NT_SUCCESS(Status)) {
         if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
@@ -788,7 +788,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
         goto end;
     }
 
-    Status = muwine_add_handle(&sect->header, SectionHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
+    Status = muwine_add_handle(&sect->header, SectionHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
         if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)

@@ -5,7 +5,7 @@ static uintptr_t next_kernel_handle_no = KERNEL_HANDLE_MASK;
 static LIST_HEAD(kernel_handle_list);
 static DEFINE_SPINLOCK(kernel_handle_list_lock);
 
-NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel) {
+NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel, ACCESS_MASK access) {
     handle* hand;
     spinlock_t* lock;
     uintptr_t* next_handle;
@@ -33,6 +33,7 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel) {
         return STATUS_INSUFFICIENT_RESOURCES;
 
     hand->object = obj;
+    hand->access = access;
 
     spin_lock(lock);
 

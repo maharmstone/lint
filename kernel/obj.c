@@ -565,7 +565,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
         return Status;
     }
 
-    Status = muwine_add_handle(&obj->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
+    Status = muwine_add_handle(&obj->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
         if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
@@ -801,7 +801,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     if (us_alloc)
         kfree(us.Buffer);
 
-    Status = muwine_add_handle(&obj->header, pHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
+    Status = muwine_add_handle(&obj->header, pHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
         if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)

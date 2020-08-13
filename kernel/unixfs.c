@@ -402,7 +402,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     // return handle
 
-    Status = muwine_add_handle(&obj->fileobj.header, FileHandle, oa_attributes & OBJ_KERNEL_HANDLE);
+    Status = muwine_add_handle(&obj->fileobj.header, FileHandle, oa_attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
         down_write(&file_list_sem);
