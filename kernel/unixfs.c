@@ -1269,7 +1269,7 @@ NTSTATUS muwine_init_unixroot(void) {
     us.Length = us.MaximumLength = sizeof(device_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)device_name;
 
-    device_type = muwine_add_object_type(&us, device_object_close);
+    device_type = muwine_add_object_type(&us, device_object_close, 0, 0, 0, 0, 0);
     if (IS_ERR(device_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)device_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)device_type);
@@ -1278,7 +1278,12 @@ NTSTATUS muwine_init_unixroot(void) {
     us.Length = us.MaximumLength = sizeof(file_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)file_name;
 
-    file_type = muwine_add_object_type(&us, file_object_close);
+    file_type = muwine_add_object_type(&us, file_object_close,
+        STANDARD_RIGHTS_READ | FILE_READ_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE,
+        STANDARD_RIGHTS_WRITE | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | FILE_APPEND_DATA | SYNCHRONIZE,
+        STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | FILE_READ_ATTRIBUTES | FILE_EXECUTE,
+        FILE_ALL_ACCESS, FILE_ALL_ACCESS);
+
     if (IS_ERR(file_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)file_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)file_type);

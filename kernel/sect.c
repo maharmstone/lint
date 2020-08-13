@@ -1390,7 +1390,7 @@ NTSTATUS muwine_init_sections(void) {
     us.Length = us.MaximumLength = sizeof(sect_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)sect_name;
 
-    section_type = muwine_add_object_type(&us, section_object_close);
+    section_type = muwine_add_object_type(&us, section_object_close, 0, 0, 0, 0, 0);
     if (IS_ERR(section_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)section_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)section_type);

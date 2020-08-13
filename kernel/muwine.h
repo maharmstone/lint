@@ -163,6 +163,11 @@ typedef enum _KEY_VALUE_INFORMATION_CLASS {
 #define WRITE_DAC               0x00040000
 #define WRITE_OWNER             0x00080000
 #define SYNCHRONIZE             0x00100000
+#define STANDARD_RIGHTS_REQUIRED    WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE
+
+#define STANDARD_RIGHTS_READ    READ_CONTROL
+#define STANDARD_RIGHTS_WRITE   READ_CONTROL
+#define STANDARD_RIGHTS_EXECUTE READ_CONTROL
 
 #define KEY_QUERY_VALUE         0x00000001
 #define KEY_SET_VALUE           0x00000002
@@ -311,6 +316,9 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 #define FILE_DELETE_CHILD                 0x0040
 #define FILE_READ_ATTRIBUTES              0x0080
 #define FILE_WRITE_ATTRIBUTES             0x0100
+#define FILE_ALL_ACCESS                   STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | FILE_WRITE_ATTRIBUTES | \
+                                          FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_READ_EA | \
+                                          FILE_WRITE_EA | FILE_EXECUTE | FILE_DELETE_CHILD | FILE_READ_ATTRIBUTES
 
 #define FILE_DIRECTORY_FILE               0x00000001
 #define FILE_WRITE_THROUGH                0x00000002
@@ -602,10 +610,17 @@ typedef struct _type_object {
     object_header header;
     UNICODE_STRING name;
     muwine_close_object close;
+    uint32_t generic_read;
+    uint32_t generic_write;
+    uint32_t generic_execute;
+    uint32_t generic_all;
+    uint32_t valid;
 } type_object;
 
 void free_object(object_header* obj);
-type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close);
+type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close, uint32_t generic_read,
+                                    uint32_t generic_write, uint32_t generic_execute, uint32_t generic_all,
+                                    uint32_t valid);
 void muwine_free_objs(void);
 NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,
                             bool* after_alloc);

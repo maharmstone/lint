@@ -63,7 +63,9 @@ static void type_object_close(object_header* obj) {
     free_object(obj);
 }
 
-type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close) {
+type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close,
+                                    uint32_t generic_read, uint32_t generic_write, uint32_t generic_execute,
+                                    uint32_t generic_all, uint32_t valid) {
     type_object* obj;
 
     obj = kzalloc(sizeof(type_object), GFP_KERNEL);
@@ -92,6 +94,11 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_obj
     }
 
     obj->close = close;
+    obj->generic_read = generic_read;
+    obj->generic_write = generic_write;
+    obj->generic_execute = generic_execute;
+    obj->generic_all = generic_all;
+    obj->valid = valid;
 
     if (!type_type)
         obj->header.type = obj;
@@ -878,7 +885,7 @@ NTSTATUS muwine_init_objdir(void) {
     us.Length = us.MaximumLength = sizeof(type_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)type_name;
 
-    type_type = muwine_add_object_type(&us, type_object_close);
+    type_type = muwine_add_object_type(&us, type_object_close, 0, 0, 0, 0, 0);
     if (IS_ERR(type_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)type_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)type_type);
@@ -887,7 +894,7 @@ NTSTATUS muwine_init_objdir(void) {
     us.Length = us.MaximumLength = sizeof(dir_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)dir_name;
 
-    dir_type = muwine_add_object_type(&us, dir_object_close);
+    dir_type = muwine_add_object_type(&us, dir_object_close, 0, 0, 0, 0, 0);
     if (IS_ERR(dir_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)dir_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)dir_type);
@@ -896,7 +903,7 @@ NTSTATUS muwine_init_objdir(void) {
     us.Length = us.MaximumLength = sizeof(symlink_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)symlink_name;
 
-    symlink_type = muwine_add_object_type(&us, symlink_object_close);
+    symlink_type = muwine_add_object_type(&us, symlink_object_close, 0, 0, 0, 0, 0);
     if (IS_ERR(symlink_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)symlink_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)symlink_type);
