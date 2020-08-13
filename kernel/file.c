@@ -48,7 +48,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
 
     if (dev->header.type != device_type) {
         if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
-            dev->header.close(&dev->header);
+            dev->header.type->close(&dev->header);
 
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
@@ -56,7 +56,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
 
     if (!dev->create) {
         if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
-            dev->header.close(&dev->header);
+            dev->header.type->close(&dev->header);
 
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
@@ -67,7 +67,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
                          ObjectAttributes->Attributes);
 
     if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
-        dev->header.close(&dev->header);
+        dev->header.type->close(&dev->header);
 
 end:
     if (oa_us_alloc)

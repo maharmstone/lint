@@ -134,7 +134,7 @@ NTSTATUS NtClose(HANDLE Handle) {
         return STATUS_INVALID_HANDLE;
 
     if (__sync_sub_and_fetch(&h->object->refcount, 1) == 0)
-        h->object->close(h->object);
+        h->object->type->close(h->object);
 
     kfree(h);
 
@@ -155,7 +155,7 @@ void muwine_free_kernel_handles(void) {
         list_del(&hand->list);
 
         if (__sync_sub_and_fetch(&hand->object->refcount, 1) == 0)
-            hand->object->close(hand->object);
+            hand->object->type->close(hand->object);
 
         kfree(hand);
     }

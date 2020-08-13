@@ -12,7 +12,7 @@ static void section_object_close(object_header* obj) {
 
     if (sect->file) {
         if (__sync_sub_and_fetch(&sect->file->header.refcount, 1) == 0)
-            sect->file->header.close(&sect->file->header);
+            sect->file->header.type->close(&sect->file->header);
     }
 
     if (sect->anon_file)
@@ -290,13 +290,13 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
         Status = load_image(FileHandle, file_size, &anon_file, &image_size, &obj);
         if (!NT_SUCCESS(Status)) {
             if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
-                file->header.close(&file->header);
+                file->header.type->close(&file->header);
 
             return Status;
         }
 
         if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
-            file->header.close(&file->header);
+            file->header.type->close(&file->header);
 
         file = NULL;
 
@@ -306,7 +306,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
         if (!obj) {
             if (file) {
                 if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
-                    file->header.close(&file->header);
+                    file->header.type->close(&file->header);
             }
 
             if (anon_file)
@@ -322,7 +322,6 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     __sync_add_and_fetch(&section_type->header.refcount, 1);
 
     spin_lock_init(&obj->header.path_lock);
-    obj->header.close = section_object_close;
 
     if (MaximumSize && MaximumSize->QuadPart != 0) {
         obj->max_size = MaximumSize->QuadPart;
@@ -353,7 +352,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
                 kfree(us.Buffer);
 
             if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                obj->header.close(&obj->header);
+                obj->header.type->close(&obj->header);
 
             return Status;
         }
@@ -363,7 +362,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
                 kfree(us.Buffer);
 
             if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                obj->header.close(&obj->header);
+                obj->header.type->close(&obj->header);
 
             return STATUS_INVALID_PARAMETER;
         }
@@ -375,7 +374,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
                 kfree(us.Buffer);
 
             if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                obj->header.close(&obj->header);
+                obj->header.type->close(&obj->header);
 
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -388,7 +387,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
         Status = muwine_add_entry_in_hierarchy(&obj->header.path, &obj->header, false);
         if (!NT_SUCCESS(Status)) {
             if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                obj->header.close(&obj->header);
+                obj->header.type->close(&obj->header);
 
             return Status;
         }
@@ -399,7 +398,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
     if (!NT_SUCCESS(Status)) {
         if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-            obj->header.close(&obj->header);
+            obj->header.type->close(&obj->header);
 
         return Status;
     }
@@ -719,7 +718,7 @@ static NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
     vm_munmap(sm->address, sm->length);
 
     if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
-        sm->sect->close(sm->sect);
+        sm->sect->type->close(sm->sect);
 
     kfree(sm);
 
@@ -783,7 +782,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
 
     if (sect->header.type != section_type || after.Length != 0) {
         if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)
-            sect->header.close(&sect->header);
+            sect->header.type->close(&sect->header);
 
         Status = STATUS_INVALID_PARAMETER;
         goto end;
@@ -793,7 +792,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
 
     if (!NT_SUCCESS(Status)) {
         if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)
-            sect->header.close(&sect->header);
+            sect->header.type->close(&sect->header);
 
         goto end;
     }
@@ -1391,7 +1390,7 @@ NTSTATUS muwine_init_sections(void) {
     us.Length = us.MaximumLength = sizeof(sect_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)sect_name;
 
-    section_type = muwine_add_object_type(&us);
+    section_type = muwine_add_object_type(&us, section_object_close);
     if (IS_ERR(section_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)section_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)section_type);

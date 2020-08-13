@@ -204,8 +204,6 @@ typedef NTSTATUS (*muwine_func12arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t a
 
 struct _object_header;
 
-typedef void (*muwine_close_object)(struct _object_header* obj);
-
 typedef struct _type_object type_object;
 
 typedef struct _object_header {
@@ -213,7 +211,6 @@ typedef struct _object_header {
     type_object* type;
     UNICODE_STRING path;
     spinlock_t path_lock;
-    muwine_close_object close;
 } object_header;
 
 typedef struct _token token;
@@ -599,13 +596,16 @@ typedef struct _device {
     muwine_get_filp get_filp;
 } device;
 
+typedef void (*muwine_close_object)(struct _object_header* obj);
+
 typedef struct _type_object {
     object_header header;
     UNICODE_STRING name;
+    muwine_close_object close;
 } type_object;
 
 void free_object(object_header* obj);
-type_object* muwine_add_object_type(const UNICODE_STRING* name);
+type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close);
 void muwine_free_objs(void);
 NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,
                             bool* after_alloc);

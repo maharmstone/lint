@@ -981,7 +981,7 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
 
             if (sm->sect) {
                 if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
-                    sm->sect->close(sm->sect);
+                    sm->sect->type->close(sm->sect);
             }
 
             kfree(sm);
@@ -995,7 +995,7 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
             list_del(&hand->list);
 
             if (__sync_sub_and_fetch(&hand->object->refcount, 1) == 0)
-                hand->object->close(hand->object);
+                hand->object->type->close(hand->object);
 
             kfree(hand);
         }

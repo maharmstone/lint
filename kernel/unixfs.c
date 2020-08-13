@@ -30,7 +30,7 @@ static void file_object_close(object_header* obj) {
         kfree(f->fileobj.query_string.Buffer);
 
     if (__sync_sub_and_fetch(&f->fileobj.dev->header.refcount, 1) == 0)
-        f->fileobj.dev->header.close(&f->fileobj.dev->header);
+        f->fileobj.dev->header.type->close(&f->fileobj.dev->header);
 
     free_object(&f->fileobj.header);
 }
@@ -377,7 +377,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     if (!obj->fileobj.header.path.Buffer) {
         if (__sync_sub_and_fetch(&file_type->header.refcount, 1) == 0)
-            file_type->header.close(&file_type->header);
+            file_type->header.type->close(&file_type->header);
 
         kfree(obj);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -386,7 +386,6 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     memcpy(obj->fileobj.header.path.Buffer, dev->header.path.Buffer, dev->header.path.Length);
     memcpy(&obj->fileobj.header.path.Buffer[dev->header.path.Length / sizeof(WCHAR)], us->Buffer, us->Length);
 
-    obj->fileobj.header.close = file_object_close;
     obj->f = file;
     obj->fileobj.flags = 0;
     obj->fileobj.offset = 0;
@@ -411,10 +410,10 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         up_write(&file_list_sem);
 
         if (__sync_sub_and_fetch(&obj->fileobj.dev->header.refcount, 1) == 0)
-            obj->fileobj.dev->header.close(&obj->fileobj.dev->header);
+            obj->fileobj.dev->header.type->close(&obj->fileobj.dev->header);
 
         if (__sync_sub_and_fetch(&file_type->header.refcount, 1) == 0)
-            file_type->header.close(&file_type->header);
+            file_type->header.type->close(&file_type->header);
 
         kfree(obj->fileobj.header.path.Buffer);
         kfree(obj);
@@ -1270,7 +1269,7 @@ NTSTATUS muwine_init_unixroot(void) {
     us.Length = us.MaximumLength = sizeof(device_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)device_name;
 
-    device_type = muwine_add_object_type(&us);
+    device_type = muwine_add_object_type(&us, device_object_close);
     if (IS_ERR(device_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)device_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)device_type);
@@ -1279,7 +1278,7 @@ NTSTATUS muwine_init_unixroot(void) {
     us.Length = us.MaximumLength = sizeof(file_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)file_name;
 
-    file_type = muwine_add_object_type(&us);
+    file_type = muwine_add_object_type(&us, file_object_close);
     if (IS_ERR(file_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)file_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)file_type);
@@ -1295,12 +1294,11 @@ NTSTATUS muwine_init_unixroot(void) {
     __sync_add_and_fetch(&dev->header.type->header.refcount, 1);
 
     spin_lock_init(&dev->header.path_lock);
-    dev->header.close = device_object_close;
 
     dev->header.path.Length = sizeof(name) - sizeof(WCHAR);
     dev->header.path.Buffer = kmalloc(dev->header.path.Length, GFP_KERNEL);
     if (!dev->header.path.Buffer) {
-        dev->header.close(&dev->header);
+        dev->header.type->close(&dev->header);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1317,7 +1315,7 @@ NTSTATUS muwine_init_unixroot(void) {
 
     Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header, true);
     if (!NT_SUCCESS(Status)) {
-        dev->header.close(&dev->header);
+        dev->header.type->close(&dev->header);
         return Status;
     }
 

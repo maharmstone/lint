@@ -792,7 +792,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                     kfree(orig_us.Buffer);
 
                 if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
-                    key_type->header.close(&key_type->header);
+                    key_type->header.type->close(&key_type->header);
 
                 kfree(k);
 
@@ -805,7 +805,6 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
             memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], orig_us.Buffer, orig_us.Length);
 
-            k->header.close = key_object_close;
             k->h = h;
             __sync_add_and_fetch(&h->refcount, 1);
             k->offset = offset;
@@ -818,7 +817,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             if (!NT_SUCCESS(Status)) {
                 if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
-                    key_type->header.close(&key_type->header);
+                    key_type->header.type->close(&key_type->header);
 
                 kfree(k);
             }
@@ -3597,7 +3596,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     if (!k->header.path.Buffer) {
         if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
-            key_type->header.close(&key_type->header);
+            key_type->header.type->close(&key_type->header);
 
         kfree(k);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -3616,7 +3615,6 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     memcpy(ptr, us->Buffer, us->Length);
 
-    k->header.close = key_object_close;
     k->h = h;
     __sync_add_and_fetch(&h->refcount, 1);
     k->offset = offset;
@@ -3627,7 +3625,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     if (!NT_SUCCESS(Status)) {
         if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
-            key_type->header.close(&key_type->header);
+            key_type->header.type->close(&key_type->header);
 
         kfree(k);
         return Status;
@@ -4558,7 +4556,7 @@ NTSTATUS muwine_init_registry(void) {
     us.Length = us.MaximumLength = sizeof(key_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)key_name;
 
-    key_type = muwine_add_object_type(&us);
+    key_type = muwine_add_object_type(&us, key_object_close);
     if (IS_ERR(key_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)key_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)key_type);
