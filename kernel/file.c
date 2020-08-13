@@ -3,6 +3,35 @@
 extern type_object* device_type;
 extern type_object* file_type;
 
+static ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type) {
+    if (access & MAXIMUM_ALLOWED)
+        return MAXIMUM_ALLOWED;
+
+    if (access & GENERIC_READ) {
+        access &= ~GENERIC_READ;
+        access |= type->generic_read;
+    }
+
+    if (access & GENERIC_WRITE) {
+        access &= ~GENERIC_WRITE;
+        access |= type->generic_write;
+    }
+
+    if (access & GENERIC_EXECUTE) {
+        access &= ~GENERIC_EXECUTE;
+        access |= type->generic_execute;
+    }
+
+    if (access & GENERIC_ALL) {
+        access &= ~GENERIC_ALL;
+        access |= type->generic_all;
+    }
+
+    access &= type->valid;
+
+    return access;
+}
+
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                       ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
@@ -61,6 +90,8 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
     }
+
+    DesiredAccess = sanitize_access_mask(DesiredAccess, file_type);
 
     Status = dev->create(dev, FileHandle, DesiredAccess, &after, IoStatusBlock, AllocationSize, FileAttributes,
                          ShareAccess, CreateDisposition, CreateOptions, EaBuffer, EaLength,
