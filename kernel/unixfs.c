@@ -14,6 +14,8 @@ typedef struct {
 static LIST_HEAD(file_list);
 static DECLARE_RWSEM(file_list_sem);
 
+type_object* device_type = NULL;
+
 static void file_object_close(object_header* obj) {
     unixfs_file_object* f = (unixfs_file_object*)obj;
 
@@ -1251,15 +1253,28 @@ static void device_object_close(object_header* obj) {
 NTSTATUS muwine_init_unixroot(void) {
     NTSTATUS Status;
     device* dev;
+    UNICODE_STRING us;
 
     static const WCHAR name[] = L"\\Device\\UnixRoot";
+    static const WCHAR device_name[] = L"Device";
+
+    us.Length = us.MaximumLength = sizeof(device_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)device_name;
+
+    device_type = muwine_add_object_type(&us);
+    if (IS_ERR(device_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)device_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)device_type);
+    }
 
     dev = kzalloc(sizeof(device), GFP_KERNEL);
     if (!dev)
         return STATUS_INSUFFICIENT_RESOURCES;
 
     dev->header.refcount = 1;
-    dev->header.type = muwine_object_device;
+
+    dev->header.type2 = device_type;
+    __sync_add_and_fetch(&dev->header.type2->header.refcount, 1);
 
     spin_lock_init(&dev->header.path_lock);
     dev->header.close = device_object_close;

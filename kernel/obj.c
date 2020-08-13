@@ -889,18 +889,18 @@ NTSTATUS muwine_init_objdir(void) {
     us.Buffer = (WCHAR*)dir_name;
 
     dir_type = muwine_add_object_type(&us);
-    if (IS_ERR(type_type)) {
-        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)type_type);
-        return muwine_error_to_ntstatus((int)(uintptr_t)type_type);
+    if (IS_ERR(dir_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)dir_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)dir_type);
     }
 
     us.Length = us.MaximumLength = sizeof(symlink_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)symlink_name;
 
     symlink_type = muwine_add_object_type(&us);
-    if (IS_ERR(type_type)) {
-        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)type_type);
-        return muwine_error_to_ntstatus((int)(uintptr_t)type_type);
+    if (IS_ERR(symlink_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)symlink_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)symlink_type);
     }
 
     dir_root = kzalloc(sizeof(dir_object), GFP_KERNEL);

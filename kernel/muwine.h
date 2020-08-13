@@ -209,7 +209,6 @@ typedef void (*muwine_close_object)(struct _object_header* obj);
 typedef enum {
     muwine_object_key,
     muwine_object_file,
-    muwine_object_device,
     muwine_object_section,
 } object_type;
 

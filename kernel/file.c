@@ -1,5 +1,7 @@
 #include "muwine.h"
 
+extern type_object* device_type;
+
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                       ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
@@ -43,7 +45,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
     if (!NT_SUCCESS(Status))
         goto end;
 
-    if (dev->header.type != muwine_object_device) {
+    if (dev->header.type2 != device_type) {
         if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
             dev->header.close(&dev->header);
 
