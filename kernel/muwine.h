@@ -560,7 +560,7 @@ typedef struct {
 NTSTATUS NtClose(HANDLE Handle);
 NTSTATUS user_NtClose(HANDLE Handle);
 NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel, ACCESS_MASK access);
-object_header* get_object_from_handle(HANDLE h);
+object_header* get_object_from_handle(HANDLE h, ACCESS_MASK* access);
 void muwine_free_kernel_handles(void);
 
 // unixfs.c

@@ -46,7 +46,9 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         return STATUS_INVALID_PARAMETER;
 
     if (ObjectAttributes->RootDirectory) {
-        object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory);
+        ACCESS_MASK access;
+        object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory, &access);
+
         if (!obj || obj->type != file_type)
             return STATUS_INVALID_HANDLE;
 
@@ -232,7 +234,9 @@ NTSTATUS user_NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_
 NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                     PULONG Key) {
-    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
+    ACCESS_MASK access;
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
+
     if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
@@ -294,7 +298,9 @@ NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRou
 
 NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
-    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
+    ACCESS_MASK access;
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
+
     if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
@@ -340,7 +346,9 @@ NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatu
 NTSTATUS NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                      PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                      PULONG Key) {
-    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
+    ACCESS_MASK access;
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
+
     if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
@@ -401,7 +409,9 @@ NTSTATUS user_NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRo
 
 NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                               ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
-    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
+    ACCESS_MASK access;
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
+
     if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
@@ -423,7 +433,9 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
             return STATUS_INVALID_PARAMETER;
 
         if (fri->RootDirectory) {
-            file_object* obj2 = (file_object*)get_object_from_handle(fri->RootDirectory);
+            ACCESS_MASK dir_access;
+            file_object* obj2 = (file_object*)get_object_from_handle(fri->RootDirectory, &dir_access);
+
             if (!obj2 || obj2->header.type != file_type)
                 return STATUS_INVALID_HANDLE;
 
@@ -542,8 +554,9 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
                               FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                               PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
     NTSTATUS Status;
+    ACCESS_MASK access;
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
 
-    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
     if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
@@ -608,7 +621,9 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
 
 static NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                              ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
-    file_object* obj = (file_object*)get_object_from_handle(FileHandle);
+    ACCESS_MASK access;
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
+
     if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 

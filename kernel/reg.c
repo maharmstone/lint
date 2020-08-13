@@ -659,7 +659,9 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         return STATUS_INVALID_PARAMETER;
 
     if (ObjectAttributes->RootDirectory) {
-        key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory);
+        ACCESS_MASK access;
+        key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory, &access);
+
         if (!key || key->header.type != key_type)
             return STATUS_INVALID_HANDLE;
 
@@ -1181,6 +1183,7 @@ static NTSTATUS query_key_info(KEY_INFORMATION_CLASS KeyInformationClass, void* 
 static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                                PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
     NTSTATUS Status;
+    ACCESS_MASK access;
     key_object* key;
     int32_t size;
     CM_KEY_NODE* kn;
@@ -1190,7 +1193,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     void* bins2;
     bool is_volatile;
 
-    key = (key_object*)get_object_from_handle(KeyHandle);
+    key = (key_object*)get_object_from_handle(KeyHandle, &access);
     if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
@@ -1531,6 +1534,7 @@ static NTSTATUS query_key_value(hive* h, CM_KEY_VALUE* vk, KEY_VALUE_INFORMATION
 static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                     PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
     NTSTATUS Status;
+    ACCESS_MASK access;
     key_object* key;
     int32_t size;
     CM_KEY_NODE* kn;
@@ -1538,7 +1542,7 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     CM_KEY_VALUE* vk;
     void* bins;
 
-    key = (key_object*)get_object_from_handle(KeyHandle);
+    key = (key_object*)get_object_from_handle(KeyHandle, &access);
     if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
@@ -1635,6 +1639,7 @@ NTSTATUS user_NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFOR
 static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                 PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
     NTSTATUS Status;
+    ACCESS_MASK access;
     key_object* key;
     int32_t size;
     CM_KEY_NODE* kn;
@@ -1645,7 +1650,7 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
     if (!ValueName)
         return STATUS_INVALID_PARAMETER;
 
-    key = (key_object*)get_object_from_handle(KeyHandle);
+    key = (key_object*)get_object_from_handle(KeyHandle, &access);
     if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
@@ -2131,6 +2136,7 @@ static void update_symlink_cache(const UNICODE_STRING* path, WCHAR* value, ULONG
 static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG TitleIndex,
                               ULONG Type, PVOID Data, ULONG DataSize) {
     NTSTATUS Status;
+    ACCESS_MASK access;
     key_object* key;
     CM_KEY_NODE* kn;
     int32_t size;
@@ -2141,7 +2147,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
 
     // FIXME - should we be rejecting short REG_DWORDs etc. here?
 
-    key = (key_object*)get_object_from_handle(KeyHandle);
+    key = (key_object*)get_object_from_handle(KeyHandle, &access);
     if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
@@ -2508,6 +2514,7 @@ NTSTATUS user_NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG T
 
 static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     NTSTATUS Status;
+    ACCESS_MASK access;
     key_object* key;
     CM_KEY_NODE* kn;
     int32_t size;
@@ -2515,7 +2522,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     uint32_t* values_list;
     void* bins;
 
-    key = (key_object*)get_object_from_handle(KeyHandle);
+    key = (key_object*)get_object_from_handle(KeyHandle, &access);
     if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
@@ -3651,7 +3658,9 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         return STATUS_INVALID_PARAMETER;
 
     if (ObjectAttributes->RootDirectory) {
-        key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory);
+        ACCESS_MASK access;
+        key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory, &access);
+
         if (!key || key->header.type != key_type)
             return STATUS_INVALID_HANDLE;
 
@@ -3833,6 +3842,7 @@ NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 
 NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     NTSTATUS Status;
+    ACCESS_MASK access;
     key_object* key;
     int32_t size;
     CM_KEY_NODE* kn;
@@ -3840,7 +3850,7 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     uint32_t subkey_count;
     uint32_t subkey_list;
 
-    key = (key_object*)get_object_from_handle(KeyHandle);
+    key = (key_object*)get_object_from_handle(KeyHandle, &access);
     if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
@@ -4074,6 +4084,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
     IO_STATUS_BLOCK iosb;
     FILE_STANDARD_INFORMATION fsi;
     uint64_t pos;
+    ACCESS_MASK access;
     object_header* fileobj;
     UNICODE_STRING fs_path;
 
@@ -4165,7 +4176,9 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
         pos += iosb.Information;
     }
 
-    fileobj = get_object_from_handle(fh);
+    fileobj = get_object_from_handle(fh, &access);
+
+    // FIXME - make sure file opened RW
 
     spin_lock(&fileobj->path_lock);
 
@@ -4791,9 +4804,10 @@ static NTSTATUS flush_hive(hive* h) {
 }
 
 NTSTATUS NtFlushKey(HANDLE KeyHandle) {
+    ACCESS_MASK access;
     key_object* key;
 
-    key = (key_object*)get_object_from_handle(KeyHandle);
+    key = (key_object*)get_object_from_handle(KeyHandle, &access);
     if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
@@ -4824,11 +4838,12 @@ static int reboot_callback(struct notifier_block* self, unsigned long val, void*
 static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
                            ULONG Length, PULONG ResultLength) {
     NTSTATUS Status;
+    ACCESS_MASK access;
     key_object* key;
     int32_t size;
     CM_KEY_NODE* kn;
 
-    key = (key_object*)get_object_from_handle(KeyHandle);
+    key = (key_object*)get_object_from_handle(KeyHandle, &access);
     if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 

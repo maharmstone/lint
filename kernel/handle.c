@@ -49,7 +49,7 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel, ACCESS_MA
     return STATUS_SUCCESS;
 }
 
-object_header* get_object_from_handle(HANDLE h) {
+object_header* get_object_from_handle(HANDLE h, ACCESS_MASK* access) {
     struct list_head* le;
     spinlock_t* lock;
     struct list_head* list;
@@ -78,6 +78,8 @@ object_header* get_object_from_handle(HANDLE h) {
 
         if (h2->number == (uintptr_t)h) {
             object_header* obj = h2->object;
+
+            *access = h2->access;
 
             spin_unlock(lock);
 

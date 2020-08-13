@@ -252,6 +252,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     section_object* obj;
     struct file* anon_file = NULL;
     uint64_t file_size = 0;
+    ACCESS_MASK file_access;
 
     if (AllocationAttributes & SEC_IMAGE && !FileHandle)
         return STATUS_INVALID_PARAMETER;
@@ -260,7 +261,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
         FILE_STANDARD_INFORMATION fsi;
         IO_STATUS_BLOCK iosb;
 
-        file = (file_object*)get_object_from_handle(FileHandle);
+        file = (file_object*)get_object_from_handle(FileHandle, &file_access);
 
         if (!file || file->header.type != file_type)
             return STATUS_INVALID_HANDLE;
@@ -458,7 +459,8 @@ NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
 static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                    SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
                                    ULONG AllocationType, ULONG Win32Protect) {
-    section_object* sect = (section_object*)get_object_from_handle(SectionHandle);
+    ACCESS_MASK access;
+    section_object* sect = (section_object*)get_object_from_handle(SectionHandle, &access);
     unsigned long prot, ret, flags, len, off;
     struct file* file;
     section_map* map;
@@ -751,7 +753,9 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
         return STATUS_INVALID_PARAMETER;
 
     if (ObjectAttributes->RootDirectory) {
-        object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory);
+        ACCESS_MASK access;
+        object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory, &access);
+
         if (!obj || obj->type != file_type)
             return STATUS_INVALID_HANDLE;
 
