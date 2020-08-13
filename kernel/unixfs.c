@@ -154,6 +154,11 @@ static NTSTATUS open_file(const char* fn, struct file** ret, bool is_rw) {
         else if (ofi.found_type == DT_REG)
             flags = is_rw ? O_RDWR : O_RDONLY;
 
+        if (ofi.found_type == DT_REG && is_rw && parent->f_path.mnt->mnt_sb->s_flags & SB_RDONLY) {
+            filp_close(parent, NULL);
+            return STATUS_MEDIA_WRITE_PROTECTED;
+        }
+
         new_parent = file_open_root(parent->f_path.dentry, parent->f_path.mnt,
                                     ofi.found_part, flags, 0);
 
@@ -243,7 +248,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     path[as_len] = 0;
 
-    is_rw = DesiredAccess & (WRITE_OWNER | WRITE_DAC | FILE_WRITE_ATTRIBUTES | FILE_WRITE_DATA |
+    is_rw = DesiredAccess & (WRITE_OWNER | WRITE_DAC | FILE_WRITE_ATTRIBUTES | FILE_WRITE_DATA | DELETE |
                              FILE_APPEND_DATA | FILE_WRITE_EA | FILE_DELETE_CHILD);
 
     Status = open_file(path, &file, is_rw);
@@ -303,9 +308,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
             le = le->next;
         }
-    }
-
-    if (!name_exists) {
+    } else {
         struct file* new_file;
         umode_t mode = 0644;
         unsigned int pos = as_len - 1;
@@ -322,6 +325,12 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
             }
 
             pos--;
+        }
+
+        if (file->f_path.mnt->mnt_sb->s_flags & SB_RDONLY) {
+            up_write(&file_list_sem);
+            kfree(path);
+            return STATUS_MEDIA_WRITE_PROTECTED;
         }
 
         flags = O_CREAT | O_EXCL;
