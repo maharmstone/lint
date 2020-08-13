@@ -32,6 +32,8 @@ static DEFINE_SPINLOCK(symlink_list_lock);
 
 static dir_object* dir_root = NULL;
 static type_object* type_type = NULL;
+static type_object* dir_type = NULL;
+static type_object* symlink_type = NULL;
 
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part);
 
@@ -43,6 +45,11 @@ void muwine_free_objs(void) {
 void free_object(object_header* obj) {
     if (obj->path.Buffer)
         kfree(obj->path.Buffer);
+
+    if (obj != &type_type->header) {
+        if (obj->type2 && __sync_sub_and_fetch(&obj->type2->header.refcount, 1) == 0)
+            obj->type2->header.close(&obj->type2->header);
+    }
 
     kfree(obj);
 }
@@ -84,6 +91,9 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name) {
 
         memcpy(obj->name.Buffer, name->Buffer, name->Length);
     }
+
+    if (!type_type)
+        obj->header.type2 = obj;
 
     return obj;
 }
@@ -237,7 +247,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
                     return STATUS_SUCCESS;
                 }
 
-                if (item->object->type != muwine_object_directory) {
+                if (item->object->type2 != dir_type) {
                     *obj = item->object;
 
                     __sync_add_and_fetch(&item->object->refcount, 1);
@@ -339,7 +349,9 @@ static void dir_object_close(object_header* obj) {
 
 static void init_dir(dir_object* dir) {
     dir->header.refcount = 1;
-    dir->header.type = muwine_object_directory;
+
+    dir->header.type2 = dir_type;
+    __sync_add_and_fetch(&dir_type->header.refcount, 1);
 
     spin_lock_init(&dir->header.path_lock);
     dir->header.close = dir_object_close;
@@ -434,7 +446,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
                     return STATUS_OBJECT_NAME_COLLISION;
                 }
 
-                if (item->object->type != muwine_object_directory) {
+                if (item->object->type2 != dir_type) {
                     spin_unlock(&parent->children_lock);
 
                     if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
@@ -723,7 +735,9 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     }
 
     obj->header.refcount = 1;
-    obj->header.type = muwine_object_symlink;
+
+    obj->header.type2 = symlink_type;
+    __sync_add_and_fetch(&obj->header.type2->header.refcount, 1);
 
     spin_lock_init(&obj->header.path_lock);
     obj->header.close = symlink_object_close;
@@ -859,11 +873,31 @@ NTSTATUS muwine_init_objdir(void) {
     static const WCHAR qmqm[] = L"\\??";
     static const WCHAR dosdevices[] = L"\\DosDevices";
     static const WCHAR type_name[] = L"Type";
+    static const WCHAR dir_name[] = L"Directory";
+    static const WCHAR symlink_name[] = L"SymbolicLink";
 
     us.Length = us.MaximumLength = sizeof(type_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)type_name;
 
     type_type = muwine_add_object_type(&us);
+    if (IS_ERR(type_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)type_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)type_type);
+    }
+
+    us.Length = us.MaximumLength = sizeof(dir_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)dir_name;
+
+    dir_type = muwine_add_object_type(&us);
+    if (IS_ERR(type_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)type_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)type_type);
+    }
+
+    us.Length = us.MaximumLength = sizeof(symlink_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)symlink_name;
+
+    symlink_type = muwine_add_object_type(&us);
     if (IS_ERR(type_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)type_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)type_type);

@@ -762,7 +762,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             // create key object and return handle
 
-            k = kmalloc(sizeof(key_object), GFP_KERNEL);
+            k = kzalloc(sizeof(key_object), GFP_KERNEL);
             if (!k) {
                 up_read(&hive_list_sem);
 
@@ -3569,7 +3569,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     // create handle
 
-    k = kmalloc(sizeof(key_object), GFP_KERNEL);
+    k = kzalloc(sizeof(key_object), GFP_KERNEL);
     if (!k)
         return STATUS_INSUFFICIENT_RESOURCES;
 
