@@ -74,7 +74,7 @@ static int open_file_dir_iterate(struct dir_context* dc, const char* name, int n
     return -1; // stop iterating
 }
 
-static NTSTATUS open_file(const char* fn, struct file** ret) {
+static NTSTATUS open_file(const char* fn, struct file** ret, bool is_rw) {
     struct path root;
     struct file* parent;
     open_file_iterate ofi;
@@ -152,7 +152,7 @@ static NTSTATUS open_file(const char* fn, struct file** ret) {
         if (ofi.found_type == DT_DIR)
             flags = O_DIRECTORY;
         else if (ofi.found_type == DT_REG)
-            flags = O_RDWR;
+            flags = is_rw ? O_RDWR : O_RDONLY;
 
         new_parent = file_open_root(parent->f_path.dentry, parent->f_path.mnt,
                                     ofi.found_part, flags, 0);
@@ -189,6 +189,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     unixfs_file_object* obj;
     struct file* file;
     bool name_exists;
+    bool is_rw;
 
     // FIXME - ADS
 
@@ -242,7 +243,12 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     path[as_len] = 0;
 
-    Status = open_file(path, &file);
+    is_rw = DesiredAccess & (WRITE_OWNER | WRITE_DAC | FILE_WRITE_ATTRIBUTES | FILE_WRITE_DATA |
+                             FILE_APPEND_DATA | FILE_WRITE_EA | FILE_DELETE_CHILD);
+
+    Status = open_file(path, &file, is_rw);
+
+    // FIXME - check token against SD for DesiredAccess (including MAXIMUM_ALLOWED)
 
     if (NT_SUCCESS(Status) && CreateDisposition == FILE_CREATE) {
         kfree(path);
@@ -731,7 +737,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     dest[last_slash] = 0;
     fn = dest + last_slash + 1;
 
-    Status = open_file(dest, &dest_dir);
+    Status = open_file(dest, &dest_dir, true);
 
     if (Status == STATUS_OBJECT_NAME_NOT_FOUND) {
         filp_close(dest_dir, NULL);
