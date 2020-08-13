@@ -2,6 +2,7 @@
 #include <linux/namei.h>
 #include <linux/fs_struct.h>
 #include <linux/mount.h>
+#include <linux/statfs.h>
 
 #define SECTOR_SIZE 0x1000
 
@@ -1211,10 +1212,31 @@ static NTSTATUS unixfs_query_directory(file_object* obj, HANDLE Event, PIO_APC_R
 
 static NTSTATUS unixfs_query_volume_info(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                          ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
+
     switch (FsInformationClass) {
         case FileFsSizeInformation:
-            printk("unixfs_query_volume_info: FIXME - FileFsSizeInformation\n"); // FIXME
-            return STATUS_INVALID_INFO_CLASS;
+        {
+            FILE_FS_SIZE_INFORMATION* ffsi = FsInformation;
+            struct kstatfs sfs;
+            int ret;
+
+            if (Length < sizeof(FILE_FS_SIZE_INFORMATION))
+                return STATUS_BUFFER_TOO_SMALL;
+
+            ret = vfs_statfs(&ufo->f->f_path, &sfs);
+            if (ret < 0)
+                return muwine_error_to_ntstatus(ret);
+
+            ffsi->TotalAllocationUnits.QuadPart = sfs.f_blocks;
+            ffsi->AvailableAllocationUnits.QuadPart = sfs.f_bfree;
+            ffsi->SectorsPerAllocationUnit = sfs.f_bsize / 512;
+            ffsi->BytesPerSector = 512; // this is what Windows is expecting
+
+            IoStatusBlock->Information = sizeof(FILE_FS_SIZE_INFORMATION);
+
+            return STATUS_SUCCESS;
+        }
 
         case FileFsDeviceInformation:
         {

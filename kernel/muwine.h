@@ -503,6 +503,13 @@ typedef struct {
     ULONG Characteristics;
 } FILE_FS_DEVICE_INFORMATION;
 
+typedef struct {
+    LARGE_INTEGER TotalAllocationUnits;
+    LARGE_INTEGER AvailableAllocationUnits;
+    ULONG SectorsPerAllocationUnit;
+    ULONG BytesPerSector;
+} FILE_FS_SIZE_INFORMATION;
+
 #define FILE_DEVICE_DISK_FILE_SYSTEM 0x00000008
 
 #define FILE_DEVICE_IS_MOUNTED 0x00000020
