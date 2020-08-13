@@ -1169,9 +1169,9 @@ static int __init muwine_init(void) {
         return -ENOMEM;
     }
 
-    Status = muwine_init_user_shared_data();
+    Status = muwine_init_sections();
     if (!NT_SUCCESS(Status)) {
-        printk(KERN_ALERT "muwine_init_user_shared_data returned %08x\n", Status);
+        printk(KERN_ALERT "muwine_init_sections returned %08x\n", Status);
         return -ENOMEM;
     }
 

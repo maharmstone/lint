@@ -208,7 +208,6 @@ typedef void (*muwine_close_object)(struct _object_header* obj);
 
 typedef enum {
     muwine_object_file,
-    muwine_object_section,
 } object_type;
 
 typedef struct _type_object type_object;
@@ -665,4 +664,4 @@ NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, 
                                       PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
 NTSTATUS user_NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize,
                                   ULONG FreeType);
-NTSTATUS muwine_init_user_shared_data(void);
+NTSTATUS muwine_init_sections(void);

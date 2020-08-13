@@ -3,6 +3,8 @@
 #include "muwine.h"
 #include "sect.h"
 
+static type_object* section_type = NULL;
+
 static void section_object_close(object_header* obj) {
     section_object* sect = (section_object*)obj;
 
@@ -313,7 +315,10 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     }
 
     obj->header.refcount = 1;
-    obj->header.type = muwine_object_section;
+
+    obj->header.type2 = section_type;
+    __sync_add_and_fetch(&section_type->header.refcount, 1);
+
     spin_lock_init(&obj->header.path_lock);
     obj->header.close = section_object_close;
 
@@ -461,7 +466,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     struct list_head* le;
     unsigned int i;
 
-    if (!sect || sect->header.type != muwine_object_section)
+    if (!sect || sect->header.type2 != section_type)
         return STATUS_INVALID_HANDLE;
 
     if (ProcessHandle == NtCurrentProcess()) {
@@ -774,7 +779,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
     if (!NT_SUCCESS(Status))
         goto end;
 
-    if (sect->header.type != muwine_object_section || after.Length != 0) {
+    if (sect->header.type2 != section_type || after.Length != 0) {
         if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)
             sect->header.close(&sect->header);
 
@@ -1343,7 +1348,7 @@ NTSTATUS user_NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZ
     return Status;
 }
 
-NTSTATUS muwine_init_user_shared_data(void) {
+static NTSTATUS init_user_shared_data(void) {
     NTSTATUS Status;
     HANDLE h;
     LARGE_INTEGER size;
@@ -1371,6 +1376,28 @@ NTSTATUS muwine_init_user_shared_data(void) {
     NtClose(h);
 
     // FIXME - spawn thread updating time every second
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS muwine_init_sections(void) {
+    NTSTATUS Status;
+    UNICODE_STRING us;
+
+    static const WCHAR sect_name[] = L"Section";
+
+    us.Length = us.MaximumLength = sizeof(sect_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)sect_name;
+
+    section_type = muwine_add_object_type(&us);
+    if (IS_ERR(section_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)section_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)section_type);
+    }
+
+    Status = init_user_shared_data();
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     return STATUS_SUCCESS;
 }
