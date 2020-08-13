@@ -23,6 +23,7 @@ static DEFINE_TIMER(reg_flush_timer, reg_flush_timer_handler);
 
 static struct task_struct* reg_flush_thread = NULL;
 static bool reg_thread_running = true;
+static type_object* key_type = NULL;
 
 static struct notifier_block reboot_notifier = {
     .notifier_call = reboot_callback,
@@ -659,7 +660,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     if (ObjectAttributes->RootDirectory) {
         key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory);
-        if (!key || key->header.type != muwine_object_key)
+        if (!key || key->header.type2 != key_type)
             return STATUS_INVALID_HANDLE;
 
         spin_lock(&key->header.path_lock);
@@ -776,7 +777,9 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             }
 
             k->header.refcount = 1;
-            k->header.type = muwine_object_key;
+
+            k->header.type2 = key_type;
+            __sync_add_and_fetch(&key_type->header.refcount, 1);
 
             spin_lock_init(&k->header.path_lock);
             k->header.path.Length = k->header.path.MaximumLength = orig_us.Length + sizeof(prefix) - sizeof(WCHAR);
@@ -787,6 +790,9 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
                 if (us_alloc)
                     kfree(orig_us.Buffer);
+
+                if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
+                    key_type->header.close(&key_type->header);
 
                 kfree(k);
 
@@ -810,8 +816,12 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE);
 
-            if (!NT_SUCCESS(Status))
+            if (!NT_SUCCESS(Status)) {
+                if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
+                    key_type->header.close(&key_type->header);
+
                 kfree(k);
+            }
 
             if (us_alloc)
                 kfree(orig_us.Buffer);
@@ -1182,7 +1192,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     bool is_volatile;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type != muwine_object_key)
+    if (!key || key->header.type2 != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask of handle for KEY_ENUMERATE_SUB_KEYS
@@ -1530,7 +1540,7 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     void* bins;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type != muwine_object_key)
+    if (!key || key->header.type2 != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
@@ -1637,7 +1647,7 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
         return STATUS_INVALID_PARAMETER;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type != muwine_object_key)
+    if (!key || key->header.type2 != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
@@ -2133,7 +2143,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     // FIXME - should we be rejecting short REG_DWORDs etc. here?
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type != muwine_object_key)
+    if (!key || key->header.type2 != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check for KEY_SET_VALUE in access mask
@@ -2507,7 +2517,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     void* bins;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type != muwine_object_key)
+    if (!key || key->header.type2 != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check for KEY_SET_VALUE in access mask
@@ -3574,7 +3584,8 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
         return STATUS_INSUFFICIENT_RESOURCES;
 
     k->header.refcount = 1;
-    k->header.type = muwine_object_key;
+    k->header.type2 = key_type;
+    __sync_add_and_fetch(&key_type->header.refcount, 1);
 
     spin_lock_init(&k->header.path_lock);
     k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + h->path.Length + us->Length;
@@ -3585,6 +3596,9 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
     if (!k->header.path.Buffer) {
+        if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
+            key_type->header.close(&key_type->header);
+
         kfree(k);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -3612,6 +3626,9 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     Status = muwine_add_handle(&k->header, KeyHandle, oa_attributes & OBJ_KERNEL_HANDLE);
 
     if (!NT_SUCCESS(Status)) {
+        if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
+            key_type->header.close(&key_type->header);
+
         kfree(k);
         return Status;
     }
@@ -3637,7 +3654,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     if (ObjectAttributes->RootDirectory) {
         key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory);
-        if (!key || key->header.type != muwine_object_key)
+        if (!key || key->header.type2 != key_type)
             return STATUS_INVALID_HANDLE;
 
         spin_lock(&key->header.path_lock);
@@ -3826,7 +3843,7 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     uint32_t subkey_list;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type != muwine_object_key)
+    if (!key || key->header.type2 != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask has DELETE permission
@@ -4534,6 +4551,18 @@ NTSTATUS muwine_init_registry(void) {
     SECURITY_DESCRIPTOR* sd;
     unsigned int sdlen;
     CM_KEY_SECURITY* sk;
+    UNICODE_STRING us;
+
+    static const WCHAR key_name[] = L"Key";
+
+    us.Length = us.MaximumLength = sizeof(key_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)key_name;
+
+    key_type = muwine_add_object_type(&us);
+    if (IS_ERR(key_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)key_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)key_type);
+    }
 
     h = kzalloc(sizeof(hive), GFP_KERNEL);
     if (!h)
@@ -4767,7 +4796,7 @@ NTSTATUS NtFlushKey(HANDLE KeyHandle) {
     key_object* key;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type != muwine_object_key)
+    if (!key || key->header.type2 != key_type)
         return STATUS_INVALID_HANDLE;
 
     return flush_hive(key->h);
@@ -4802,7 +4831,7 @@ static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformatio
     CM_KEY_NODE* kn;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type != muwine_object_key)
+    if (!key || key->header.type2 != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE (unless KeyNameInformation or KeyHandleTagsInformation)
