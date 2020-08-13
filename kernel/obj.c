@@ -26,30 +26,34 @@ typedef struct {
     symlink_cache* cache;
 } symlink_object;
 
-dir_object dir_root;
 
 static LIST_HEAD(symlink_list);
 static DEFINE_SPINLOCK(symlink_list_lock);
 
+static dir_object* dir_root = NULL;
 static type_object* type_type = NULL;
 
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part);
 
 void muwine_free_objs(void) {
-    if (__sync_sub_and_fetch(&dir_root.header.refcount, 1) == 0)
-        dir_root.header.close(&dir_root.header);
+    if (__sync_sub_and_fetch(&dir_root->header.refcount, 1) == 0)
+        dir_root->header.close(&dir_root->header);
+}
+
+void free_object(object_header* obj) {
+    if (obj->path.Buffer)
+        kfree(obj->path.Buffer);
+
+    kfree(obj);
 }
 
 static void type_object_close(object_header* obj) {
     type_object* to = (type_object*)obj;
 
-    if (to->header.path.Buffer)
-        kfree(to->header.path.Buffer);
-
     if (to->name.Buffer)
         kfree(to->name.Buffer);
 
-    kfree(to);
+    free_object(obj);
 }
 
 type_object* muwine_add_object_type(const UNICODE_STRING* name) {
@@ -200,7 +204,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
     left.Buffer = &us2.Buffer[1];
     left.Length = us2.Length - sizeof(WCHAR);
 
-    parent = &dir_root;
+    parent = dir_root;
     next_part(&left, &part);
 
     __sync_add_and_fetch(&parent->header.refcount, 1);
@@ -330,11 +334,7 @@ static void dir_object_close(object_header* obj) {
         kfree(item);
     }
 
-    if (dir->header.path.Buffer)
-        kfree(dir->header.path.Buffer);
-
-    if (dir != &dir_root)
-        kfree(dir);
+    free_object(&dir->header);
 }
 
 static void init_dir(dir_object* dir) {
@@ -407,7 +407,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
     left.Buffer = &us2.Buffer[1];
     left.Length = us2.Length - sizeof(WCHAR);
 
-    parent = &dir_root;
+    parent = dir_root;
     next_part(&left, &part);
 
     __sync_add_and_fetch(&parent->header.refcount, 1);
@@ -602,9 +602,6 @@ static void symlink_object_close(object_header* obj) {
     if (symlink->dest.Buffer)
         kfree(symlink->dest.Buffer);
 
-    if (symlink->header.path.Buffer)
-        kfree(symlink->header.path.Buffer);
-
     if (symlink->cache) {
         spin_lock(&symlink_list_lock);
         list_del(&symlink->cache->list);
@@ -615,7 +612,7 @@ static void symlink_object_close(object_header* obj) {
         kfree(symlink->cache);
     }
 
-    kfree(symlink);
+    free_object(&symlink->header);
 }
 
 static NTSTATUS add_symlink_cache_entry(UNICODE_STRING* src, UNICODE_STRING* dest,
@@ -872,15 +869,19 @@ NTSTATUS muwine_init_objdir(void) {
         return muwine_error_to_ntstatus((int)(uintptr_t)type_type);
     }
 
-    init_dir(&dir_root);
+    dir_root = kzalloc(sizeof(dir_object), GFP_KERNEL);
+    if (!dir_root)
+        return -ENOMEM;
 
-    dir_root.header.path.Length = dir_root.header.path.MaximumLength = sizeof(WCHAR);
-    dir_root.header.path.Buffer = kmalloc(dir_root.header.path.Length, GFP_KERNEL);
+    init_dir(dir_root);
 
-    if (!dir_root.header.path.Buffer)
+    dir_root->header.path.Length = dir_root->header.path.MaximumLength = sizeof(WCHAR);
+    dir_root->header.path.Buffer = kmalloc(dir_root->header.path.Length, GFP_KERNEL);
+
+    if (!dir_root->header.path.Buffer)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    dir_root.header.path.Buffer[0] = '\\';
+    dir_root->header.path.Buffer[0] = '\\';
 
     // create \\Device dir
 

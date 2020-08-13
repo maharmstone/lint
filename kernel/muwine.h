@@ -614,6 +614,7 @@ typedef struct _type_object {
     UNICODE_STRING name;
 } type_object;
 
+void free_object(object_header* obj);
 type_object* muwine_add_object_type(const UNICODE_STRING* name);
 void muwine_free_objs(void);
 NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,

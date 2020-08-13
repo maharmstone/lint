@@ -29,10 +29,7 @@ static void file_object_close(object_header* obj) {
     if (__sync_sub_and_fetch(&f->fileobj.dev->header.refcount, 1) == 0)
         f->fileobj.dev->header.close(&f->fileobj.dev->header);
 
-    if (f->fileobj.header.path.Buffer)
-        kfree(f->fileobj.header.path.Buffer);
-
-    kfree(f);
+    free_object(&f->fileobj.header);
 }
 
 typedef struct {
@@ -1248,10 +1245,7 @@ static struct file* unixfs_get_filp(file_object* obj) {
 static void device_object_close(object_header* obj) {
     device* dev = (device*)obj;
 
-    if (dev->header.path.Buffer)
-        kfree(dev->header.path.Buffer);
-
-    kfree(dev);
+    free_object(&dev->header);
 }
 
 NTSTATUS muwine_init_unixroot(void) {
