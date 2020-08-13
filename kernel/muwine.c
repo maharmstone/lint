@@ -1151,15 +1151,15 @@ static int __init muwine_init(void) {
     if (ret < 0)
         return ret;
 
-    Status = muwine_init_registry();
-    if (!NT_SUCCESS(Status)) {
-        printk(KERN_ALERT "muwine_init_registry returned %08x\n", Status);
-        return -ENOMEM;
-    }
-
     Status = muwine_init_objdir();
     if (!NT_SUCCESS(Status)) {
         printk(KERN_ALERT "muwine_init_objdir returned %08x\n", Status);
+        return -ENOMEM;
+    }
+
+    Status = muwine_init_registry();
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "muwine_init_registry returned %08x\n", Status);
         return -ENOMEM;
     }
 

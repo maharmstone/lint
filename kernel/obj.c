@@ -31,11 +31,57 @@ dir_object dir_root;
 static LIST_HEAD(symlink_list);
 static DEFINE_SPINLOCK(symlink_list_lock);
 
+static type_object* type_type = NULL;
+
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part);
 
 void muwine_free_objs(void) {
     if (__sync_sub_and_fetch(&dir_root.header.refcount, 1) == 0)
         dir_root.header.close(&dir_root.header);
+}
+
+static void type_object_close(object_header* obj) {
+    type_object* to = (type_object*)obj;
+
+    if (to->header.path.Buffer)
+        kfree(to->header.path.Buffer);
+
+    if (to->name.Buffer)
+        kfree(to->name.Buffer);
+
+    kfree(to);
+}
+
+type_object* muwine_add_object_type(const UNICODE_STRING* name) {
+    type_object* obj;
+
+    obj = kzalloc(sizeof(type_object), GFP_KERNEL);
+    if (!obj)
+        return ERR_PTR(-ENOMEM);
+
+    obj->header.refcount = 1;
+
+    if (type_type) {
+        obj->header.type2 = type_type;
+        __sync_add_and_fetch(&type_type->header.refcount, 1);
+    }
+
+    spin_lock_init(&obj->header.path_lock);
+    obj->header.close = type_object_close;
+
+    obj->name.Length = obj->name.MaximumLength = name->Length;
+
+    if (obj->name.Length > 0) {
+        obj->name.Buffer = kmalloc(obj->name.Length, GFP_KERNEL);
+        if (!obj->name.Buffer) {
+            kfree(obj);
+            return ERR_PTR(-ENOMEM);
+        }
+
+        memcpy(obj->name.Buffer, name->Buffer, name->Length);
+    }
+
+    return obj;
 }
 
 NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc) {
@@ -815,6 +861,16 @@ NTSTATUS muwine_init_objdir(void) {
     static const WCHAR global_global[] = L"\\GLOBAL??\\Global";
     static const WCHAR qmqm[] = L"\\??";
     static const WCHAR dosdevices[] = L"\\DosDevices";
+    static const WCHAR type_name[] = L"Type";
+
+    us.Length = us.MaximumLength = sizeof(type_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)type_name;
+
+    type_type = muwine_add_object_type(&us);
+    if (IS_ERR(type_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)type_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)type_type);
+    }
 
     init_dir(&dir_root);
 

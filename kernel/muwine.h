@@ -215,9 +215,12 @@ typedef enum {
     muwine_object_section,
 } object_type;
 
+typedef struct _type_object type_object;
+
 typedef struct _object_header {
     int refcount;
     object_type type;
+    type_object* type2;
     UNICODE_STRING path;
     spinlock_t path_lock;
     muwine_close_object close;
@@ -606,6 +609,12 @@ typedef struct _device {
     muwine_get_filp get_filp;
 } device;
 
+typedef struct _type_object {
+    object_header header;
+    UNICODE_STRING name;
+} type_object;
+
+type_object* muwine_add_object_type(const UNICODE_STRING* name);
 void muwine_free_objs(void);
 NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,
                             bool* after_alloc);
