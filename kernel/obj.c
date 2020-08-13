@@ -47,8 +47,8 @@ void free_object(object_header* obj) {
         kfree(obj->path.Buffer);
 
     if (obj != &type_type->header) {
-        if (obj->type2 && __sync_sub_and_fetch(&obj->type2->header.refcount, 1) == 0)
-            obj->type2->header.close(&obj->type2->header);
+        if (__sync_sub_and_fetch(&obj->type->header.refcount, 1) == 0)
+            obj->type->header.close(&obj->type->header);
     }
 
     kfree(obj);
@@ -73,7 +73,7 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name) {
     obj->header.refcount = 1;
 
     if (type_type) {
-        obj->header.type2 = type_type;
+        obj->header.type = type_type;
         __sync_add_and_fetch(&type_type->header.refcount, 1);
     }
 
@@ -93,7 +93,7 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name) {
     }
 
     if (!type_type)
-        obj->header.type2 = obj;
+        obj->header.type = obj;
 
     return obj;
 }
@@ -247,7 +247,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
                     return STATUS_SUCCESS;
                 }
 
-                if (item->object->type2 != dir_type) {
+                if (item->object->type != dir_type) {
                     *obj = item->object;
 
                     __sync_add_and_fetch(&item->object->refcount, 1);
@@ -350,7 +350,7 @@ static void dir_object_close(object_header* obj) {
 static void init_dir(dir_object* dir) {
     dir->header.refcount = 1;
 
-    dir->header.type2 = dir_type;
+    dir->header.type = dir_type;
     __sync_add_and_fetch(&dir_type->header.refcount, 1);
 
     spin_lock_init(&dir->header.path_lock);
@@ -446,7 +446,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
                     return STATUS_OBJECT_NAME_COLLISION;
                 }
 
-                if (item->object->type2 != dir_type) {
+                if (item->object->type != dir_type) {
                     spin_unlock(&parent->children_lock);
 
                     if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
@@ -736,8 +736,8 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 
     obj->header.refcount = 1;
 
-    obj->header.type2 = symlink_type;
-    __sync_add_and_fetch(&obj->header.type2->header.refcount, 1);
+    obj->header.type = symlink_type;
+    __sync_add_and_fetch(&obj->header.type->header.refcount, 1);
 
     spin_lock_init(&obj->header.path_lock);
     obj->header.close = symlink_object_close;

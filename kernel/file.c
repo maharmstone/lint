@@ -1,6 +1,7 @@
 #include "muwine.h"
 
 extern type_object* device_type;
+extern type_object* file_type;
 
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
@@ -17,7 +18,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
 
     if (ObjectAttributes->RootDirectory) {
         object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory);
-        if (!obj || obj->type != muwine_object_file)
+        if (!obj || obj->type != file_type)
             return STATUS_INVALID_HANDLE;
 
         spin_lock(&obj->path_lock);
@@ -45,7 +46,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
     if (!NT_SUCCESS(Status))
         goto end;
 
-    if (dev->header.type2 != device_type) {
+    if (dev->header.type != device_type) {
         if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
             dev->header.close(&dev->header);
 
@@ -201,7 +202,7 @@ NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                     PULONG Key) {
     file_object* obj = (file_object*)get_object_from_handle(FileHandle);
-    if (!obj || obj->header.type != muwine_object_file)
+    if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
     if (!obj->dev->read)
@@ -263,7 +264,7 @@ NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRou
 NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     file_object* obj = (file_object*)get_object_from_handle(FileHandle);
-    if (!obj || obj->header.type != muwine_object_file)
+    if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
     if (!obj->dev->query_information)
@@ -309,7 +310,7 @@ NTSTATUS NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine
                      PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                      PULONG Key) {
     file_object* obj = (file_object*)get_object_from_handle(FileHandle);
-    if (!obj || obj->header.type != muwine_object_file)
+    if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
     if (!obj->dev->write)
@@ -370,7 +371,7 @@ NTSTATUS user_NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRo
 NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                               ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     file_object* obj = (file_object*)get_object_from_handle(FileHandle);
-    if (!obj || obj->header.type != muwine_object_file)
+    if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
     if (!obj->dev->set_information)
@@ -392,7 +393,7 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
 
         if (fri->RootDirectory) {
             file_object* obj2 = (file_object*)get_object_from_handle(fri->RootDirectory);
-            if (!obj2 || obj2->header.type != muwine_object_file)
+            if (!obj2 || obj2->header.type != file_type)
                 return STATUS_INVALID_HANDLE;
 
             spin_lock(&obj2->header.path_lock);
@@ -512,7 +513,7 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
     NTSTATUS Status;
 
     file_object* obj = (file_object*)get_object_from_handle(FileHandle);
-    if (!obj || obj->header.type != muwine_object_file)
+    if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
     if (!obj->dev->query_directory)
@@ -577,7 +578,7 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
 static NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                              ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
     file_object* obj = (file_object*)get_object_from_handle(FileHandle);
-    if (!obj || obj->header.type != muwine_object_file)
+    if (!obj || obj->header.type != file_type)
         return STATUS_INVALID_HANDLE;
 
     if (!obj->dev->query_volume_information)

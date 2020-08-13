@@ -15,6 +15,7 @@ static LIST_HEAD(file_list);
 static DECLARE_RWSEM(file_list_sem);
 
 type_object* device_type = NULL;
+type_object* file_type = NULL;
 
 static void file_object_close(object_header* obj) {
     unixfs_file_object* f = (unixfs_file_object*)obj;
@@ -367,13 +368,17 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         return STATUS_INSUFFICIENT_RESOURCES;
 
     obj->fileobj.header.refcount = 1;
-    obj->fileobj.header.type = muwine_object_file;
+    obj->fileobj.header.type = file_type;
+    __sync_add_and_fetch(&file_type->header.refcount, 1);
 
     spin_lock_init(&obj->fileobj.header.path_lock);
     obj->fileobj.header.path.Length = obj->fileobj.header.path.MaximumLength = us->Length + dev->header.path.Length;
     obj->fileobj.header.path.Buffer = kmalloc(obj->fileobj.header.path.Length, GFP_KERNEL);
 
     if (!obj->fileobj.header.path.Buffer) {
+        if (__sync_sub_and_fetch(&file_type->header.refcount, 1) == 0)
+            file_type->header.close(&file_type->header);
+
         kfree(obj);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -407,6 +412,9 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
         if (__sync_sub_and_fetch(&obj->fileobj.dev->header.refcount, 1) == 0)
             obj->fileobj.dev->header.close(&obj->fileobj.dev->header);
+
+        if (__sync_sub_and_fetch(&file_type->header.refcount, 1) == 0)
+            file_type->header.close(&file_type->header);
 
         kfree(obj->fileobj.header.path.Buffer);
         kfree(obj);
@@ -1257,6 +1265,7 @@ NTSTATUS muwine_init_unixroot(void) {
 
     static const WCHAR name[] = L"\\Device\\UnixRoot";
     static const WCHAR device_name[] = L"Device";
+    static const WCHAR file_name[] = L"File";
 
     us.Length = us.MaximumLength = sizeof(device_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)device_name;
@@ -1267,14 +1276,23 @@ NTSTATUS muwine_init_unixroot(void) {
         return muwine_error_to_ntstatus((int)(uintptr_t)device_type);
     }
 
+    us.Length = us.MaximumLength = sizeof(file_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)file_name;
+
+    file_type = muwine_add_object_type(&us);
+    if (IS_ERR(file_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)file_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)file_type);
+    }
+
     dev = kzalloc(sizeof(device), GFP_KERNEL);
     if (!dev)
         return STATUS_INSUFFICIENT_RESOURCES;
 
     dev->header.refcount = 1;
 
-    dev->header.type2 = device_type;
-    __sync_add_and_fetch(&dev->header.type2->header.refcount, 1);
+    dev->header.type = device_type;
+    __sync_add_and_fetch(&dev->header.type->header.refcount, 1);
 
     spin_lock_init(&dev->header.path_lock);
     dev->header.close = device_object_close;

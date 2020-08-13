@@ -206,16 +206,11 @@ struct _object_header;
 
 typedef void (*muwine_close_object)(struct _object_header* obj);
 
-typedef enum {
-    muwine_object_file,
-} object_type;
-
 typedef struct _type_object type_object;
 
 typedef struct _object_header {
     int refcount;
-    object_type type;
-    type_object* type2;
+    type_object* type;
     UNICODE_STRING path;
     spinlock_t path_lock;
     muwine_close_object close;

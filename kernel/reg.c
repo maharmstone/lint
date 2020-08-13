@@ -660,7 +660,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     if (ObjectAttributes->RootDirectory) {
         key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory);
-        if (!key || key->header.type2 != key_type)
+        if (!key || key->header.type != key_type)
             return STATUS_INVALID_HANDLE;
 
         spin_lock(&key->header.path_lock);
@@ -778,7 +778,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             k->header.refcount = 1;
 
-            k->header.type2 = key_type;
+            k->header.type = key_type;
             __sync_add_and_fetch(&key_type->header.refcount, 1);
 
             spin_lock_init(&k->header.path_lock);
@@ -1192,7 +1192,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     bool is_volatile;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type2 != key_type)
+    if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask of handle for KEY_ENUMERATE_SUB_KEYS
@@ -1540,7 +1540,7 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     void* bins;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type2 != key_type)
+    if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
@@ -1647,7 +1647,7 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
         return STATUS_INVALID_PARAMETER;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type2 != key_type)
+    if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
@@ -2143,7 +2143,7 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     // FIXME - should we be rejecting short REG_DWORDs etc. here?
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type2 != key_type)
+    if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check for KEY_SET_VALUE in access mask
@@ -2517,7 +2517,7 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     void* bins;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type2 != key_type)
+    if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check for KEY_SET_VALUE in access mask
@@ -3584,7 +3584,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
         return STATUS_INSUFFICIENT_RESOURCES;
 
     k->header.refcount = 1;
-    k->header.type2 = key_type;
+    k->header.type = key_type;
     __sync_add_and_fetch(&key_type->header.refcount, 1);
 
     spin_lock_init(&k->header.path_lock);
@@ -3654,7 +3654,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
     if (ObjectAttributes->RootDirectory) {
         key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory);
-        if (!key || key->header.type2 != key_type)
+        if (!key || key->header.type != key_type)
             return STATUS_INVALID_HANDLE;
 
         spin_lock(&key->header.path_lock);
@@ -3843,7 +3843,7 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     uint32_t subkey_list;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type2 != key_type)
+    if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask has DELETE permission
@@ -4796,7 +4796,7 @@ NTSTATUS NtFlushKey(HANDLE KeyHandle) {
     key_object* key;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type2 != key_type)
+    if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
     return flush_hive(key->h);
@@ -4831,7 +4831,7 @@ static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformatio
     CM_KEY_NODE* kn;
 
     key = (key_object*)get_object_from_handle(KeyHandle);
-    if (!key || key->header.type2 != key_type)
+    if (!key || key->header.type != key_type)
         return STATUS_INVALID_HANDLE;
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE (unless KeyNameInformation or KeyHandleTagsInformation)

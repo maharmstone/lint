@@ -5,6 +5,8 @@
 
 static type_object* section_type = NULL;
 
+extern type_object* file_type;
+
 static void section_object_close(object_header* obj) {
     section_object* sect = (section_object*)obj;
 
@@ -260,7 +262,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
         file = (file_object*)get_object_from_handle(FileHandle);
 
-        if (!file || file->header.type != muwine_object_file)
+        if (!file || file->header.type != file_type)
             return STATUS_INVALID_HANDLE;
 
         Status = NtQueryInformationFile(FileHandle, &iosb, &fsi, sizeof(fsi),
@@ -316,7 +318,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
     obj->header.refcount = 1;
 
-    obj->header.type2 = section_type;
+    obj->header.type = section_type;
     __sync_add_and_fetch(&section_type->header.refcount, 1);
 
     spin_lock_init(&obj->header.path_lock);
@@ -466,7 +468,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     struct list_head* le;
     unsigned int i;
 
-    if (!sect || sect->header.type2 != section_type)
+    if (!sect || sect->header.type != section_type)
         return STATUS_INVALID_HANDLE;
 
     if (ProcessHandle == NtCurrentProcess()) {
@@ -751,7 +753,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
 
     if (ObjectAttributes->RootDirectory) {
         object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory);
-        if (!obj || obj->type != muwine_object_file)
+        if (!obj || obj->type != file_type)
             return STATUS_INVALID_HANDLE;
 
         spin_lock(&obj->path_lock);
@@ -779,7 +781,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
     if (!NT_SUCCESS(Status))
         goto end;
 
-    if (sect->header.type2 != section_type || after.Length != 0) {
+    if (sect->header.type != section_type || after.Length != 0) {
         if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)
             sect->header.close(&sect->header);
 
