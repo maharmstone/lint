@@ -545,7 +545,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     } else
         file = sect->anon_file;
 
-    map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * (len / PAGE_SIZE)), GFP_KERNEL);
+    map = kmalloc(sizeof(section_map), GFP_KERNEL);
     if (!map)
         return STATUS_INSUFFICIENT_RESOURCES;
 
@@ -573,12 +573,9 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
 
     addr = (void*)(uintptr_t)ret;
 
-    for (i = 0; i < len / PAGE_SIZE; i++) {
-        map->prots[i] = prot;
-    }
-
     map->address = (uintptr_t)addr;
     map->length = len;
+    map->committed = true;
 
     if (sect->alloc_attributes & SEC_IMAGE) {
         for (i = 0; i < sect->num_sections; i++) {
@@ -590,7 +587,6 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
             if (sect->sections[i].VirtualAddress < off + len &&
                 sect->sections[i].VirtualAddress + section_size > off) {
                 uint32_t off2 = off, end = sect->sections[i].VirtualAddress + section_size;
-                unsigned int j;
 
                 if (sect->sections[i].VirtualAddress > off2)
                     off2 = sect->sections[i].VirtualAddress;
@@ -611,10 +607,6 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
                 if (IS_ERR((void*)ret)) {
                     kfree(map);
                     return muwine_error_to_ntstatus(ret);
-                }
-
-                for (j = (off2 - off) / PAGE_SIZE; j < (end - off) / PAGE_SIZE; j++) {
-                    map->prots[j] = prot;
                 }
             }
         }
@@ -1027,7 +1019,6 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
     unsigned long ret, prot, flags;
     section_map* map;
     struct list_head* le;
-    unsigned int i;
 
     if (ProcessHandle == NtCurrentProcess()) {
         p = muwine_current_process();
@@ -1074,7 +1065,7 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
     }
 
     // check if committing previously reserved memory
-    if (addr && !(AllocationType & MEM_RESERVE)) {
+    if (addr && prot != PROT_NONE) {
         down_write(&p->mapping_list_sem);
 
         le = p->mapping_list.next;
@@ -1083,30 +1074,18 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
 
             if (sm2->address <= addr && sm2->address + sm2->length >= addr + size && !sm2->sect) {
                 unsigned long off = (addr - sm2->address) / PAGE_SIZE;
-                unsigned long num_pages = size / PAGE_SIZE;
-                bool commit = true;
+                bool committing = !sm2->committed;
 
-                for (i = off; i < off + num_pages; i++) {
-                    if (sm2->prots[i] != PROT_NONE) {
-                        commit = false;
-                        break;
-                    }
-                }
-
-                if (commit) {
+                if (committing) {
                     ret = vm_mmap(NULL, (uintptr_t)addr, size, prot, MAP_PRIVATE | MAP_FIXED, 0);
                     if (IS_ERR((void*)ret))
                         return muwine_error_to_ntstatus(ret);
 
-                    if (addr == sm2->address && size == sm2->length) { // commiting whole entry
-                        for (i = off; i < off + num_pages; i++) {
-                            sm2->prots[i] = prot;
-                        }
-                    } else {
-                        unsigned long* prots = sm2->prots;
-
+                    if (addr == sm2->address && size == sm2->length) // commiting whole entry
+                        sm2->committed = true;
+                    else {
                         if (off > 0) { // add entry before
-                            map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * off), GFP_KERNEL);
+                            map = kmalloc(sizeof(section_map), GFP_KERNEL);
                             if (!map) {
                                 up_write(&p->mapping_list_sem);
                                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -1116,19 +1095,17 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
                             map->length = addr - sm2->address;
                             map->sect = NULL;
                             map->file_offset = 0;
-
-                            memcpy(map->prots, sm2->prots, sizeof(unsigned long) * off);
+                            map->committed = false;
 
                             list_add(&map->list, sm2->list.prev);
 
-                            prots = &sm2->prots[off];
                             sm2->length -= addr - sm2->address;
                             sm2->address = addr;
                         }
 
                         // add new entry
 
-                        map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * num_pages), GFP_KERNEL);
+                        map = kmalloc(sizeof(section_map), GFP_KERNEL);
                         if (!map) {
                             up_write(&p->mapping_list_sem);
                             return STATUS_INSUFFICIENT_RESOURCES;
@@ -1138,19 +1115,14 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
                         map->length = size;
                         map->sect = NULL;
                         map->file_offset = 0;
-
-                        for (i = 0; i < num_pages; i++) {
-                            map->prots[i] = prot;
-                        }
+                        map->committed = true;
 
                         list_add(&map->list, sm2->list.prev);
 
                         // add entry after
 
                         if (addr + size < sm2->address + sm2->length) {
-                            unsigned long num_pages2 = (sm2->address + sm2->length - addr - size) / PAGE_SIZE;
-
-                            map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * num_pages2), GFP_KERNEL);
+                            map = kmalloc(sizeof(section_map), GFP_KERNEL);
                             if (!map) {
                                 up_write(&p->mapping_list_sem);
                                 return STATUS_INSUFFICIENT_RESOURCES;
@@ -1160,9 +1132,7 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
                             map->length = sm2->address + sm2->length - addr - size;
                             map->sect = NULL;
                             map->file_offset = 0;
-
-                            memcpy(map->prots, &prots[(map->address - sm2->address) / PAGE_SIZE],
-                                   sizeof(unsigned long) * num_pages2);
+                            map->committed = false;
 
                             list_add(&map->list, sm2->list.prev);
                         }
@@ -1186,7 +1156,7 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
         up_write(&p->mapping_list_sem);
     }
 
-    map = kmalloc(offsetof(section_map, prots) + (sizeof(unsigned long) * (size / PAGE_SIZE)), GFP_KERNEL);
+    map = kmalloc(sizeof(section_map), GFP_KERNEL);
     if (!map)
         return STATUS_INSUFFICIENT_RESOURCES;
 
@@ -1209,10 +1179,7 @@ static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress
     map->length = size;
     map->sect = NULL;
     map->file_offset = 0;
-
-    for (i = 0; i < size / PAGE_SIZE; i++) {
-        map->prots[i] = prot;
-    }
+    map->committed = prot != PROT_NONE;
 
     *BaseAddress = (void*)ret;
     *RegionSize = size;
@@ -1428,8 +1395,6 @@ NTSTATUS muwine_init_sections(void) {
     }
 
     _mprotect_fixup = (func_mprotect_fixup)dummy_kretprobe.kp.addr;
-
-    printk(KERN_INFO "mprotect_fixup = %px\n", _mprotect_fixup);
 
     unregister_kretprobe(&dummy_kretprobe);
 

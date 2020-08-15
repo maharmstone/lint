@@ -668,7 +668,7 @@ typedef struct {
     uintptr_t length;
     object_header* sect;
     unsigned long file_offset;
-    unsigned long prots[1];
+    bool committed;
 } section_map;
 
 NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
