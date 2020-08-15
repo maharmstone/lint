@@ -166,8 +166,19 @@ static NTSTATUS open_file(const char* fn, struct file** ret, bool is_rw) {
         kfree(ofi.found_part);
         filp_close(parent, NULL);
 
-        if (IS_ERR(new_parent))
+        if (IS_ERR(new_parent)) {
+            if (PTR_ERR(new_parent) == -ENOENT) {
+                if (fn[ofi.part_len] != 0) {
+                    filp_close(parent, NULL);
+                    return STATUS_OBJECT_PATH_NOT_FOUND;
+                } else {
+                    *ret = parent;
+                    return STATUS_OBJECT_NAME_NOT_FOUND;
+                }
+            }
+
             return muwine_error_to_ntstatus((int)(uintptr_t)new_parent);
+        }
 
         parent = new_parent;
         fn += ofi.part_len;
