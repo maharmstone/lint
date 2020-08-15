@@ -535,7 +535,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     if (len % PAGE_SIZE != 0)
         len += PAGE_SIZE - (len % PAGE_SIZE);
 
-    flags = MAP_SHARED;
+    flags = MAP_PRIVATE;
 
     if (sect->file) {
         file = sect->file->dev->get_filp(sect->file);
