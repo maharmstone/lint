@@ -321,6 +321,24 @@ typedef enum {
 #define FILE_OPEN_FOR_FREE_SPACE_QUERY    0x00800000
 
 typedef struct {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    ULONG FileAttributes;
+} FILE_BASIC_INFORMATION;
+
+typedef struct {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG FileAttributes;
+} FILE_NETWORK_OPEN_INFORMATION;
+
+typedef struct {
     ULONG NextEntryOffset;
     ULONG FileIndex;
     LARGE_INTEGER CreationTime;
@@ -336,6 +354,8 @@ typedef struct {
     WCHAR ShortName[12];
     WCHAR FileName[1];
 } FILE_BOTH_DIR_INFORMATION;
+
+typedef void* PSID;
 
 #endif
 
@@ -413,6 +433,38 @@ NTSTATUS __stdcall NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAcces
 NTSTATUS __stdcall NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                                 ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
 NTSTATUS __stdcall NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType);
+NTSTATUS __stdcall NtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                                         PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                                         PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                                         ULONG OutputBufferLength);
+NTSTATUS __stdcall NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                                   PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                                   PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                                   ULONG OutputBufferLength);
+NTSTATUS __stdcall NtSetVolumeInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr, ULONG len,
+                                              FS_INFORMATION_CLASS FileSystemInformationClass);
+NTSTATUS __stdcall NtLockFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                              PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
+                              PLARGE_INTEGER Length, ULONG Key, BOOLEAN FailImmediately,
+                              BOOLEAN ExclusiveLock);
+NTSTATUS __stdcall NtQueryQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                                               ULONG Length, BOOLEAN ReturnSingleEntry, PVOID SidList,
+                                               ULONG SidListLength, PSID StartSid, BOOLEAN RestartScan);
+NTSTATUS __stdcall NtSetQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                                             ULONG Length);
+NTSTATUS __stdcall NtUnlockFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
+                                PLARGE_INTEGER Length, ULONG Key);
+NTSTATUS __stdcall NtDeleteFile(POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS __stdcall NtFlushBuffersFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock);
+NTSTATUS __stdcall NtQueryAttributesFile(const OBJECT_ATTRIBUTES* ObjectAttributes,
+                                         FILE_BASIC_INFORMATION* FileInformation);
+NTSTATUS __stdcall NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                                 ULONG Length, BOOLEAN ReturnSingleEntry, PVOID EaList, ULONG EaListLength,
+                                 PULONG EaIndex, BOOLEAN RestartScan);
+NTSTATUS __stdcall NtQueryFullAttributesFile(const OBJECT_ATTRIBUTES* ObjectAttributes,
+                                             FILE_NETWORK_OPEN_INFORMATION* FileInformation);
+NTSTATUS __stdcall NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                               ULONG Length);
 
 #ifdef __cplusplus
 }
