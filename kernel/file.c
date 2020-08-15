@@ -668,3 +668,143 @@ NTSTATUS user_NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK I
 
     return Status;
 }
+
+NTSTATUS NtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                               PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                               PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                               ULONG OutputBufferLength) {
+    printk(KERN_INFO "NtDeviceIoControlFile(%lx, %lx, %px, %px, %px, %x, %px, %x, %px, %x): stub\n",
+           (uintptr_t)FileHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           IoControlCode, InputBuffer, InputBufferLength, OutputBuffer,
+           OutputBufferLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                         PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                         PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                         ULONG OutputBufferLength) {
+    printk(KERN_INFO "NtFsControlFile(%lx, %lx, %px, %px, %px, %x, %px, %x, %px, %x): stub\n",
+           (uintptr_t)FileHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           IoControlCode, InputBuffer, InputBufferLength, OutputBuffer,
+           OutputBufferLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSetVolumeInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr, ULONG len,
+                                    FILE_INFORMATION_CLASS FileInformationClass) {
+    printk(KERN_INFO "NtSetVolumeInformationFile(%lx, %px, %px, %x, %x): stub\n",
+           (uintptr_t)hFile, io, ptr, len, FileInformationClass);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtLockFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                    PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
+                    PLARGE_INTEGER Length, ULONG Key, BOOLEAN FailImmediately,
+                    BOOLEAN ExclusiveLock) {
+    printk(KERN_INFO "NtLockFile(%lx, %lx, %px, %px, %px, %px, %px, %x, %x, %x): stub\n",
+           (uintptr_t)FileHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           ByteOffset, Length, Key, FailImmediately, ExclusiveLock);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQueryQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                                     ULONG Length, BOOLEAN ReturnSingleEntry, PVOID SidList,
+                                     ULONG SidListLength, SID* StartSid, BOOLEAN RestartScan) {
+    printk(KERN_INFO "NtQueryQuotaInformationFile(%lx, %px, %px, %x, %x, %px, %x, %px, %x): stub\n",
+           (uintptr_t)FileHandle, IoStatusBlock, Buffer, Length, ReturnSingleEntry, SidList,
+           SidListLength, StartSid, RestartScan);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSetQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                                   ULONG Length) {
+    printk(KERN_INFO "NtSetQuotaInformationFile(%lx, %px, %px, %x): stub\n",
+           (uintptr_t)FileHandle, IoStatusBlock, Buffer, Length);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtUnlockFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
+                      PLARGE_INTEGER Length, ULONG Key) {
+    printk(KERN_INFO "NtUnlockFile(%lx, %px, %px, %px, %x): stub\n", (uintptr_t)FileHandle,
+           IoStatusBlock, ByteOffset, Length, Key);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtDeleteFile(POBJECT_ATTRIBUTES ObjectAttributes) {
+    printk(KERN_INFO "NtDeleteFile(%px): stub\n", ObjectAttributes);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtFlushBuffersFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock) {
+    printk(KERN_INFO "NtFlushBuffersFile(%lx, %px): stub\n", (uintptr_t)FileHandle, IoStatusBlock);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
+                               FILE_BASIC_INFORMATION* FileInformation) {
+    printk(KERN_INFO "NtQueryAttributesFile(%px, %px): stub\n", ObjectAttributes, FileInformation);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                       ULONG Length, BOOLEAN ReturnSingleEntry, PVOID EaList, ULONG EaListLength,
+                       PULONG EaIndex, BOOLEAN RestartScan) {
+    printk(KERN_INFO "NtQueryEaFile(%lx, %px, %px, %x, %x, %px, %x, %px, %x): stub\n",
+           (uintptr_t)FileHandle, IoStatusBlock, Buffer, Length, ReturnSingleEntry,
+           EaList, EaListLength, EaIndex, RestartScan);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQueryFullAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
+                                   FILE_NETWORK_OPEN_INFORMATION* FileInformation) {
+    printk(KERN_INFO "NtQueryFullAttributesFile(%px, %px): stub\n",
+           ObjectAttributes, FileInformation);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                     ULONG Length) {
+    printk(KERN_INFO "NtSetEaFile(%lx, %px, %px, %x): stub\n", (uintptr_t)FileHandle,
+           IoStatusBlock, Buffer, Length);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

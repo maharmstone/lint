@@ -50,6 +50,19 @@ static struct muwine_func funcs[] = {
     { user_NtAllocateVirtualMemory, 6 },
     { user_NtQueryVolumeInformationFile, 5 },
     { user_NtFreeVirtualMemory, 4 },
+    { NtDeviceIoControlFile, 10 },
+    { NtFsControlFile, 10 },
+    { NtSetVolumeInformationFile, 5 },
+    { NtLockFile, 10 },
+    { NtQueryQuotaInformationFile, 9 },
+    { NtSetQuotaInformationFile, 4 },
+    { NtUnlockFile, 5 },
+    { NtDeleteFile, 1 },
+    { NtFlushBuffersFile, 2 },
+    { NtQueryAttributesFile, 2 },
+    { NtQueryEaFile, 9 },
+    { NtQueryFullAttributesFile, 2 },
+    { NtSetEaFile, 4 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)

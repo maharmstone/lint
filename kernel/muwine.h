@@ -468,6 +468,16 @@ typedef struct {
 } FILE_END_OF_FILE_INFORMATION;
 
 typedef struct {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    ULONG FileAttributes;
+} FILE_NETWORK_OPEN_INFORMATION;
+
+typedef struct {
     ULONG NextEntryOffset;
     ULONG FileIndex;
     LARGE_INTEGER CreationTime;
@@ -556,6 +566,38 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
                                    PUNICODE_STRING FileMask, BOOLEAN RestartScan);
 NTSTATUS user_NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                            ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
+NTSTATUS NtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                               PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                               PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                               ULONG OutputBufferLength);
+NTSTATUS NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                         PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                         PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                         ULONG OutputBufferLength);
+NTSTATUS NtSetVolumeInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr, ULONG len,
+                                    FILE_INFORMATION_CLASS FileInformationClass);
+NTSTATUS NtLockFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                    PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
+                    PLARGE_INTEGER Length, ULONG Key, BOOLEAN FailImmediately,
+                    BOOLEAN ExclusiveLock);
+NTSTATUS NtQueryQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                                     ULONG Length, BOOLEAN ReturnSingleEntry, PVOID SidList,
+                                     ULONG SidListLength, SID* StartSid, BOOLEAN RestartScan);
+NTSTATUS NtSetQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                                   ULONG Length);
+NTSTATUS NtUnlockFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
+                      PLARGE_INTEGER Length, ULONG Key);
+NTSTATUS NtDeleteFile(POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS NtFlushBuffersFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock);
+NTSTATUS NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
+                               FILE_BASIC_INFORMATION* FileInformation);
+NTSTATUS NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                       ULONG Length, BOOLEAN ReturnSingleEntry, PVOID EaList, ULONG EaListLength,
+                       PULONG EaIndex, BOOLEAN RestartScan);
+NTSTATUS NtQueryFullAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
+                                   FILE_NETWORK_OPEN_INFORMATION* FileInformation);
+NTSTATUS NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
+                     ULONG Length);
 
 // handle.c
 typedef struct {
