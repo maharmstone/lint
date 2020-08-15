@@ -1147,10 +1147,6 @@ static int __init muwine_init(void) {
         return major_num;
     }
 
-    ret = init_kretprobes();
-    if (ret < 0)
-        return ret;
-
     Status = muwine_init_objdir();
     if (!NT_SUCCESS(Status)) {
         printk(KERN_ALERT "muwine_init_objdir returned %08x\n", Status);
@@ -1174,6 +1170,10 @@ static int __init muwine_init(void) {
         printk(KERN_ALERT "muwine_init_sections returned %08x\n", Status);
         return -ENOMEM;
     }
+
+    ret = init_kretprobes();
+    if (ret < 0)
+        return ret;
 
     printk(KERN_INFO "muwine module loaded with device major number %d\n", major_num);
 
