@@ -1,11 +1,20 @@
 #include <linux/mman.h>
 #include <linux/shmem_fs.h>
+#include <linux/rmap.h>
+#include <linux/kprobes.h>
 #include "muwine.h"
 #include "sect.h"
 
 static type_object* section_type = NULL;
 
 extern type_object* file_type;
+
+typedef int (*func_mprotect_fixup)(struct vm_area_struct *vma,
+                                   struct vm_area_struct **pprev,
+                                   unsigned long start, unsigned long end,
+                                   unsigned long newflags);
+
+func_mprotect_fixup _mprotect_fixup;
 
 static void section_object_close(object_header* obj) {
     section_object* sect = (section_object*)obj;
@@ -867,8 +876,10 @@ static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
     process* p;
     uintptr_t addr = (uintptr_t)*BaseAddress;
     size_t size = *NumberOfBytesToProtect;
-    struct list_head* le;
-    unsigned long prot;
+    unsigned long prot, nstart, oldflags;
+    int ret;
+    struct vm_area_struct* vma;
+    struct vm_area_struct* prev;
 
     if (ProcessHandle == NtCurrentProcess()) {
         p = muwine_current_process();
@@ -892,93 +903,83 @@ static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
     *NumberOfBytesToProtect = size;
 
     if (NewAccessProtection & NT_PAGE_EXECUTE_READ || NewAccessProtection & NT_PAGE_EXECUTE_WRITECOPY)
-        prot = PROT_EXEC | PROT_READ;
+        prot = VM_EXEC | VM_READ;
     else if (NewAccessProtection & NT_PAGE_EXECUTE_READWRITE)
-        prot = PROT_EXEC | PROT_READ | PROT_WRITE;
+        prot = VM_EXEC | VM_READ | VM_WRITE;
     else if (NewAccessProtection & NT_PAGE_READONLY || NewAccessProtection & NT_PAGE_WRITECOPY)
-        prot = PROT_READ;
+        prot = VM_READ;
     else if (NewAccessProtection & NT_PAGE_READWRITE)
-        prot = PROT_READ | PROT_WRITE;
+        prot = VM_READ | VM_WRITE;
     else {
         printk("NtProtectVirtualMemory: unhandled NewAccessProtection value %x\n", NewAccessProtection);
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    *OldAccessProtection = 0;
+    // FIXME - fail if region not fully committed?
+    // FIXME - do we need to make sure userspace doesn't specify kernel address?
 
-    down_write(&p->mapping_list_sem);
+    ret = mmap_write_lock_killable(current->mm);
+    if (ret < 0)
+        return muwine_error_to_ntstatus(ret);
 
-    le = p->mapping_list.next;
-    while (le != &p->mapping_list) {
-        section_map* sm2 = list_entry(le, section_map, list);
+    vma = find_vma(current->mm, addr);
 
-        if (sm2->address < addr + size && sm2->address + sm2->length > addr) {
-            section_object* sect;
-            unsigned long map_start, map_end, ret;
-            struct file* file;
-            unsigned int i;
-
-            map_start = addr;
-
-            if (sm2->address > map_start)
-                map_start = sm2->address;
-
-            map_end = addr + size;
-
-            if (sm2->address + sm2->length < map_end)
-                map_end = sm2->address + sm2->length;
-
-            // FIXME - non-section mappings
-
-            sect = (section_object*)sm2->sect;
-
-            if (sect->file) {
-                file = sect->file->dev->get_filp(sect->file);
-
-                if (!file) {
-                    up_write(&p->mapping_list_sem);
-                    return STATUS_INVALID_PARAMETER;
-                }
-            } else
-                file = sect->anon_file;
-
-            ret = vm_mmap(file, map_start, map_end - map_start, prot, MAP_SHARED | MAP_FIXED,
-                          sm2->file_offset + map_start - sm2->address);
-            if (IS_ERR((void*)ret)) {
-                up_write(&p->mapping_list_sem);
-                return muwine_error_to_ntstatus(ret);
-            }
-
-            if (*OldAccessProtection == 0)
-                *OldAccessProtection = sm2->prots[(map_start - sm2->address) / PAGE_SIZE];
-
-            for (i = (map_start - sm2->address) / PAGE_SIZE; i < (map_end - map_start) / PAGE_SIZE; i++) {
-                sm2->prots[i] = prot;
-            }
-
-            if (addr + size == map_end)
-                break;
-
-            size = addr + size - map_end;
-            addr = map_end;
-        }
-
-        le = le->next;
+    if (!vma || vma->vm_start > addr) {
+        mmap_write_unlock(current->mm);
+        return STATUS_INVALID_PARAMETER;
     }
 
-    up_write(&p->mapping_list_sem);
+    prev = vma->vm_prev;
 
-    if (*OldAccessProtection == 0)
-        return STATUS_INVALID_PARAMETER;
+    if (addr > vma->vm_start)
+        prev = vma;
 
-    if (*OldAccessProtection == PROT_READ)
-        *OldAccessProtection = NT_PAGE_READONLY;
-    else if (*OldAccessProtection == (PROT_READ | PROT_WRITE))
-        *OldAccessProtection = NT_PAGE_READWRITE;
-    else if (*OldAccessProtection == (PROT_READ | PROT_EXEC))
-        *OldAccessProtection = NT_PAGE_EXECUTE_READ;
-    else if (*OldAccessProtection == (PROT_READ | PROT_WRITE | PROT_EXEC))
+    nstart = addr;
+
+    while (true) {
+        unsigned long newflags = prot;
+        unsigned long tmp;
+
+        newflags |= vma->vm_flags & ~(VM_READ | VM_WRITE | VM_EXEC | VM_ARCH_CLEAR);
+
+        tmp = vma->vm_end;
+        if (tmp > addr + size)
+            tmp = addr + size;
+
+        if (nstart == addr)
+            oldflags = vma->vm_flags;
+
+        ret = _mprotect_fixup(vma, &prev, nstart, tmp, newflags);
+        if (ret) {
+            mmap_write_unlock(current->mm);
+            return muwine_error_to_ntstatus(ret);
+        }
+
+        nstart = tmp;
+
+        if (nstart < prev->vm_end)
+            nstart = prev->vm_end;
+
+        if (nstart >= addr + size)
+            break;
+
+        vma = prev->vm_next;
+        if (!vma || vma->vm_start != nstart) {
+            mmap_write_unlock(current->mm);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+
+    mmap_write_unlock(current->mm);
+
+    if (oldflags & VM_READ && oldflags & VM_WRITE && oldflags & VM_EXEC)
         *OldAccessProtection = NT_PAGE_EXECUTE_READWRITE;
+    else if (oldflags & VM_READ && oldflags & VM_EXEC)
+        *OldAccessProtection = NT_PAGE_EXECUTE_READ;
+    else if (oldflags & VM_READ && oldflags & VM_WRITE)
+        *OldAccessProtection = NT_PAGE_READWRITE;
+    else if (oldflags & VM_READ)
+        *OldAccessProtection = NT_PAGE_READONLY;
     else
         *OldAccessProtection = 0;
 
@@ -1385,9 +1386,14 @@ static NTSTATUS init_user_shared_data(void) {
     return STATUS_SUCCESS;
 }
 
+static struct kretprobe dummy_kretprobe = {
+    .maxactive  = 20,
+};
+
 NTSTATUS muwine_init_sections(void) {
     NTSTATUS Status;
     UNICODE_STRING us;
+    int ret;
 
     static const WCHAR sect_name[] = L"Section";
 
@@ -1403,6 +1409,29 @@ NTSTATUS muwine_init_sections(void) {
     Status = init_user_shared_data();
     if (!NT_SUCCESS(Status))
         return Status;
+
+    // trick kretprobes into giving us address of non-exported symbol
+
+    dummy_kretprobe.kp.symbol_name = "mprotect_fixup";
+
+    ret = register_kretprobe(&dummy_kretprobe);
+
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe failed, returned %d\n", ret);
+        return muwine_error_to_ntstatus(ret);
+    }
+
+    if (!dummy_kretprobe.kp.addr) {
+        printk(KERN_ERR "unable to get the address for mprotect_fixup\n");
+        unregister_kretprobe(&dummy_kretprobe);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    _mprotect_fixup = (func_mprotect_fixup)dummy_kretprobe.kp.addr;
+
+    printk(KERN_INFO "mprotect_fixup = %px\n", _mprotect_fixup);
+
+    unregister_kretprobe(&dummy_kretprobe);
 
     return STATUS_SUCCESS;
 }
