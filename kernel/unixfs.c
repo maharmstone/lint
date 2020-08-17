@@ -1200,12 +1200,31 @@ static NTSTATUS unixfs_set_information(file_object* obj, ACCESS_MASK access,
         case FileDispositionInformation: {
             unixfs_file_object* ufo = (unixfs_file_object*)obj;
             FILE_DISPOSITION_INFORMATION* fdi = FileInformation;
+            struct list_head* le;
 
             if (Length < sizeof(FILE_DISPOSITION_INFORMATION))
                 return STATUS_INVALID_PARAMETER;
 
             if (!(access & DELETE))
                 return STATUS_ACCESS_DENIED;
+
+            down_write(&file_list_sem);
+
+            le = file_list.next;
+            while (le != &file_list) {
+                unixfs_file_object* ufo2 = list_entry(le, unixfs_file_object, list);
+
+                if (ufo2->f->f_inode == ufo->f->f_inode &&
+                    ufo2->f->f_path.dentry == ufo->f->f_path.dentry &&
+                    ufo2->fileobj.mapping_count != 0) {
+                    up_write(&file_list_sem);
+                    return STATUS_CANNOT_DELETE;
+                }
+
+                le = le->next;
+            }
+
+            up_write(&file_list_sem);
 
             ufo->delete_pending = fdi->DeleteFile;
 
