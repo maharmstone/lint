@@ -461,6 +461,10 @@ typedef struct {
 } FILE_INTERNAL_INFORMATION;
 
 typedef struct {
+    ULONG EaSize;
+} FILE_EA_INFORMATION;
+
+typedef struct {
     BOOLEAN ReplaceIfExists;
     HANDLE RootDirectory;
     ULONG FileNameLength;
