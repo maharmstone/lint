@@ -17,6 +17,7 @@ typedef struct {
     struct list_head list;
     struct file* f;
     unixfs_inode* inode;
+    bool delete_pending;
 } unixfs_file_object;
 
 static LIST_HEAD(file_list);
@@ -51,6 +52,29 @@ static void file_object_close(object_header* obj) {
         f->fileobj.dev->header.type->close(&f->fileobj.dev->header);
 
     free_object(&f->fileobj.header);
+}
+
+static void file_object_cleanup(object_header* obj) {
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
+
+    if (ufo->fileobj.options & FILE_DELETE_ON_CLOSE)
+        ufo->delete_pending = true;
+
+    if (ufo->delete_pending) {
+        struct inode* parent = file_dentry(ufo->f)->d_parent->d_inode;
+        int ret;
+
+        // FIXME - check file not open via another file object
+
+        down_write(&parent->i_rwsem);
+
+        ret = vfs_unlink(parent, file_dentry(ufo->f), NULL);
+
+        up_write(&parent->i_rwsem);
+
+        if (ret < 0)
+            printk(KERN_INFO "file_object_cleanup: vfs_unlink returned %d\n", ret);
+    }
 }
 
 typedef struct {
@@ -340,6 +364,12 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     } else
         access = DesiredAccess;
 
+    if (CreateOptions & FILE_DELETE_ON_CLOSE && !(access & DELETE)) {
+        kfree(path);
+        filp_close(file, NULL);
+        return STATUS_ACCESS_DENIED;
+    }
+
     // loop through list of FCBs, and increase refcount if found; otherwise, do filp_open
 
     // FIXME - if need to create new file, this should be done outside of lock
@@ -347,13 +377,33 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     down_write(&file_list_sem);
 
     if (name_exists) {
+        if (!(ShareAccess & FILE_SHARE_DELETE)) {
+            le = file_list.next;
+            while (le != &file_list) {
+                unixfs_file_object* ufo = list_entry(le, unixfs_file_object, list);
+
+                if (ufo->fileobj.options & FILE_DELETE_ON_CLOSE &&
+                    ufo->inode->inode == file->f_inode && ufo->f->f_path.dentry == file->f_path.dentry) {
+                    up_write(&file_list_sem);
+                    kfree(path);
+                    filp_close(file, NULL);
+                    return STATUS_DELETE_PENDING;
+                }
+
+                le = le->next;
+            }
+        }
+
         le = inode_list.next;
         while (le != &inode_list) {
             unixfs_inode* ui2 = list_entry(le, unixfs_inode, list);
 
             if (ui2->inode == file->f_inode) {
-                // FIXME - don't allow if delete pending
-                // FIXME - don't allow if FILE_DELETE_ON_CLOSE and file is mapped
+                if (CreateOptions & FILE_DELETE_ON_CLOSE) {
+                    // FIXME - don't allow if FILE_DELETE_ON_CLOSE and file is mapped
+                    // FIXME - don't allow if root directory
+                    // FIXME - don't allow if directory and not empty?
+                }
 
                 if (CreateDisposition == FILE_SUPERSEDE) {
                     up_write(&file_list_sem);
@@ -1597,7 +1647,7 @@ NTSTATUS muwine_init_unixroot(void) {
     us.Length = us.MaximumLength = sizeof(file_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)file_name;
 
-    file_type = muwine_add_object_type(&us, file_object_close, NULL,
+    file_type = muwine_add_object_type(&us, file_object_close, file_object_cleanup,
         STANDARD_RIGHTS_READ | FILE_READ_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE,
         STANDARD_RIGHTS_WRITE | FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | FILE_APPEND_DATA | SYNCHRONIZE,
         STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE | FILE_READ_ATTRIBUTES | FILE_EXECUTE,
