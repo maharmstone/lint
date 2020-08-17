@@ -537,9 +537,21 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             return STATUS_SUCCESS;
         }
 
-        case FileInternalInformation:
-            printk(KERN_INFO "unixfs_query_information: FIXME - FileInternalInformation\n");
-            return STATUS_INVALID_INFO_CLASS;
+        case FileInternalInformation: {
+            FILE_INTERNAL_INFORMATION* fii = (FILE_INTERNAL_INFORMATION*)FileInformation;
+
+            if (Length < sizeof(FILE_INTERNAL_INFORMATION))
+                return STATUS_BUFFER_TOO_SMALL;
+
+            if (!ufo->f->f_inode)
+                return STATUS_INTERNAL_ERROR;
+
+            fii->IndexNumber.QuadPart = ufo->f->f_inode->i_ino;
+
+            IoStatusBlock->Information = sizeof(FILE_INTERNAL_INFORMATION);
+
+            return STATUS_SUCCESS;
+        }
 
         case FileEaInformation:
             printk(KERN_INFO "unixfs_query_information: FIXME - FileEaInformation\n");

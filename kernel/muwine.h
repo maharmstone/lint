@@ -457,6 +457,10 @@ typedef struct {
 } FILE_NAME_INFORMATION;
 
 typedef struct {
+    LARGE_INTEGER IndexNumber;
+} FILE_INTERNAL_INFORMATION;
+
+typedef struct {
     BOOLEAN ReplaceIfExists;
     HANDLE RootDirectory;
     ULONG FileNameLength;
