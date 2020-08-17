@@ -305,11 +305,6 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
             return Status;
         }
 
-        if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
-            file->header.type->close(&file->header);
-
-        file = NULL;
-
         file_size = image_size;
     } else {
         obj = kzalloc(offsetof(section_object, sections), GFP_KERNEL);
@@ -537,13 +532,17 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
 
     flags = MAP_PRIVATE;
 
-    if (sect->file) {
+    if (sect->anon_file)
+        file = sect->anon_file;
+    else {
+        if (!sect->file)
+            return STATUS_INVALID_PARAMETER;
+
         file = sect->file->dev->get_filp(sect->file);
 
         if (!file)
             return STATUS_INVALID_PARAMETER;
-    } else
-        file = sect->anon_file;
+    }
 
     map = kmalloc(sizeof(section_map), GFP_KERNEL);
     if (!map)
@@ -619,6 +618,9 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     *ViewSize = len;
 
     down_write(&p->mapping_list_sem);
+
+    if (sect->file)
+        __sync_add_and_fetch(&sect->file->mapping_count, 1);
 
     le = p->mapping_list.next;
     while (le != &p->mapping_list) {
@@ -719,6 +721,9 @@ static NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
         return STATUS_INVALID_PARAMETER;
 
     vm_munmap(sm->address, sm->length);
+
+    if (((section_object*)sm->sect)->file)
+        __sync_add_and_fetch(&((section_object*)sm->sect)->file->mapping_count, 1);
 
     if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
         sm->sect->type->close(sm->sect);

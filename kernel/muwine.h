@@ -667,6 +667,7 @@ typedef struct {
     device* dev;
     loff_t query_dir_offset;
     UNICODE_STRING query_string;
+    unsigned int mapping_count;
 } file_object;
 
 NTSTATUS muwine_init_unixroot(void);

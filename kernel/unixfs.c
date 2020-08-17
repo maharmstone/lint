@@ -374,24 +374,33 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     // FIXME - if need to create new file, this should be done outside of lock
 
+    // FIXME - don't allow if FILE_DELETE_ON_CLOSE and root directory
+    // FIXME - don't allow if FILE_DELETE_ON_CLOSE and non-empty directory?
+
     down_write(&file_list_sem);
 
     if (name_exists) {
-        if (!(ShareAccess & FILE_SHARE_DELETE)) {
-            le = file_list.next;
-            while (le != &file_list) {
-                unixfs_file_object* ufo = list_entry(le, unixfs_file_object, list);
+        le = file_list.next;
+        while (le != &file_list) {
+            unixfs_file_object* ufo = list_entry(le, unixfs_file_object, list);
 
-                if (ufo->fileobj.options & FILE_DELETE_ON_CLOSE &&
-                    ufo->inode->inode == file->f_inode && ufo->f->f_path.dentry == file->f_path.dentry) {
+            if (ufo->inode->inode == file->f_inode && ufo->f->f_path.dentry == file->f_path.dentry) {
+                if (!(ShareAccess & FILE_SHARE_DELETE) && ufo->fileobj.options & FILE_DELETE_ON_CLOSE) {
                     up_write(&file_list_sem);
                     kfree(path);
                     filp_close(file, NULL);
                     return STATUS_DELETE_PENDING;
                 }
 
-                le = le->next;
+                if (CreateOptions & FILE_DELETE_ON_CLOSE && ufo->fileobj.mapping_count != 0) {
+                    up_write(&file_list_sem);
+                    kfree(path);
+                    filp_close(file, NULL);
+                    return STATUS_CANNOT_DELETE;
+                }
             }
+
+            le = le->next;
         }
 
         le = inode_list.next;
@@ -399,12 +408,6 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
             unixfs_inode* ui2 = list_entry(le, unixfs_inode, list);
 
             if (ui2->inode == file->f_inode) {
-                if (CreateOptions & FILE_DELETE_ON_CLOSE) {
-                    // FIXME - don't allow if FILE_DELETE_ON_CLOSE and file is mapped
-                    // FIXME - don't allow if root directory
-                    // FIXME - don't allow if directory and not empty?
-                }
-
                 if (CreateDisposition == FILE_SUPERSEDE) {
                     up_write(&file_list_sem);
                     kfree(path);
