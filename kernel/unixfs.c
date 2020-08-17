@@ -7,22 +7,39 @@
 #define SECTOR_SIZE 0x1000
 
 typedef struct {
+    struct list_head list;
+    struct inode* inode;
+    unsigned int refcount;
+} unixfs_inode;
+
+typedef struct {
     file_object fileobj;
     struct list_head list;
     struct file* f;
+    unixfs_inode* inode;
 } unixfs_file_object;
 
 static LIST_HEAD(file_list);
+static LIST_HEAD(inode_list);
 static DECLARE_RWSEM(file_list_sem);
 
 type_object* device_type = NULL;
 type_object* file_type = NULL;
+
+static void free_unixfs_inode(unixfs_inode* ui) {
+    if (__sync_sub_and_fetch(&ui->refcount, 1) != 0)
+        return;
+
+    list_del(&ui->list);
+    kfree(ui);
+}
 
 static void file_object_close(object_header* obj) {
     unixfs_file_object* f = (unixfs_file_object*)obj;
 
     down_write(&file_list_sem);
     list_del(&f->list);
+    free_unixfs_inode(f->inode);
     up_write(&file_list_sem);
 
     filp_close(f->f, NULL);
@@ -217,6 +234,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     bool name_exists;
     bool is_rw;
     ACCESS_MASK access;
+    unixfs_inode* ui = NULL;
 
     // FIXME - ADS
 
@@ -329,11 +347,14 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     down_write(&file_list_sem);
 
     if (name_exists) {
-        le = file_list.next;
-        while (le != &file_list) {
-            unixfs_file_object* f2 = list_entry(le, unixfs_file_object, list);
+        le = inode_list.next;
+        while (le != &inode_list) {
+            unixfs_inode* ui2 = list_entry(le, unixfs_inode, list);
 
-            if (f2->f->f_inode == file->f_inode) {
+            if (ui2->inode == file->f_inode) {
+                // FIXME - don't allow if delete pending
+                // FIXME - don't allow if FILE_DELETE_ON_CLOSE and file is mapped
+
                 if (CreateDisposition == FILE_SUPERSEDE) {
                     up_write(&file_list_sem);
                     kfree(path);
@@ -341,7 +362,8 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
                     return STATUS_CANNOT_DELETE;
                 }
 
-                break;
+                __sync_add_and_fetch(&ui2->refcount, 1);
+                ui = ui2;
             }
 
             le = le->next;
@@ -394,6 +416,21 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         // FIXME - change uid and gid
     }
 
+    if (!ui) {
+        ui = kmalloc(sizeof(unixfs_inode), GFP_KERNEL);
+
+        if (!ui) {
+            up_write(&file_list_sem);
+            kfree(path);
+            filp_close(file, NULL);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        ui->inode = file->f_inode;
+        ui->refcount = 1;
+        list_add(&ui->list, &inode_list);
+    }
+
     up_write(&file_list_sem);
 
     kfree(path);
@@ -403,8 +440,12 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
             CreateDisposition == FILE_OVERWRITE)) {
         int ret = vfs_truncate(&file->f_path, 0);
 
-        if (ret < 0)
+        if (ret < 0) {
+            down_write(&file_list_sem);
+            free_unixfs_inode(ui);
+            up_write(&file_list_sem);
             return muwine_error_to_ntstatus(ret);
+        }
     }
 
     // FIXME - if supersede, should get rid of xattrs etc.(?)
@@ -419,8 +460,12 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     // create file object (with path)
 
     obj = kzalloc(sizeof(unixfs_file_object), GFP_KERNEL);
-    if (!obj)
+    if (!obj) {
+        down_write(&file_list_sem);
+        free_unixfs_inode(ui);
+        up_write(&file_list_sem);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     obj->fileobj.header.refcount = 1;
     obj->fileobj.header.type = file_type;
@@ -435,6 +480,11 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
             file_type->header.type->close(&file_type->header);
 
         kfree(obj);
+
+        down_write(&file_list_sem);
+        free_unixfs_inode(ui);
+        up_write(&file_list_sem);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -445,6 +495,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     obj->fileobj.offset = 0;
     obj->fileobj.dev = dev;
     obj->fileobj.options = CreateOptions;
+    obj->inode = ui;
 
     __sync_add_and_fetch(&dev->header.refcount, 1);
 
@@ -459,6 +510,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     if (!NT_SUCCESS(Status)) {
         down_write(&file_list_sem);
         list_del(&obj->list);
+        free_unixfs_inode(ui);
         up_write(&file_list_sem);
 
         if (__sync_sub_and_fetch(&obj->fileobj.dev->header.refcount, 1) == 0)
