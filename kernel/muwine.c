@@ -1007,6 +1007,11 @@ static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
 
             list_del(&hand->list);
 
+            if (__sync_sub_and_fetch(&hand->object->handle_count, 1) == 0) {
+                if (hand->object->type->cleanup)
+                    hand->object->type->cleanup(hand->object);
+            }
+
             if (__sync_sub_and_fetch(&hand->object->refcount, 1) == 0)
                 hand->object->type->close(hand->object);
 
@@ -1026,6 +1031,7 @@ static void duplicate_handle(handle* old, handle** new) {
 
     h->object = old->object;
     h->object->refcount++;
+    h->object->handle_count++;
 
     h->number = old->number;
 

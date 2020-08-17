@@ -46,6 +46,8 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel, ACCESS_MA
 
     *h = (HANDLE)hand->number;
 
+    __sync_add_and_fetch(&obj->handle_count, 1);
+
     return STATUS_SUCCESS;
 }
 
@@ -136,6 +138,11 @@ NTSTATUS NtClose(HANDLE Handle) {
     if (!h)
         return STATUS_INVALID_HANDLE;
 
+    if (__sync_sub_and_fetch(&h->object->handle_count, 1) == 0) {
+        if (h->object->type->cleanup)
+            h->object->type->cleanup(h->object);
+    }
+
     if (__sync_sub_and_fetch(&h->object->refcount, 1) == 0)
         h->object->type->close(h->object);
 
@@ -156,6 +163,11 @@ void muwine_free_kernel_handles(void) {
         handle* hand = list_entry(kernel_handle_list.next, handle, list);
 
         list_del(&hand->list);
+
+        if (__sync_sub_and_fetch(&hand->object->handle_count, 1) == 0) {
+            if (hand->object->type->cleanup)
+                hand->object->type->cleanup(hand->object);
+        }
 
         if (__sync_sub_and_fetch(&hand->object->refcount, 1) == 0)
             hand->object->type->close(hand->object);

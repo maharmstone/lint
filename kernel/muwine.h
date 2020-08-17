@@ -219,6 +219,7 @@ typedef struct _type_object type_object;
 
 typedef struct _object_header {
     int refcount;
+    int handle_count;
     type_object* type;
     UNICODE_STRING path;
     spinlock_t path_lock;
@@ -702,11 +703,13 @@ typedef struct _device {
 } device;
 
 typedef void (*muwine_close_object)(struct _object_header* obj);
+typedef void (*muwine_cleanup_object)(struct _object_header* obj);
 
 typedef struct _type_object {
     object_header header;
     UNICODE_STRING name;
     muwine_close_object close;
+    muwine_cleanup_object cleanup;
     uint32_t generic_read;
     uint32_t generic_write;
     uint32_t generic_execute;
@@ -715,9 +718,10 @@ typedef struct _type_object {
 } type_object;
 
 void free_object(object_header* obj);
-type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close, uint32_t generic_read,
-                                    uint32_t generic_write, uint32_t generic_execute, uint32_t generic_all,
-                                    uint32_t valid);
+type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close,
+                                    muwine_cleanup_object cleanup, uint32_t generic_read,
+                                    uint32_t generic_write, uint32_t generic_execute,
+                                    uint32_t generic_all, uint32_t valid);
 void muwine_free_objs(void);
 NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,
                             bool* after_alloc);
