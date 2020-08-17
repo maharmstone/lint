@@ -1169,8 +1169,10 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
-                                       ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+static NTSTATUS unixfs_set_information(file_object* obj, ACCESS_MASK access,
+                                       PIO_STATUS_BLOCK IoStatusBlock,
+                                       PVOID FileInformation, ULONG Length,
+                                       FILE_INFORMATION_CLASS FileInformationClass) {
     switch (FileInformationClass) {
         case FileBasicInformation:
             printk(KERN_INFO "unixfs_set_information: FIXME - FileBasicInformation\n");
@@ -1192,9 +1194,20 @@ static NTSTATUS unixfs_set_information(file_object* obj, PIO_STATUS_BLOCK IoStat
             printk(KERN_INFO "unixfs_set_information: FIXME - FileLinkInformation\n");
             return STATUS_INVALID_INFO_CLASS;
 
-        case FileDispositionInformation:
-            printk(KERN_INFO "unixfs_set_information: FIXME - FileDispositionInformation\n");
-            return STATUS_INVALID_INFO_CLASS;
+        case FileDispositionInformation: {
+            unixfs_file_object* ufo = (unixfs_file_object*)obj;
+            FILE_DISPOSITION_INFORMATION* fdi = FileInformation;
+
+            if (Length < sizeof(FILE_DISPOSITION_INFORMATION))
+                return STATUS_INVALID_PARAMETER;
+
+            if (!(access & DELETE))
+                return STATUS_ACCESS_DENIED;
+
+            ufo->delete_pending = fdi->DeleteFile;
+
+            return STATUS_SUCCESS;
+        }
 
         case FilePositionInformation:
             printk(KERN_INFO "unixfs_set_information: FIXME - FilePositionInformation\n");

@@ -500,13 +500,13 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
 
         // pass device-relative filename to unixfs_set_information
 
-        Status = obj->dev->set_information(obj, IoStatusBlock, fri2, fri2len, FileInformationClass);
+        Status = obj->dev->set_information(obj, access, IoStatusBlock, fri2, fri2len, FileInformationClass);
 
         kfree(fri2);
 
         return Status;
     } else
-        return obj->dev->set_information(obj, IoStatusBlock, FileInformation, Length, FileInformationClass);
+        return obj->dev->set_information(obj, access, IoStatusBlock, FileInformation, Length, FileInformationClass);
 }
 
 NTSTATUS user_NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,

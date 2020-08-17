@@ -520,6 +520,10 @@ typedef struct {
 } FILE_NETWORK_OPEN_INFORMATION;
 
 typedef struct {
+    BOOLEAN DeleteFile;
+} FILE_DISPOSITION_INFORMATION;
+
+typedef struct {
     ULONG NextEntryOffset;
     ULONG FileIndex;
     LARGE_INTEGER CreationTime;
@@ -681,8 +685,8 @@ typedef NTSTATUS (*muwine_read)(file_object* obj, HANDLE Event, PIO_APC_ROUTINE 
 typedef NTSTATUS (*muwine_write)(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                                  PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                                  PULONG Key);
-typedef NTSTATUS (*muwine_set_information)(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
-                                           ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
+typedef NTSTATUS (*muwine_set_information)(file_object* obj, ACCESS_MASK access, PIO_STATUS_BLOCK IoStatusBlock,
+                                           PVOID FileInformation, ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
 typedef NTSTATUS (*muwine_query_directory)(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                                            PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                                            FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
