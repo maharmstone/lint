@@ -374,6 +374,8 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 #define FILE_EXISTS             0x00000004
 #define FILE_DOES_NOT_EXIST     0x00000005
 
+#define FILE_BYTE_ALIGNMENT             0x00000000
+
 typedef enum {
     FileDirectoryInformation = 1,
     FileFullDirectoryInformation,
@@ -484,6 +486,10 @@ typedef struct {
 typedef struct {
     ULONG Mode;
 } FILE_MODE_INFORMATION;
+
+typedef struct {
+    ULONG AlignmentRequirement;
+} FILE_ALIGNMENT_INFORMATION;
 
 typedef struct {
     LARGE_INTEGER CreationTime;

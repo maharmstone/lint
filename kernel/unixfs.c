@@ -675,6 +675,19 @@ static NTSTATUS fill_in_file_mode_information(unixfs_file_object* ufo,
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fill_in_file_alignment_information(FILE_ALIGNMENT_INFORMATION* fai,
+                                                   LONG* left) {
+    if (*left < sizeof(FILE_ALIGNMENT_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    // FIXME? Wine uses FILE_WORD_ALIGNMENT here
+    fai->AlignmentRequirement = FILE_BYTE_ALIGNMENT;
+
+    *left -= sizeof(FILE_ALIGNMENT_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, PIO_STATUS_BLOCK IoStatusBlock,
                                          PVOID FileInformation, ULONG Length,
                                          FILE_INFORMATION_CLASS FileInformationClass) {
@@ -725,6 +738,11 @@ static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, P
         case FileModeInformation:
             Status = fill_in_file_mode_information(ufo, (FILE_MODE_INFORMATION*)FileInformation,
                                                    &left);
+            break;
+
+        case FileAlignmentInformation:
+            Status = fill_in_file_alignment_information((FILE_ALIGNMENT_INFORMATION*)FileInformation,
+                                                        &left);
             break;
 
         case FileAllInformation:
