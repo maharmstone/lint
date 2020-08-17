@@ -544,7 +544,7 @@ static NTSTATUS fill_in_file_standard_information(unixfs_file_object* ufo,
     if (!ufo->f->f_inode)
         return STATUS_INTERNAL_ERROR;
 
-    fsi->EndOfFile.QuadPart = ufo->f->f_inode->i_size;
+    fsi->EndOfFile.QuadPart = S_ISREG(ufo->f->f_inode->i_mode) ? ufo->f->f_inode->i_size : 0;
     fsi->AllocationSize.QuadPart = (fsi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
     fsi->NumberOfLinks = ufo->f->f_inode->i_nlink;
     fsi->DeletePending = false; // FIXME
