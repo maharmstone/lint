@@ -836,12 +836,22 @@ NTSTATUS NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID 
 
 static NTSTATUS NtQueryFullAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
                                           FILE_NETWORK_OPEN_INFORMATION* FileInformation) {
-    printk(KERN_INFO "NtQueryFullAttributesFile(%px, %px): stub\n",
-           ObjectAttributes, FileInformation);
+    NTSTATUS Status;
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
 
-    // FIXME
+    Status = NtOpenFile(&h, FILE_READ_ATTRIBUTES, ObjectAttributes, &iosb,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
-    return STATUS_NOT_IMPLEMENTED;
+    Status = NtQueryInformationFile(h, &iosb, FileInformation,
+                                    sizeof(FILE_NETWORK_OPEN_INFORMATION),
+                                    FileNetworkOpenInformation);
+
+    NtClose(h);
+
+    return Status;
 }
 
 NTSTATUS user_NtQueryFullAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
