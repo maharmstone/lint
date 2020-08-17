@@ -442,14 +442,11 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     memcpy(&obj->fileobj.header.path.Buffer[dev->header.path.Length / sizeof(WCHAR)], us->Buffer, us->Length);
 
     obj->f = file;
-    obj->fileobj.flags = 0;
     obj->fileobj.offset = 0;
     obj->fileobj.dev = dev;
+    obj->fileobj.options = CreateOptions;
 
     __sync_add_and_fetch(&dev->header.refcount, 1);
-
-    if (CreateOptions & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
-        obj->fileobj.flags |= FO_SYNCHRONOUS_IO;
 
     down_write(&file_list_sem);
     list_add_tail(&obj->list, &file_list);
@@ -661,6 +658,23 @@ static NTSTATUS fill_in_file_access_information(ACCESS_MASK access,
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fill_in_file_mode_information(unixfs_file_object* ufo,
+                                              FILE_MODE_INFORMATION* fmi,
+                                              LONG* left) {
+    if (*left < sizeof(FILE_MODE_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    fmi->Mode = ufo->fileobj.options & (FILE_WRITE_THROUGH | FILE_SEQUENTIAL_ONLY |
+                                        FILE_NO_INTERMEDIATE_BUFFERING |
+                                        FILE_SYNCHRONOUS_IO_ALERT |
+                                        FILE_SYNCHRONOUS_IO_NONALERT |
+                                        FILE_DELETE_ON_CLOSE);
+
+    *left -= sizeof(FILE_MODE_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, PIO_STATUS_BLOCK IoStatusBlock,
                                          PVOID FileInformation, ULONG Length,
                                          FILE_INFORMATION_CLASS FileInformationClass) {
@@ -706,6 +720,11 @@ static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, P
             Status = fill_in_file_position_information(ufo,
                                                        (FILE_POSITION_INFORMATION*)FileInformation,
                                                        &left);
+            break;
+
+        case FileModeInformation:
+            Status = fill_in_file_mode_information(ufo, (FILE_MODE_INFORMATION*)FileInformation,
+                                                   &left);
             break;
 
         case FileAllInformation:
@@ -754,7 +773,7 @@ static NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcR
 
     if (ByteOffset)
         pos = ByteOffset->QuadPart;
-    else if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO)
+    else if (ufo->fileobj.options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
         pos = ufo->fileobj.offset;
     else
         return STATUS_INVALID_PARAMETER;
@@ -762,13 +781,13 @@ static NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcR
     read = kernel_read(ufo->f, Buffer, Length, &pos);
 
     if (read < 0) {
-        if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO && ByteOffset)
+        if (ufo->fileobj.options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT) && ByteOffset)
             ufo->fileobj.offset = ByteOffset->QuadPart;
 
         return muwine_error_to_ntstatus(read);
     }
 
-    if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO)
+    if (ufo->fileobj.options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
         ufo->fileobj.offset = pos;
 
     IoStatusBlock->Information = read;
@@ -793,7 +812,7 @@ static NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE Apc
 
     if (ByteOffset)
         pos = ByteOffset->QuadPart;
-    else if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO)
+    else if (ufo->fileobj.options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
         pos = ufo->fileobj.offset;
     else
         return STATUS_INVALID_PARAMETER;
@@ -801,13 +820,13 @@ static NTSTATUS unixfs_write(file_object* obj, HANDLE Event, PIO_APC_ROUTINE Apc
     written = kernel_write(ufo->f, Buffer, Length, &pos);
 
     if (written < 0) {
-        if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO && ByteOffset)
+        if (ufo->fileobj.options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT) && ByteOffset)
             ufo->fileobj.offset = ByteOffset->QuadPart;
 
         return muwine_error_to_ntstatus(written);
     }
 
-    if (ufo->fileobj.flags & FO_SYNCHRONOUS_IO)
+    if (ufo->fileobj.options & (FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT))
         ufo->fileobj.offset = pos;
 
     IoStatusBlock->Information = written;

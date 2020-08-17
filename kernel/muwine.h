@@ -349,8 +349,6 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 #define FILE_OPEN_NO_RECALL               0x00400000
 #define FILE_OPEN_FOR_FREE_SPACE_QUERY    0x00800000
 
-#define FO_SYNCHRONOUS_IO            0x00000002
-
 #define FILE_USE_FILE_POINTER_POSITION    0xfffffffe
 
 #define FILE_ATTRIBUTE_READONLY             0x00000001
@@ -482,6 +480,10 @@ typedef struct {
 typedef struct {
     ACCESS_MASK AccessFlags;
 } FILE_ACCESS_INFORMATION;
+
+typedef struct {
+    ULONG Mode;
+} FILE_MODE_INFORMATION;
 
 typedef struct {
     LARGE_INTEGER CreationTime;
@@ -632,7 +634,7 @@ void muwine_free_kernel_handles(void);
 // unixfs.c
 typedef struct {
     object_header header;
-    ULONG flags;
+    ULONG options;
     uint64_t offset;
     device* dev;
     loff_t query_dir_offset;
