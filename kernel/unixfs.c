@@ -688,6 +688,47 @@ static NTSTATUS fill_in_file_alignment_information(FILE_ALIGNMENT_INFORMATION* f
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fill_in_file_all_information(unixfs_file_object* ufo, ACCESS_MASK access,
+                                             FILE_ALL_INFORMATION* fai, LONG* left) {
+    NTSTATUS Status;
+
+    Status = fill_in_file_basic_information(ufo, &fai->BasicInformation, left);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = fill_in_file_standard_information(ufo, &fai->StandardInformation, left);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = fill_in_file_internal_information(ufo, &fai->InternalInformation, left);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = fill_in_file_ea_information(ufo, &fai->EaInformation, left);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = fill_in_file_access_information(access, &fai->AccessInformation, left);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = fill_in_file_position_information(ufo, &fai->PositionInformation, left);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = fill_in_file_mode_information(ufo, &fai->ModeInformation, left);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = fill_in_file_alignment_information(&fai->AlignmentInformation, left);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = fill_in_file_name_information(ufo, &fai->NameInformation, left);
+
+    return Status;
+}
+
 static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, PIO_STATUS_BLOCK IoStatusBlock,
                                          PVOID FileInformation, ULONG Length,
                                          FILE_INFORMATION_CLASS FileInformationClass) {
@@ -746,8 +787,10 @@ static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, P
             break;
 
         case FileAllInformation:
-            printk(KERN_INFO "unixfs_query_information: FIXME - FileAllInformation\n");
-            return STATUS_INVALID_INFO_CLASS;
+            Status = fill_in_file_all_information(ufo, access,
+                                                  (FILE_ALL_INFORMATION*)FileInformation,
+                                                  &left);
+            break;
 
         case FileEndOfFileInformation:
             Status = fill_in_file_eof_information(ufo,
