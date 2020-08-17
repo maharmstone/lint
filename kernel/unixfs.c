@@ -613,7 +613,7 @@ static NTSTATUS fill_in_file_eof_information(unixfs_file_object* ufo, FILE_END_O
     if (!ufo->f->f_inode)
         return STATUS_INTERNAL_ERROR;
 
-    feofi->EndOfFile.QuadPart = ufo->f->f_inode->i_size;
+    feofi->EndOfFile.QuadPart = S_ISREG(ufo->f->f_inode->i_mode) ? ufo->f->f_inode->i_size : 0;
 
     *left -= sizeof(FILE_END_OF_FILE_INFORMATION);
 
