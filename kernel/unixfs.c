@@ -492,105 +492,141 @@ static ULONG get_file_attributes(struct file* f) {
     return atts;
 }
 
+static NTSTATUS fill_in_file_basic_information(unixfs_file_object* ufo,
+                                               FILE_BASIC_INFORMATION* fbi, LONG* left) {
+    if (*left < sizeof(FILE_BASIC_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    if (!ufo->f->f_inode)
+        return STATUS_INTERNAL_ERROR;
+
+    fbi->CreationTime.QuadPart = 0; // FIXME?
+    fbi->LastAccessTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_atime);
+    fbi->LastWriteTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_mtime);
+    fbi->ChangeTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_ctime);
+    fbi->FileAttributes = get_file_attributes(ufo->f);
+
+    *left -= sizeof(FILE_BASIC_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS fill_in_file_standard_information(unixfs_file_object* ufo,
+                                                  FILE_STANDARD_INFORMATION* fsi, LONG* left) {
+    if (*left < sizeof(FILE_STANDARD_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    if (!ufo->f->f_inode)
+        return STATUS_INTERNAL_ERROR;
+
+    fsi->EndOfFile.QuadPart = ufo->f->f_inode->i_size;
+    fsi->AllocationSize.QuadPart = (fsi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
+    fsi->NumberOfLinks = ufo->f->f_inode->i_nlink;
+    fsi->DeletePending = false; // FIXME
+    fsi->Directory = false; // FIXME
+
+    *left -= sizeof(FILE_STANDARD_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS fill_in_file_internal_information(unixfs_file_object* ufo,
+                                                  FILE_INTERNAL_INFORMATION* fii, LONG* left) {
+    if (*left < sizeof(FILE_INTERNAL_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    if (!ufo->f->f_inode)
+        return STATUS_INTERNAL_ERROR;
+
+    fii->IndexNumber.QuadPart = ufo->f->f_inode->i_ino;
+
+    *left -= sizeof(FILE_INTERNAL_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS fill_in_file_name_information(unixfs_file_object* ufo, FILE_NAME_INFORMATION* fni,
+                                              LONG* left) {
+    ULONG name_len, dev_name_len;
+
+    if (*left < offsetof(FILE_NAME_INFORMATION, FileName))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    name_len = *left - offsetof(FILE_NAME_INFORMATION, FileName);
+
+    // FIXME - handle fake symlinked drives, like C:
+
+    spin_lock(&ufo->fileobj.dev->header.path_lock);
+    dev_name_len = ufo->fileobj.dev->header.path.Length;
+    spin_unlock(&ufo->fileobj.dev->header.path_lock);
+
+    spin_lock(&ufo->fileobj.header.path_lock);
+
+    fni->FileNameLength = ufo->fileobj.header.path.Length - dev_name_len;
+
+    if (name_len < fni->FileNameLength) {
+        memcpy(fni->FileName, ufo->fileobj.header.path.Buffer + (dev_name_len / sizeof(WCHAR)), name_len);
+        spin_unlock(&ufo->fileobj.header.path_lock);
+
+        *left -= offsetof(FILE_NAME_INFORMATION, FileName) + name_len;
+        return STATUS_BUFFER_OVERFLOW;
+    }
+
+    memcpy(fni->FileName, ufo->fileobj.header.path.Buffer + (dev_name_len / sizeof(WCHAR)), fni->FileNameLength);
+    spin_unlock(&ufo->fileobj.header.path_lock);
+
+    *left -= offsetof(FILE_NAME_INFORMATION, FileName) + fni->FileNameLength;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS fill_in_file_eof_information(unixfs_file_object* ufo, FILE_END_OF_FILE_INFORMATION* feofi,
+                                             LONG* left) {
+    if (*left < sizeof(FILE_END_OF_FILE_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    if (!ufo->f->f_inode)
+        return STATUS_INTERNAL_ERROR;
+
+    feofi->EndOfFile.QuadPart = ufo->f->f_inode->i_size;
+
+    *left -= sizeof(FILE_END_OF_FILE_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                          ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    NTSTATUS Status;
+    LONG left = Length;
     unixfs_file_object* ufo = (unixfs_file_object*)obj;
 
     switch (FileInformationClass) {
-        case FileBasicInformation: {
-            FILE_BASIC_INFORMATION* fbi = (FILE_BASIC_INFORMATION*)FileInformation;
+        case FileBasicInformation:
+            Status = fill_in_file_basic_information(ufo, (FILE_BASIC_INFORMATION*)FileInformation,
+                                                    &left);
+            break;
 
-            if (Length < sizeof(FILE_BASIC_INFORMATION))
-                return STATUS_BUFFER_TOO_SMALL;
+        case FileStandardInformation:
+            Status = fill_in_file_standard_information(ufo,
+                                                       (FILE_STANDARD_INFORMATION*)FileInformation,
+                                                       &left);
+            break;
 
-            if (!ufo->f->f_inode)
-                return STATUS_INTERNAL_ERROR;
-
-            fbi->CreationTime.QuadPart = 0; // FIXME?
-            fbi->LastAccessTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_atime);
-            fbi->LastWriteTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_mtime);
-            fbi->ChangeTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_ctime);
-            fbi->FileAttributes = get_file_attributes(ufo->f);
-
-            IoStatusBlock->Information = sizeof(FILE_BASIC_INFORMATION);
-
-            return STATUS_SUCCESS;
-        }
-
-        case FileStandardInformation: {
-            FILE_STANDARD_INFORMATION* fsi = (FILE_STANDARD_INFORMATION*)FileInformation;
-
-            if (Length < sizeof(FILE_STANDARD_INFORMATION))
-                return STATUS_BUFFER_TOO_SMALL;
-
-            if (!ufo->f->f_inode)
-                return STATUS_INTERNAL_ERROR;
-
-            fsi->EndOfFile.QuadPart = ufo->f->f_inode->i_size;
-            fsi->AllocationSize.QuadPart = (fsi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
-            fsi->NumberOfLinks = ufo->f->f_inode->i_nlink;
-            fsi->DeletePending = false; // FIXME
-            fsi->Directory = false; // FIXME
-
-            IoStatusBlock->Information = sizeof(FILE_STANDARD_INFORMATION);
-
-            return STATUS_SUCCESS;
-        }
-
-        case FileInternalInformation: {
-            FILE_INTERNAL_INFORMATION* fii = (FILE_INTERNAL_INFORMATION*)FileInformation;
-
-            if (Length < sizeof(FILE_INTERNAL_INFORMATION))
-                return STATUS_BUFFER_TOO_SMALL;
-
-            if (!ufo->f->f_inode)
-                return STATUS_INTERNAL_ERROR;
-
-            fii->IndexNumber.QuadPart = ufo->f->f_inode->i_ino;
-
-            IoStatusBlock->Information = sizeof(FILE_INTERNAL_INFORMATION);
-
-            return STATUS_SUCCESS;
-        }
+        case FileInternalInformation:
+            Status = fill_in_file_internal_information(ufo,
+                                                       (FILE_INTERNAL_INFORMATION*)FileInformation,
+                                                       &left);
+            break;
 
         case FileEaInformation:
             printk(KERN_INFO "unixfs_query_information: FIXME - FileEaInformation\n");
             return STATUS_INVALID_INFO_CLASS;
 
-        case FileNameInformation: {
-            FILE_NAME_INFORMATION* fni = (FILE_NAME_INFORMATION*)FileInformation;
-            ULONG name_len, dev_name_len;
-
-            if (Length < offsetof(FILE_NAME_INFORMATION, FileName))
-                return STATUS_BUFFER_TOO_SMALL;
-
-            name_len = Length - offsetof(FILE_NAME_INFORMATION, FileName);
-
-            // FIXME - handle fake symlinked drives, like C:
-
-            spin_lock(&ufo->fileobj.dev->header.path_lock);
-            dev_name_len = ufo->fileobj.dev->header.path.Length;
-            spin_unlock(&ufo->fileobj.dev->header.path_lock);
-
-            spin_lock(&ufo->fileobj.header.path_lock);
-
-            fni->FileNameLength = ufo->fileobj.header.path.Length - dev_name_len;
-
-            if (name_len < fni->FileNameLength) {
-                memcpy(fni->FileName, ufo->fileobj.header.path.Buffer + (dev_name_len / sizeof(WCHAR)), name_len);
-                spin_unlock(&ufo->fileobj.header.path_lock);
-
-                IoStatusBlock->Information = offsetof(FILE_NAME_INFORMATION, FileName) + name_len;
-                return STATUS_BUFFER_OVERFLOW;
-            }
-
-            memcpy(fni->FileName, ufo->fileobj.header.path.Buffer + (dev_name_len / sizeof(WCHAR)), fni->FileNameLength);
-            spin_unlock(&ufo->fileobj.header.path_lock);
-
-            IoStatusBlock->Information = offsetof(FILE_NAME_INFORMATION, FileName) + fni->FileNameLength;
-
-            return STATUS_SUCCESS;
-        }
+        case FileNameInformation:
+            Status = fill_in_file_name_information(ufo, (FILE_NAME_INFORMATION*)FileInformation,
+                                                   &left);
+            break;
 
         case FilePositionInformation:
             printk(KERN_INFO "unixfs_query_information: FIXME - FilePositionInformation\n");
@@ -600,21 +636,11 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             printk(KERN_INFO "unixfs_query_information: FIXME - FileAllInformation\n");
             return STATUS_INVALID_INFO_CLASS;
 
-        case FileEndOfFileInformation: {
-            FILE_END_OF_FILE_INFORMATION* feofi = (FILE_END_OF_FILE_INFORMATION*)FileInformation;
-
-            if (Length < sizeof(FILE_END_OF_FILE_INFORMATION))
-                return STATUS_BUFFER_TOO_SMALL;
-
-            if (!ufo->f->f_inode)
-                return STATUS_INTERNAL_ERROR;
-
-            feofi->EndOfFile.QuadPart = ufo->f->f_inode->i_size;
-
-            IoStatusBlock->Information = sizeof(FILE_END_OF_FILE_INFORMATION);
-
-            return STATUS_SUCCESS;
-        }
+        case FileEndOfFileInformation:
+            Status = fill_in_file_eof_information(ufo,
+                                                  (FILE_END_OF_FILE_INFORMATION*)FileInformation,
+                                                  &left);
+            break;
 
         case FileNetworkOpenInformation:
             printk(KERN_INFO "unixfs_query_information: FIXME - FileNetworkOpenInformation\n");
@@ -631,6 +657,10 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             return STATUS_INVALID_INFO_CLASS;
         }
     }
+
+    IoStatusBlock->Information = Length - left;
+
+    return Status;
 }
 
 static NTSTATUS unixfs_read(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
