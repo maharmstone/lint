@@ -59,7 +59,7 @@ static struct muwine_func funcs[] = {
     { NtUnlockFile, 5 },
     { NtDeleteFile, 1 },
     { NtFlushBuffersFile, 2 },
-    { NtQueryAttributesFile, 2 },
+    { user_NtQueryAttributesFile, 2 },
     { NtQueryEaFile, 9 },
     { NtQueryFullAttributesFile, 2 },
     { NtSetEaFile, 4 },

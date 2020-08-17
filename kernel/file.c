@@ -768,13 +768,48 @@ NTSTATUS NtFlushBuffersFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
-                               FILE_BASIC_INFORMATION* FileInformation) {
+static NTSTATUS NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
+                                      FILE_BASIC_INFORMATION* FileInformation) {
     printk(KERN_INFO "NtQueryAttributesFile(%px, %px): stub\n", ObjectAttributes, FileInformation);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
+                                    FILE_BASIC_INFORMATION* FileInformation) {
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+    FILE_BASIC_INFORMATION fbi;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtQueryAttributesFile(&oa, &fbi);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (copy_to_user(FileInformation, &fbi, sizeof(FILE_BASIC_INFORMATION)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,

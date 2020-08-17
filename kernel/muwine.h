@@ -625,8 +625,8 @@ NTSTATUS NtUnlockFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_
                       PLARGE_INTEGER Length, ULONG Key);
 NTSTATUS NtDeleteFile(POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtFlushBuffersFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock);
-NTSTATUS NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
-                               FILE_BASIC_INFORMATION* FileInformation);
+NTSTATUS user_NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
+                                    FILE_BASIC_INFORMATION* FileInformation);
 NTSTATUS NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                        ULONG Length, BOOLEAN ReturnSingleEntry, PVOID EaList, ULONG EaListLength,
                        PULONG EaIndex, BOOLEAN RestartScan);
