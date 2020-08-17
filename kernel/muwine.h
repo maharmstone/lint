@@ -465,6 +465,10 @@ typedef struct {
 } FILE_EA_INFORMATION;
 
 typedef struct {
+    LARGE_INTEGER CurrentByteOffset;
+} FILE_POSITION_INFORMATION;
+
+typedef struct {
     BOOLEAN ReplaceIfExists;
     HANDLE RootDirectory;
     ULONG FileNameLength;

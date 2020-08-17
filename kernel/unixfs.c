@@ -607,6 +607,19 @@ static NTSTATUS fill_in_file_ea_information(unixfs_file_object* ufo, FILE_EA_INF
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS fill_in_file_position_information(unixfs_file_object* ufo,
+                                                  FILE_POSITION_INFORMATION* fpi,
+                                                  LONG* left) {
+    if (*left < sizeof(FILE_POSITION_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    fpi->CurrentByteOffset.QuadPart = ufo->fileobj.offset;
+
+    *left -= sizeof(FILE_POSITION_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                          ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
     NTSTATUS Status;
@@ -642,8 +655,10 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
             break;
 
         case FilePositionInformation:
-            printk(KERN_INFO "unixfs_query_information: FIXME - FilePositionInformation\n");
-            return STATUS_INVALID_INFO_CLASS;
+            Status = fill_in_file_position_information(ufo,
+                                                       (FILE_POSITION_INFORMATION*)FileInformation,
+                                                       &left);
+            break;
 
         case FileAllInformation:
             printk(KERN_INFO "unixfs_query_information: FIXME - FileAllInformation\n");
