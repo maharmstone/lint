@@ -729,6 +729,25 @@ static NTSTATUS fill_in_file_all_information(unixfs_file_object* ufo, ACCESS_MAS
     return Status;
 }
 
+static NTSTATUS fill_in_file_network_open_information(unixfs_file_object* ufo,
+                                                      FILE_NETWORK_OPEN_INFORMATION* fnoi,
+                                                      LONG* left) {
+    if (*left < sizeof(FILE_NETWORK_OPEN_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    fnoi->CreationTime.QuadPart = 0; // FIXME?
+    fnoi->LastAccessTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_atime);
+    fnoi->LastWriteTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_mtime);
+    fnoi->ChangeTime.QuadPart = unix_time_to_win(&ufo->f->f_inode->i_ctime);
+    fnoi->EndOfFile.QuadPart = S_ISREG(ufo->f->f_inode->i_mode) ? ufo->f->f_inode->i_size : 0;
+    fnoi->AllocationSize.QuadPart = (fnoi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
+    fnoi->FileAttributes = get_file_attributes(ufo->f);
+
+    *left -= sizeof(FILE_NETWORK_OPEN_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, PIO_STATUS_BLOCK IoStatusBlock,
                                          PVOID FileInformation, ULONG Length,
                                          FILE_INFORMATION_CLASS FileInformationClass) {
@@ -799,8 +818,10 @@ static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, P
             break;
 
         case FileNetworkOpenInformation:
-            printk(KERN_INFO "unixfs_query_information: FIXME - FileNetworkOpenInformation\n");
-            return STATUS_INVALID_INFO_CLASS;
+            Status = fill_in_file_network_open_information(ufo,
+                                                           (FILE_NETWORK_OPEN_INFORMATION*)FileInformation,
+                                                           &left);
+            break;
 
         case FileAttributeTagInformation:
             printk(KERN_INFO "unixfs_query_information: FIXME - FileAttributeTagInformation\n");
