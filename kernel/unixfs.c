@@ -194,6 +194,15 @@ static NTSTATUS open_file(const char* fn, struct file** ret, bool is_rw) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS access_check(ACCESS_MASK desired, ACCESS_MASK* granted) {
+    // FIXME - compare process token with SD, and return STATUS_ACCESS_DENIED if necessary
+    // FIXME - handle MAXIMUM_ALLOWED
+
+    *granted = desired;
+
+    return STATUS_SUCCESS;
+}
+
 static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK DesiredAccess, const UNICODE_STRING* us,
                                    PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                                    ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
@@ -207,6 +216,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     struct file* file;
     bool name_exists;
     bool is_rw;
+    ACCESS_MASK access;
 
     // FIXME - ADS
 
@@ -260,12 +270,17 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     path[as_len] = 0;
 
-    is_rw = DesiredAccess & (WRITE_OWNER | WRITE_DAC | FILE_WRITE_ATTRIBUTES | FILE_WRITE_DATA | DELETE |
-                             FILE_APPEND_DATA | FILE_WRITE_EA | FILE_DELETE_CHILD);
+    access = DesiredAccess;
+
+    if (DesiredAccess & MAXIMUM_ALLOWED)
+        access |= file_type->valid;
+
+    is_rw = access & (WRITE_OWNER | WRITE_DAC | FILE_WRITE_ATTRIBUTES | FILE_WRITE_DATA | DELETE |
+                      FILE_APPEND_DATA | FILE_WRITE_EA | FILE_DELETE_CHILD);
 
     Status = open_file(path, &file, is_rw);
 
-    // FIXME - check token against SD for DesiredAccess (including MAXIMUM_ALLOWED)
+    // FIXME - if MAXIMUM_ALLOWED and FS is readonly, strip out write flags and try again
 
     if (NT_SUCCESS(Status) && CreateDisposition == FILE_CREATE) {
         kfree(path);
@@ -295,6 +310,17 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         filp_close(file, NULL);
         return STATUS_FILE_IS_A_DIRECTORY;
     }
+
+    if (name_exists) {
+        Status = access_check(access, &access);
+
+        if (!NT_SUCCESS(Status)) {
+            kfree(path);
+            filp_close(file, NULL);
+            return Status;
+        }
+    } else
+        access = DesiredAccess;
 
     // loop through list of FCBs, and increase refcount if found; otherwise, do filp_open
 
@@ -349,6 +375,8 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
         if (!(CreateOptions & FILE_DIRECTORY_FILE))
             flags |= O_RDWR;
+
+        // FIXME - check against parent's SD that user has permission for this
 
         new_file = file_open_root(file->f_path.dentry, file->f_path.mnt,
                                   fn, flags, mode);
@@ -429,7 +457,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     // return handle
 
-    Status = muwine_add_handle(&obj->fileobj.header, FileHandle, oa_attributes & OBJ_KERNEL_HANDLE, 0);
+    Status = muwine_add_handle(&obj->fileobj.header, FileHandle, oa_attributes & OBJ_KERNEL_HANDLE, access);
 
     if (!NT_SUCCESS(Status)) {
         down_write(&file_list_sem);
@@ -620,8 +648,22 @@ static NTSTATUS fill_in_file_position_information(unixfs_file_object* ufo,
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
-                                         ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+static NTSTATUS fill_in_file_access_information(ACCESS_MASK access,
+                                                FILE_ACCESS_INFORMATION* fai,
+                                                LONG* left) {
+    if (*left < sizeof(FILE_ACCESS_INFORMATION))
+        return STATUS_BUFFER_TOO_SMALL;
+
+    fai->AccessFlags = access;
+
+    *left -= sizeof(FILE_ACCESS_INFORMATION);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS unixfs_query_information(file_object* obj, ACCESS_MASK access, PIO_STATUS_BLOCK IoStatusBlock,
+                                         PVOID FileInformation, ULONG Length,
+                                         FILE_INFORMATION_CLASS FileInformationClass) {
     NTSTATUS Status;
     LONG left = Length;
     unixfs_file_object* ufo = (unixfs_file_object*)obj;
@@ -647,6 +689,12 @@ static NTSTATUS unixfs_query_information(file_object* obj, PIO_STATUS_BLOCK IoSt
         case FileEaInformation:
             Status = fill_in_file_ea_information(ufo, (FILE_EA_INFORMATION*)FileInformation,
                                                  &left);
+            break;
+
+        case FileAccessInformation:
+            Status = fill_in_file_access_information(access,
+                                                     (FILE_ACCESS_INFORMATION*)FileInformation,
+                                                     &left);
             break;
 
         case FileNameInformation:

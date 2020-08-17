@@ -307,8 +307,8 @@ NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBloc
     if (!obj->dev->query_information)
         return STATUS_NOT_IMPLEMENTED;
 
-    return obj->dev->query_information(obj, IoStatusBlock, FileInformation, Length,
-                                       FileInformationClass);
+    return obj->dev->query_information(obj, access, IoStatusBlock, FileInformation,
+                                       Length, FileInformationClass);
 }
 
 NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,

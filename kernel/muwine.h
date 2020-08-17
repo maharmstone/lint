@@ -480,6 +480,10 @@ typedef struct {
 } FILE_END_OF_FILE_INFORMATION;
 
 typedef struct {
+    ACCESS_MASK AccessFlags;
+} FILE_ACCESS_INFORMATION;
+
+typedef struct {
     LARGE_INTEGER CreationTime;
     LARGE_INTEGER LastAccessTime;
     LARGE_INTEGER LastWriteTime;
@@ -642,8 +646,9 @@ typedef NTSTATUS (*muwine_create)(device* dev, PHANDLE FileHandle, ACCESS_MASK D
                                   PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                                   ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
                                   PVOID EaBuffer, ULONG EaLength, ULONG oa_attributes);
-typedef NTSTATUS (*muwine_query_information)(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock,
-                                             PVOID FileInformation, ULONG Length, FILE_INFORMATION_CLASS FileInformationClass);
+typedef NTSTATUS (*muwine_query_information)(file_object* obj, ACCESS_MASK access,
+                                             PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                             FILE_INFORMATION_CLASS FileInformationClass);
 typedef NTSTATUS (*muwine_read)(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                                 PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                                 PULONG Key);
