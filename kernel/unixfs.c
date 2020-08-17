@@ -423,13 +423,15 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         }
     } else {
         struct file* new_file;
-        umode_t mode = 0644;
+        umode_t mode;
         unsigned int pos = as_len - 1;
         const char* fn = path;
         unsigned int flags;
 
         if (CreateOptions & FILE_DIRECTORY_FILE)
-            mode |= S_IFDIR;
+            mode = S_IFDIR | 0755;
+        else
+            mode = 0644;
 
         while (pos > 0) {
             if (path[pos] == '/') {
@@ -446,10 +448,35 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
             return STATUS_MEDIA_WRITE_PROTECTED;
         }
 
-        flags = O_CREAT | O_EXCL;
+        if (CreateOptions & FILE_DIRECTORY_FILE) {
+            int ret;
+            struct dentry* new_dentry;
 
-        if (!(CreateOptions & FILE_DIRECTORY_FILE))
-            flags |= O_RDWR;
+            new_dentry = d_alloc_name(file_dentry(file), fn);
+            if (!new_dentry) {
+                up_write(&file_list_sem);
+                kfree(path);
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+
+            down_write(&file->f_inode->i_rwsem);
+            ret = vfs_mkdir(file->f_inode, new_dentry, mode);
+            up_write(&file->f_inode->i_rwsem);
+
+            if (ret < 0) {
+                up_write(&file_list_sem);
+                d_invalidate(new_dentry);
+                kfree(path);
+                return muwine_error_to_ntstatus(ret);
+            }
+
+            d_invalidate(new_dentry);
+        }
+
+        if (CreateOptions & FILE_DIRECTORY_FILE)
+            flags = O_DIRECTORY;
+        else
+            flags = O_CREAT | O_EXCL | O_RDWR;
 
         // FIXME - check against parent's SD that user has permission for this
 
