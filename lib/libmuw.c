@@ -800,3 +800,24 @@ NTSTATUS __stdcall NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTSETEAFILE, args);
 }
+
+NTSTATUS __stdcall NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                  POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                                  PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
+                                  BOOLEAN CreateSuspended) {
+    uintptr_t args[] = {
+        8,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)ClientId,
+        (uintptr_t)ThreadContext,
+        (uintptr_t)InitialTeb,
+        (uintptr_t)CreateSuspended
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATETHREAD, args);
+}
