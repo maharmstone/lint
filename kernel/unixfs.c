@@ -548,7 +548,7 @@ static NTSTATUS fill_in_file_standard_information(unixfs_file_object* ufo,
     fsi->AllocationSize.QuadPart = (fsi->EndOfFile.QuadPart + SECTOR_SIZE - 1) & ~(SECTOR_SIZE - 1);
     fsi->NumberOfLinks = ufo->f->f_inode->i_nlink;
     fsi->DeletePending = false; // FIXME
-    fsi->Directory = false; // FIXME
+    fsi->Directory = S_ISDIR(ufo->f->f_inode->i_mode);
 
     *left -= sizeof(FILE_STANDARD_INFORMATION);
 
