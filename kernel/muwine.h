@@ -634,8 +634,8 @@ NTSTATUS user_NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
 NTSTATUS NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                        ULONG Length, BOOLEAN ReturnSingleEntry, PVOID EaList, ULONG EaListLength,
                        PULONG EaIndex, BOOLEAN RestartScan);
-NTSTATUS NtQueryFullAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
-                                   FILE_NETWORK_OPEN_INFORMATION* FileInformation);
+NTSTATUS user_NtQueryFullAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
+                                        FILE_NETWORK_OPEN_INFORMATION* FileInformation);
 NTSTATUS NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                      ULONG Length);
 
