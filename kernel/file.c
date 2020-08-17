@@ -770,11 +770,21 @@ NTSTATUS NtFlushBuffersFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock) {
 
 static NTSTATUS NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
                                       FILE_BASIC_INFORMATION* FileInformation) {
-    printk(KERN_INFO "NtQueryAttributesFile(%px, %px): stub\n", ObjectAttributes, FileInformation);
+    NTSTATUS Status;
+    HANDLE h;
+    IO_STATUS_BLOCK iosb;
 
-    // FIXME
+    Status = NtOpenFile(&h, FILE_READ_ATTRIBUTES, ObjectAttributes, &iosb,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
-    return STATUS_NOT_IMPLEMENTED;
+    Status = NtQueryInformationFile(h, &iosb, FileInformation, sizeof(FILE_BASIC_INFORMATION),
+                                    FileBasicInformation);
+
+    NtClose(h);
+
+    return Status;
 }
 
 NTSTATUS user_NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,

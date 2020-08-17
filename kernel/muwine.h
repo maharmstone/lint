@@ -376,6 +376,10 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 
 #define FILE_BYTE_ALIGNMENT             0x00000000
 
+#define FILE_SHARE_READ         0x00000001
+#define FILE_SHARE_WRITE        0x00000002
+#define FILE_SHARE_DELETE       0x00000004
+
 typedef enum {
     FileDirectoryInformation = 1,
     FileFullDirectoryInformation,
