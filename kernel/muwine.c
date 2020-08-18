@@ -63,7 +63,7 @@ static struct muwine_func funcs[] = {
     { NtQueryEaFile, 9 },
     { user_NtQueryFullAttributesFile, 2 },
     { NtSetEaFile, 4 },
-    { NtCreateThread, 8 },
+    { user_NtCreateThread, 8 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)
