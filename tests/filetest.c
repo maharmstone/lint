@@ -24,6 +24,12 @@ NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle
                                       SIZE_T CommitSize, const LARGE_INTEGER* SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
                                       ULONG AllocationType, ULONG Win32Protect);
 NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
+
+NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
+                                        PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
+                                        FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
+                                        PUNICODE_STRING FileName, BOOLEAN RestartScan);
+
 #endif
 
 #define STATUS_NO_SUCH_FILE                 (NTSTATUS)0xc000000f
@@ -59,7 +65,7 @@ static void open_file(const WCHAR* s) {
     oa.SecurityQualityOfService = NULL;
 
     Status = NtOpenFile(&h, 0, &oa, &iosb, 0, 0);
-    printf("NtOpenFile returned %08x\n", Status);
+    printf("NtOpenFile returned %08x\n", (uint32_t)Status);
 }
 #endif
 
@@ -154,7 +160,7 @@ static void test_query_dir() {
 
     Status = NtOpenFile(&h, 0, &oa, &iosb, 0, FILE_DIRECTORY_FILE);
     if (!NT_SUCCESS(Status)) {
-        fprintf(stderr, "NtOpenFile returned %08x\n", Status);
+        fprintf(stderr, "NtOpenFile returned %08x\n", (uint32_t)Status);
         return;
     }
 
@@ -166,7 +172,7 @@ static void test_query_dir() {
 
         if (!NT_SUCCESS(Status)) {
             if (Status != STATUS_NO_MORE_FILES)
-                fprintf(stderr, "NtQueryDirectoryFile returned %08x\n", Status);
+                fprintf(stderr, "NtQueryDirectoryFile returned %08x\n", (uint32_t)Status);
 
             break;
         }
