@@ -35,3 +35,21 @@ endif()
 if(NOT MSVC)
 	target_compile_options(filetest PUBLIC -Wall -Werror=cast-function-type -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra -Wconversion -Werror=implicit-function-declaration)
 endif()
+
+# --------------------
+
+add_executable(threadtest threadtest.c)
+
+if(WIN32)
+    target_link_libraries(threadtest ntdll)
+else()
+    target_link_libraries(threadtest muw)
+endif()
+
+if(NOT WIN32)
+    target_compile_options(threadtest PUBLIC -fshort-wchar)
+endif()
+
+if(NOT MSVC)
+	target_compile_options(threadtest PUBLIC -Wall -Werror=cast-function-type -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra -Wconversion -Werror=implicit-function-declaration)
+endif()
