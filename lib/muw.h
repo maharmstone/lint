@@ -368,11 +368,11 @@ typedef struct {
 } CLIENT_ID, *PCLIENT_ID;
 
 typedef struct {
+    PVOID PreviousStackBase;
+    PVOID PreviousStackLimit;
     PVOID StackBase;
     PVOID StackLimit;
-    PVOID StackCommit;
-    PVOID StackCommitMax;
-    PVOID StackReserved;
+    PVOID AllocatedStackBase;
 } INITIAL_TEB, *PINITIAL_TEB;
 
 typedef struct __attribute__((aligned(16))) {
