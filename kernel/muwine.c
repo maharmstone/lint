@@ -1144,6 +1144,8 @@ static int init_kretprobes(void) {
         return ret;
     }
 
+    __do_fork = (func_fork)fork_kretprobe.kp.addr;
+
     exit_kretprobe.kp.symbol_name = "do_group_exit";
 
     ret = register_kretprobe(&exit_kretprobe);

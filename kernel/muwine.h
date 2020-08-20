@@ -790,6 +790,9 @@ NTSTATUS user_NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZ
 NTSTATUS muwine_init_sections(void);
 
 // thread.c
+typedef long (*func_fork)(struct kernel_clone_args *kargs);
+extern func_fork __do_fork;
+
 typedef struct {
     HANDLE UniqueProcess;
     HANDLE UniqueThread;
