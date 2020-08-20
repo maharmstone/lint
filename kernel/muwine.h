@@ -902,3 +902,4 @@ NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                              POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
                              PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
                              BOOLEAN CreateSuspended);
+NTSTATUS NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);

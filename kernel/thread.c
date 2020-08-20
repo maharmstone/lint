@@ -66,3 +66,11 @@ NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     return Status;
 }
+
+NTSTATUS NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
+    printk(KERN_INFO "NtTerminateThread(%lx, %x): stub\n", (uintptr_t)ThreadHandle, ExitStatus);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
