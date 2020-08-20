@@ -583,6 +583,7 @@ NTSTATUS __stdcall NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAcces
                                   POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
                                   PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
                                   BOOLEAN CreateSuspended);
+NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 
 #ifdef __cplusplus
 }

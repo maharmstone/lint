@@ -821,3 +821,15 @@ NTSTATUS __stdcall NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAcces
 
     return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATETHREAD, args);
 }
+
+NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)ExitStatus
+    };
+
+    init_muwine();
+
+    return ioctl(muwine_fd, MUWINE_IOCTL_NTTERMINATETHREAD, args);
+}
