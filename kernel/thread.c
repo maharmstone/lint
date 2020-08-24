@@ -225,11 +225,14 @@ NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 }
 
 static NTSTATUS NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
-    printk(KERN_INFO "NtTerminateThread(%lx, %x): stub\n", (uintptr_t)ThreadHandle, ExitStatus);
+    if (ThreadHandle != NtCurrentThread()) {
+        printk("NtTerminateThread: FIXME - support thread handles\n"); // FIXME
+        return STATUS_NOT_IMPLEMENTED;
+    }
 
-    // FIXME
+    do_exit(ExitStatus);
 
-    return STATUS_NOT_IMPLEMENTED;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
