@@ -1144,8 +1144,6 @@ static int init_kretprobes(void) {
         return ret;
     }
 
-    __do_fork = (func_fork)fork_kretprobe.kp.addr;
-
     exit_kretprobe.kp.symbol_name = "do_group_exit";
 
     ret = register_kretprobe(&exit_kretprobe);
@@ -1157,6 +1155,37 @@ static int init_kretprobes(void) {
     }
 
     return 0;
+}
+
+NTSTATUS get_func_ptr(const char* name, void** func) {
+    struct kretprobe dummy_kretprobe;
+    int ret;
+
+    // trick kretprobes into giving us address of non-exported symbol
+
+    memset(&dummy_kretprobe, 0, sizeof(struct kretprobe));
+
+    dummy_kretprobe.maxactive = 20;
+    dummy_kretprobe.kp.symbol_name = name;
+
+    ret = register_kretprobe(&dummy_kretprobe);
+
+    if (ret < 0) {
+        printk(KERN_ERR "register_kretprobe failed, returned %d\n", ret);
+        return muwine_error_to_ntstatus(ret);
+    }
+
+    if (!dummy_kretprobe.kp.addr) {
+        printk(KERN_ERR "unable to get the address for mprotect_fixup\n");
+        unregister_kretprobe(&dummy_kretprobe);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    *func = (void*)dummy_kretprobe.kp.addr;
+
+    unregister_kretprobe(&dummy_kretprobe);
+
+    return STATUS_SUCCESS;
 }
 
 static int __init muwine_init(void) {
@@ -1191,6 +1220,12 @@ static int __init muwine_init(void) {
     Status = muwine_init_sections();
     if (!NT_SUCCESS(Status)) {
         printk(KERN_ALERT "muwine_init_sections returned %08x\n", Status);
+        return -ENOMEM;
+    }
+
+    Status = muwine_init_threads();
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "muwine_init_threads returned %08x\n", Status);
         return -ENOMEM;
     }
 

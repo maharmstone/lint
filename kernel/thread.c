@@ -2,15 +2,17 @@
 #include <linux/kthread.h>
 #include <linux/sched/task_stack.h>
 #include <linux/sched/mm.h>
-
-func_fork __do_fork;
+#include <linux/fdtable.h>
 
 typedef struct {
     CONTEXT thread_context;
     struct mm_struct* mm;
     struct sighand_struct* sighand;
+    struct files_struct* files;
     pid_t tgid;
 } context;
+
+void (*_put_files_struct)(struct files_struct* files);
 
 static int thread_start(void* arg) {
     context* ctx = arg;
@@ -21,8 +23,12 @@ static int thread_start(void* arg) {
     // FIXME - put current->sighand?
     current->sighand = ctx->sighand;
 
+    if (current->files)
+        _put_files_struct(current->files);
+
+    current->files = ctx->files;
+
     // FIXME - attach to parent TGID
-    // FIXME - attach to file descriptors
 
     cs = __USER_CS;
     ds = __USER_DS;
@@ -80,6 +86,9 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     refcount_inc(&current->sighand->count);
     ctx->sighand = current->sighand;
+
+    atomic_inc(&current->files->count);
+    ctx->files = current->files;
 
     ctx->tgid = current->tgid;
 
@@ -167,4 +176,16 @@ NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
         return STATUS_INVALID_HANDLE;
 
     return NtTerminateThread(ThreadHandle, ExitStatus);
+}
+
+NTSTATUS muwine_init_threads(void) {
+    NTSTATUS Status;
+
+    // FIXME - create thread object type
+
+    Status = get_func_ptr("put_files_struct", (void**)&_put_files_struct);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    return STATUS_SUCCESS;
 }

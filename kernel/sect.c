@@ -1358,14 +1358,9 @@ static NTSTATUS init_user_shared_data(void) {
     return STATUS_SUCCESS;
 }
 
-static struct kretprobe dummy_kretprobe = {
-    .maxactive  = 20,
-};
-
 NTSTATUS muwine_init_sections(void) {
     NTSTATUS Status;
     UNICODE_STRING us;
-    int ret;
 
     static const WCHAR sect_name[] = L"Section";
 
@@ -1382,26 +1377,9 @@ NTSTATUS muwine_init_sections(void) {
     if (!NT_SUCCESS(Status))
         return Status;
 
-    // trick kretprobes into giving us address of non-exported symbol
-
-    dummy_kretprobe.kp.symbol_name = "mprotect_fixup";
-
-    ret = register_kretprobe(&dummy_kretprobe);
-
-    if (ret < 0) {
-        printk(KERN_ERR "register_kretprobe failed, returned %d\n", ret);
-        return muwine_error_to_ntstatus(ret);
-    }
-
-    if (!dummy_kretprobe.kp.addr) {
-        printk(KERN_ERR "unable to get the address for mprotect_fixup\n");
-        unregister_kretprobe(&dummy_kretprobe);
-        return STATUS_INTERNAL_ERROR;
-    }
-
-    _mprotect_fixup = (func_mprotect_fixup)dummy_kretprobe.kp.addr;
-
-    unregister_kretprobe(&dummy_kretprobe);
+    Status = get_func_ptr("mprotect_fixup", (void**)&_mprotect_fixup);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     return STATUS_SUCCESS;
 }

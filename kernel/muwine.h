@@ -258,6 +258,7 @@ int strnicmp(const char* string1, const char* string2, size_t count);
 process* muwine_current_process(void);
 NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, const char* src, ULONG src_len);
 NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, const WCHAR* src, ULONG src_len);
+NTSTATUS get_func_ptr(const char* name, void** func);
 
 // reg.c
 NTSTATUS muwine_init_registry(void);
@@ -790,9 +791,6 @@ NTSTATUS user_NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZ
 NTSTATUS muwine_init_sections(void);
 
 // thread.c
-typedef long (*func_fork)(struct kernel_clone_args *kargs);
-extern func_fork __do_fork;
-
 typedef struct {
     HANDLE UniqueProcess;
     HANDLE UniqueThread;
@@ -902,6 +900,7 @@ typedef struct __attribute__((aligned(16))) {
     DWORD64 LastExceptionFromRip;
 } CONTEXT, *PCONTEXT;
 
+NTSTATUS muwine_init_threads(void);
 NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                              POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
                              PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
