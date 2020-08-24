@@ -124,7 +124,7 @@ int main() {
 
     while (!thread_ended) { }
 
-    printf("Thread finished.");
+    printf("Thread finished.\n");
 
     NtClose(h);
 
