@@ -57,9 +57,7 @@ volatile bool thread_ended = false;
 #endif
 
 static void threadfunc() {
-//     __asm("int $3");
-
-    printf("Hello from thread\n");
+    // FIXME - use NtWriteFile to write message to stdout
 
     thread_ended = true;
 
