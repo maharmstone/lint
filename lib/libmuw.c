@@ -5,18 +5,35 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 
 #define STATUS_NOT_IMPLEMENTED              (NTSTATUS)0xc0000002
 
 int muwine_fd = 0;
 
 #define init_muwine() if (muwine_fd == 0) { \
-    int fd = open("/dev/muwine", O_RDWR); \
+    int fd = (int)syscall(SYS_open, "/dev/muwine", O_RDWR, 0); \
     if (fd < 0) return STATUS_NOT_IMPLEMENTED; \
     muwine_fd = fd; \
 }
 
+#define do_ioctl(num, args, ret) do { \
+    __asm __volatile( \
+        "mov rax, %0\n\t" \
+        "mov rdi, %1\n\t" \
+        "mov rsi, %2\n\t" \
+        "mov rdx, %3\n\t" \
+        "syscall\n\t" \
+        "mov %4, rax\n\t" \
+        : \
+        : "r" ((uint64_t)SYS_ioctl), "r" ((uint64_t)muwine_fd), "r" ((uint64_t)num), "r" (args), "m" ((uint64_t)ret) \
+        : "rax", "rdi", "rsi", "rdx" \
+    ); \
+} while (0)
+
 NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes) {
+    long ret;
+
     uintptr_t args[] = {
         3,
         (uintptr_t)KeyHandle,
@@ -26,10 +43,14 @@ NTSTATUS __stdcall NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTOPENKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtClose(HANDLE Handle) {
+    long ret;
+
     uintptr_t args[] = {
         1,
         (uintptr_t)Handle
@@ -37,11 +58,15 @@ NTSTATUS __stdcall NtClose(HANDLE Handle) {
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTCLOSE, args);
+    do_ioctl(MUWINE_IOCTL_NTCLOSE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CLASS KeyInformationClass,
                                   PVOID KeyInformation, ULONG Length, PULONG ResultLength) {
+    long ret;
+
     uintptr_t args[] = {
         6,
         (uintptr_t)KeyHandle,
@@ -54,11 +79,15 @@ NTSTATUS __stdcall NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTENUMERATEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                        PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    long ret;
+
     uintptr_t args[] = {
         6,
         (uintptr_t)KeyHandle,
@@ -71,12 +100,16 @@ NTSTATUS __stdcall NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTENUMERATEVALUEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTENUMERATEVALUEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName,
                                    KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
                                    PVOID KeyValueInformation, ULONG Length, PULONG ResultLength) {
+    long ret;
+
     uintptr_t args[] = {
         6,
         (uintptr_t)KeyHandle,
@@ -89,11 +122,15 @@ NTSTATUS __stdcall NtQueryValueKey(HANDLE KeyHandle, const UNICODE_STRING* Value
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYVALUEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYVALUEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName, ULONG TitleIndex,
                                  ULONG Type, const void* Data, ULONG DataSize) {
+    long ret;
+
     uintptr_t args[] = {
         6,
         (uintptr_t)KeyHandle,
@@ -106,10 +143,14 @@ NTSTATUS __stdcall NtSetValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueNa
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTSETVALUEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTSETVALUEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtDeleteValueKey(HANDLE KeyHandle, const UNICODE_STRING* ValueName) {
+    long ret;
+
     uintptr_t args[] = {
         2,
         (uintptr_t)KeyHandle,
@@ -118,11 +159,15 @@ NTSTATUS __stdcall NtDeleteValueKey(HANDLE KeyHandle, const UNICODE_STRING* Valu
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEVALUEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTDELETEVALUEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
                                ULONG TitleIndex, const UNICODE_STRING* Class, ULONG CreateOptions, PULONG Disposition) {
+    long ret;
+
     uintptr_t args[] = {
         7,
         (uintptr_t)KeyHandle,
@@ -136,10 +181,14 @@ NTSTATUS __stdcall NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, con
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTCREATEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtDeleteKey(HANDLE KeyHandle) {
+    long ret;
+
     uintptr_t args[] = {
         1,
         (uintptr_t)KeyHandle
@@ -147,10 +196,14 @@ NTSTATUS __stdcall NtDeleteKey(HANDLE KeyHandle) {
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTDELETEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtLoadKey(const OBJECT_ATTRIBUTES* DestinationKeyName, POBJECT_ATTRIBUTES HiveFileName) {
+    long ret;
+
     uintptr_t args[] = {
         2,
         (uintptr_t)DestinationKeyName,
@@ -159,10 +212,14 @@ NTSTATUS __stdcall NtLoadKey(const OBJECT_ATTRIBUTES* DestinationKeyName, POBJEC
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTLOADKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTLOADKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
+    long ret;
+
     uintptr_t args[] = {
         1,
         (uintptr_t)DestinationKeyName
@@ -170,10 +227,14 @@ NTSTATUS __stdcall NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTUNLOADKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTUNLOADKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtFlushKey(HANDLE KeyHandle) {
+    long ret;
+
     uintptr_t args[] = {
         1,
         (uintptr_t)KeyHandle
@@ -181,11 +242,15 @@ NTSTATUS __stdcall NtFlushKey(HANDLE KeyHandle) {
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTFLUSHKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTFLUSHKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
                                ULONG OpenOptions) {
+    long ret;
+
     uintptr_t args[] = {
         4,
         (uintptr_t)KeyHandle,
@@ -196,11 +261,15 @@ NTSTATUS __stdcall NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, con
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENKEYEX, args);
+    do_ioctl(MUWINE_IOCTL_NTOPENKEYEX, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformationClass, PVOID KeyInformation,
                               ULONG Length, PULONG ResultLength) {
+    long ret;
+
     uintptr_t args[] = {
         5,
         (uintptr_t)KeyHandle,
@@ -212,10 +281,14 @@ NTSTATUS __stdcall NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInforma
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle) {
+    long ret;
+
     uintptr_t args[] = {
         2,
         (uintptr_t)KeyHandle,
@@ -224,12 +297,16 @@ NTSTATUS __stdcall NtSaveKey(HANDLE KeyHandle, HANDLE FileHandle) {
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTSAVEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTSAVEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtNotifyChangeKey(HANDLE KeyHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                                      PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter, BOOLEAN WatchSubtree,
                                      PVOID ChangeBuffer, ULONG Length, BOOLEAN Asynchronous) {
+    long ret;
+
     uintptr_t args[] = {
         10,
         (uintptr_t)KeyHandle,
@@ -246,7 +323,9 @@ NTSTATUS __stdcall NtNotifyChangeKey(HANDLE KeyHandle, HANDLE Event, PIO_APC_ROU
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTNOTIFYCHANGEKEY, args);
+    do_ioctl(MUWINE_IOCTL_NTNOTIFYCHANGEKEY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJECT_ATTRIBUTES* SubordinateObjects,
@@ -254,6 +333,8 @@ NTSTATUS __stdcall NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJ
                                               PIO_STATUS_BLOCK IoStatusBlock, ULONG CompletionFilter,
                                               BOOLEAN WatchSubtree, PVOID ChangeBuffer, ULONG Length,
                                               BOOLEAN Asynchronous) {
+    long ret;
+
     uintptr_t args[] = {
         12,
         (uintptr_t)KeyHandle,
@@ -272,7 +353,9 @@ NTSTATUS __stdcall NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJ
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTNOTIFYCHANGEMULTIPLEKEYS, args);
+    do_ioctl(MUWINE_IOCTL_NTNOTIFYCHANGEMULTIPLEKEYS, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 void close_muwine() {
@@ -286,6 +369,8 @@ NTSTATUS __stdcall NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, P
                                 PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                                 ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
                                 PVOID EaBuffer, ULONG EaLength) {
+    long ret;
+
     uintptr_t args[] = {
         11,
         (uintptr_t)FileHandle,
@@ -303,12 +388,16 @@ NTSTATUS __stdcall NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, P
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATEFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTCREATEFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                               PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                               PULONG Key) {
+    long ret;
+
     uintptr_t args[] = {
         9,
         (uintptr_t)FileHandle,
@@ -324,11 +413,15 @@ NTSTATUS __stdcall NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTREADFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTREADFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                               PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions) {
+    long ret;
+
     uintptr_t args[] = {
         6,
         (uintptr_t)FileHandle,
@@ -341,11 +434,15 @@ NTSTATUS __stdcall NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POB
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTOPENFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                           ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    long ret;
+
     uintptr_t args[] = {
         5,
         (uintptr_t)FileHandle,
@@ -357,12 +454,16 @@ NTSTATUS __stdcall NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK Io
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYINFORMATIONFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYINFORMATIONFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                                PIO_STATUS_BLOCK IoStatusBlock, const void* Buffer, ULONG Length,
                                PLARGE_INTEGER ByteOffset, PULONG Key) {
+    long ret;
+
     uintptr_t args[] = {
         9,
         (uintptr_t)FileHandle,
@@ -378,11 +479,15 @@ NTSTATUS __stdcall NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE 
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTWRITEFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTWRITEFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                         ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    long ret;
+
     uintptr_t args[] = {
         5,
         (uintptr_t)FileHandle,
@@ -394,13 +499,17 @@ NTSTATUS __stdcall NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoSt
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTSETINFORMATIONFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTSETINFORMATIONFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                                         PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation, ULONG Length,
                                         FILE_INFORMATION_CLASS FileInformationClass, BOOLEAN ReturnSingleEntry,
                                         PUNICODE_STRING FileMask, BOOLEAN RestartScan) {
+    long ret;
+
     uintptr_t args[] = {
         11,
         (uintptr_t)FileHandle,
@@ -418,10 +527,14 @@ NTSTATUS __stdcall NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYDIRECTORYFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYDIRECTORYFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    long ret;
+
     uintptr_t args[] = {
         3,
         (uintptr_t)DirectoryHandle,
@@ -431,11 +544,15 @@ NTSTATUS __stdcall NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK 
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATEDIRECTORYOBJECT, args);
+    do_ioctl(MUWINE_IOCTL_NTCREATEDIRECTORYOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                                               PUNICODE_STRING DestinationName) {
+    long ret;
+
     uintptr_t args[] = {
         4,
         (uintptr_t)pHandle,
@@ -446,12 +563,16 @@ NTSTATUS __stdcall NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK Desir
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATESYMBOLICLINKOBJECT, args);
+    do_ioctl(MUWINE_IOCTL_NTCREATESYMBOLICLINKOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, const OBJECT_ATTRIBUTES* ObjectAttributes,
                                    const LARGE_INTEGER* MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes,
                                    HANDLE FileHandle) {
+    long ret;
+
     uintptr_t args[] = {
         7,
         (uintptr_t)SectionHandle,
@@ -465,12 +586,16 @@ NTSTATUS __stdcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAcc
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATESECTION, args);
+    do_ioctl(MUWINE_IOCTL_NTCREATESECTION, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                       SIZE_T CommitSize, const LARGE_INTEGER* SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
                                       ULONG AllocationType, ULONG Win32Protect) {
+    long ret;
+
     uintptr_t args[] = {
         10,
         (uintptr_t)SectionHandle,
@@ -487,10 +612,14 @@ NTSTATUS __stdcall NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTMAPVIEWOFSECTION, args);
+    do_ioctl(MUWINE_IOCTL_NTMAPVIEWOFSECTION, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
+    long ret;
+
     uintptr_t args[] = {
         2,
         (uintptr_t)ProcessHandle,
@@ -499,11 +628,15 @@ NTSTATUS __stdcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress)
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTUNMAPVIEWOFSECTION, args);
+    do_ioctl(MUWINE_IOCTL_NTUNMAPVIEWOFSECTION, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
                                           ULONG NewAccessProtection, PULONG OldAccessProtection) {
+    long ret;
+
     uintptr_t args[] = {
         5,
         (uintptr_t)ProcessHandle,
@@ -515,11 +648,15 @@ NTSTATUS __stdcall NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddre
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTPROTECTVIRTUALMEMORY, args);
+    do_ioctl(MUWINE_IOCTL_NTPROTECTVIRTUALMEMORY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                            PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
+    long ret;
+
     uintptr_t args[] = {
         6,
         (uintptr_t)ProcessHandle,
@@ -532,11 +669,15 @@ NTSTATUS __stdcall NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddr
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTALLOCATEVIRTUALMEMORY, args);
+    do_ioctl(MUWINE_IOCTL_NTALLOCATEVIRTUALMEMORY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess,
                                  const OBJECT_ATTRIBUTES* ObjectAttributes) {
+    long ret;
+
     uintptr_t args[] = {
         3,
         (uintptr_t)SectionHandle,
@@ -546,11 +687,15 @@ NTSTATUS __stdcall NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAcces
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTOPENSECTION, args);
+    do_ioctl(MUWINE_IOCTL_NTOPENSECTION, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                                 ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
+    long ret;
+
     uintptr_t args[] = {
         5,
         (uintptr_t)FileHandle,
@@ -562,10 +707,14 @@ NTSTATUS __stdcall NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BL
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYVOLUMEINFORMATIONFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYVOLUMEINFORMATIONFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize, ULONG FreeType) {
+    long ret;
+
     uintptr_t args[] = {
         4,
         (uintptr_t)ProcessHandle,
@@ -576,13 +725,17 @@ NTSTATUS __stdcall NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTFREEVIRTUALMEMORY, args);
+    do_ioctl(MUWINE_IOCTL_NTFREEVIRTUALMEMORY, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
                                          PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
                                          PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
                                          ULONG OutputBufferLength) {
+    long ret;
+
     uintptr_t args[] = {
         10,
         (uintptr_t)FileHandle,
@@ -599,13 +752,17 @@ NTSTATUS __stdcall NtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_AP
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTDEVICEIOCONTROLFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTDEVICEIOCONTROLFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
                                    PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
                                    PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
                                    ULONG OutputBufferLength) {
+    long ret;
+
     uintptr_t args[] = {
         10,
         (uintptr_t)FileHandle,
@@ -622,11 +779,15 @@ NTSTATUS __stdcall NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTFSCONTROLFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTFSCONTROLFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtSetVolumeInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr, ULONG len,
                                               FS_INFORMATION_CLASS FileSystemInformationClass) {
+    long ret;
+
     uintptr_t args[] = {
         5,
         (uintptr_t)hFile,
@@ -638,13 +799,17 @@ NTSTATUS __stdcall NtSetVolumeInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io,
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTSETVOLUMEINFORMATIONFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTSETVOLUMEINFORMATIONFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtLockFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
                               PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
                               PLARGE_INTEGER Length, ULONG Key, BOOLEAN FailImmediately,
                               BOOLEAN ExclusiveLock) {
+    long ret;
+
     uintptr_t args[] = {
         10,
         (uintptr_t)FileHandle,
@@ -661,12 +826,16 @@ NTSTATUS __stdcall NtLockFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTLOCKFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTLOCKFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                                ULONG Length, BOOLEAN ReturnSingleEntry, PVOID SidList,
                                                ULONG SidListLength, PSID StartSid, BOOLEAN RestartScan) {
+    long ret;
+
     uintptr_t args[] = {
         9,
         (uintptr_t)FileHandle,
@@ -682,11 +851,15 @@ NTSTATUS __stdcall NtQueryQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLO
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYQUOTAINFORMATIONFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYQUOTAINFORMATIONFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtSetQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                              ULONG Length) {
+    long ret;
+
     uintptr_t args[] = {
         4,
         (uintptr_t)FileHandle,
@@ -697,11 +870,15 @@ NTSTATUS __stdcall NtSetQuotaInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTSETQUOTAINFORMATIONFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTSETQUOTAINFORMATIONFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtUnlockFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER ByteOffset,
                                 PLARGE_INTEGER Length, ULONG Key) {
+    long ret;
+
     uintptr_t args[] = {
         5,
         (uintptr_t)FileHandle,
@@ -713,10 +890,14 @@ NTSTATUS __stdcall NtUnlockFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBloc
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTUNLOCKFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTUNLOCKFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtDeleteFile(POBJECT_ATTRIBUTES ObjectAttributes) {
+    long ret;
+
     uintptr_t args[] = {
         1,
         (uintptr_t)ObjectAttributes
@@ -724,10 +905,14 @@ NTSTATUS __stdcall NtDeleteFile(POBJECT_ATTRIBUTES ObjectAttributes) {
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTDELETEFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTDELETEFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtFlushBuffersFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock) {
+    long ret;
+
     uintptr_t args[] = {
         2,
         (uintptr_t)FileHandle,
@@ -736,11 +921,15 @@ NTSTATUS __stdcall NtFlushBuffersFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStat
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTFLUSHBUFFERSFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTFLUSHBUFFERSFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryAttributesFile(const OBJECT_ATTRIBUTES* ObjectAttributes,
                                          FILE_BASIC_INFORMATION* FileInformation) {
+    long ret;
+
     uintptr_t args[] = {
         2,
         (uintptr_t)ObjectAttributes,
@@ -749,12 +938,16 @@ NTSTATUS __stdcall NtQueryAttributesFile(const OBJECT_ATTRIBUTES* ObjectAttribut
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYATTRIBUTESFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYATTRIBUTESFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                  ULONG Length, BOOLEAN ReturnSingleEntry, PVOID EaList, ULONG EaListLength,
                                  PULONG EaIndex, BOOLEAN RestartScan) {
+    long ret;
+
     uintptr_t args[] = {
         9,
         (uintptr_t)FileHandle,
@@ -770,11 +963,15 @@ NTSTATUS __stdcall NtQueryEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlo
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYEAFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYEAFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtQueryFullAttributesFile(const OBJECT_ATTRIBUTES* ObjectAttributes,
                                              FILE_NETWORK_OPEN_INFORMATION* FileInformation) {
+    long ret;
+
     uintptr_t args[] = {
         2,
         (uintptr_t)ObjectAttributes,
@@ -783,11 +980,15 @@ NTSTATUS __stdcall NtQueryFullAttributesFile(const OBJECT_ATTRIBUTES* ObjectAttr
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTQUERYFULLATTRIBUTESFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTQUERYFULLATTRIBUTESFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
                                ULONG Length) {
+    long ret;
+
     uintptr_t args[] = {
         4,
         (uintptr_t)FileHandle,
@@ -798,13 +999,17 @@ NTSTATUS __stdcall NtSetEaFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTSETEAFILE, args);
+    do_ioctl(MUWINE_IOCTL_NTSETEAFILE, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                                   POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
                                   PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
                                   BOOLEAN CreateSuspended) {
+    long ret;
+
     uintptr_t args[] = {
         8,
         (uintptr_t)ThreadHandle,
@@ -819,10 +1024,14 @@ NTSTATUS __stdcall NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAcces
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTCREATETHREAD, args);
+    do_ioctl(MUWINE_IOCTL_NTCREATETHREAD, args, ret);
+
+    return (NTSTATUS)ret;
 }
 
 NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
+    long ret;
+
     uintptr_t args[] = {
         2,
         (uintptr_t)ThreadHandle,
@@ -831,5 +1040,7 @@ NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
 
     init_muwine();
 
-    return ioctl(muwine_fd, MUWINE_IOCTL_NTTERMINATETHREAD, args);
+    do_ioctl(MUWINE_IOCTL_NTTERMINATETHREAD, args, ret);
+
+    return (NTSTATUS)ret;
 }

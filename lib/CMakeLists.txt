@@ -7,9 +7,10 @@ project(muw)
 set(SRC_FILES
 	libmuw.c)
 
-add_library(muw SHARED ${SRC_FILES})
+add_library(muw STATIC ${SRC_FILES})
 
-target_compile_options(muw PUBLIC -fshort-wchar)
+target_compile_options(muw PUBLIC -fshort-wchar -masm=intel -nostdlib)
+target_link_options(muw PUBLIC -nostdlib)
 
 target_compile_options(muw PUBLIC -Wall -Werror=cast-function-type -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra -Wconversion -Werror=implicit-function-declaration)
 
