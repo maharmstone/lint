@@ -1,14 +1,64 @@
 #include "muwine.h"
+#include <linux/kthread.h>
+#include <linux/sched/task_stack.h>
+#include <linux/sched/mm.h>
 
 func_fork __do_fork;
+
+typedef struct {
+    CONTEXT thread_context;
+    struct mm_struct* mm;
+    struct sighand_struct* sighand;
+    pid_t tgid;
+} context;
+
+static int thread_start(void* arg) {
+    context* ctx = arg;
+    uint64_t cs, ds;
+
+    current->mm = current->active_mm = ctx->mm;
+
+    // FIXME - put current->sighand?
+    current->sighand = ctx->sighand;
+
+    // FIXME - attach to parent TGID
+    // FIXME - attach to file descriptors
+
+    cs = __USER_CS;
+    ds = __USER_DS;
+
+    // FIXME - free context
+
+    // FIXME - allocate and populate TEB, and set in gs
+
+    // FIXME - set registers
+
+    asm volatile(
+        "cli\n\t"
+        "push %1\n\t"               // push new SS
+        "push %3\n\t"               // push new RSP
+        "pushfq\n\t"                // push RFLAGS
+        "orq $0x3000, (%%rsp)\n\t"  // change IOPL to ring 3
+        "orq $0x200, (%%rsp)\n\t"   // re-enable interrupts in usermode
+        "push %0\n\t"               // push new CS
+        "push %2\n\t"               // push new RIP
+        "swapgs\n\t"
+        "iretq\n\t"
+        :
+        : "r" ((uint64_t)__USER_CS), "r" ((uint64_t)__USER_DS), "m" (ctx->thread_context.Rip), "m" (ctx->thread_context.Rsp)
+    );
+
+    // doesn't return
+
+    return 0;
+}
 
 static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                                POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
                                PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
                                BOOLEAN CreateSuspended) {
-    struct kernel_clone_args args;
-    long ret;
-    pid_t tid;
+    struct task_struct* ts;
+    context* ctx;
 
     printk(KERN_INFO "NtCreateThread(%px, %x, %px, %lx, %px, %px, %px, %x): stub\n",
         ThreadHandle, DesiredAccess, ObjectAttributes, (uintptr_t)ProcessHandle,
@@ -19,22 +69,29 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    memset(&args, 0, sizeof(args));
-    args.flags = CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_THREAD |
-                 CLONE_SIGHAND | CLONE_VM;
-    args.stack = (long)InitialTeb->StackBase;
-    args.stack_size = (uint8_t*)InitialTeb->StackLimit - (uint8_t*)InitialTeb->StackBase;
-    args.set_tid = &tid;
+    ctx = kmalloc(sizeof(context), GFP_KERNEL);
+    if (!ctx)
+        return STATUS_INSUFFICIENT_RESOURCES;
 
-    // FIXME - CreateSuspended (will need to reimplement _do_fork?)
-    // FIXME - allocate and populate TEB (and fs and gs) (What about segments?)
-    // FIXME - copy context (esp. instruction pointer)
+    memcpy(&ctx->thread_context, ThreadContext, sizeof(CONTEXT));
 
-    ret = __do_fork(&args);
-    if (ret < 0)
-        return muwine_error_to_ntstatus(ret);
+    mmget(current->mm);
+    ctx->mm = current->mm;
 
-    // FIXME - set ClientId (see ret)
+    refcount_inc(&current->sighand->count);
+    ctx->sighand = current->sighand;
+
+    ctx->tgid = current->tgid;
+
+    ts = kthread_create_on_node(thread_start, ctx, NUMA_NO_NODE, "%s", "");
+
+    ts->flags &= ~PF_KTHREAD;
+
+    // FIXME - wait for thread to start
+
+    wake_up_process(ts); // FIXME - only if CreateSuspended set
+
+    // FIXME - set ClientId
     // FIXME - create thread object
     // FIXME - create handle, with access mask as valid bits from DesiredAccess
 
