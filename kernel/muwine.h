@@ -308,6 +308,7 @@ void muwine_make_process_token(token** t);
 void muwine_free_token(token* token);
 void muwine_duplicate_token(token* old, token** new);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
+ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

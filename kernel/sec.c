@@ -363,3 +363,32 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen) {
     *out = sd;
     *sdlen = len;
 }
+
+ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type) {
+    if (access & MAXIMUM_ALLOWED)
+        return MAXIMUM_ALLOWED;
+
+    if (access & GENERIC_READ) {
+        access &= ~GENERIC_READ;
+        access |= type->generic_read;
+    }
+
+    if (access & GENERIC_WRITE) {
+        access &= ~GENERIC_WRITE;
+        access |= type->generic_write;
+    }
+
+    if (access & GENERIC_EXECUTE) {
+        access &= ~GENERIC_EXECUTE;
+        access |= type->generic_execute;
+    }
+
+    if (access & GENERIC_ALL) {
+        access &= ~GENERIC_ALL;
+        access |= type->generic_all;
+    }
+
+    access &= type->valid;
+
+    return access;
+}

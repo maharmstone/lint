@@ -13,7 +13,33 @@ typedef struct {
     struct completion thread_created;
 } context;
 
+typedef struct {
+    object_header header;
+    struct task_struct* ts;
+} thread_object;
+
+#define THREAD_TERMINATE 0x0001
+#define THREAD_SUSPEND_RESUME 0x0002
+#define THREAD_ALERT 0x0004
+#define THREAD_GET_CONTEXT 0x0008
+#define THREAD_SET_CONTEXT 0x0010
+#define THREAD_SET_INFORMATION 0x0020
+#define THREAD_QUERY_INFORMATION 0x0040
+#define THREAD_SET_THREAD_TOKEN 0x0080
+#define THREAD_IMPERSONATE 0x0100
+#define THREAD_DIRECT_IMPERSONATION 0x0200
+#define THREAD_SET_LIMITED_INFORMATION 0x0400
+#define THREAD_QUERY_LIMITED_INFORMATION 0x0800
+#define THREAD_ALL_ACCESS STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | \
+                          THREAD_QUERY_LIMITED_INFORMATION | THREAD_SET_LIMITED_INFORMATION | \
+                          THREAD_DIRECT_IMPERSONATION | THREAD_IMPERSONATE | \
+                          THREAD_SET_THREAD_TOKEN | THREAD_QUERY_INFORMATION | \
+                          THREAD_SET_INFORMATION | THREAD_SET_CONTEXT | THREAD_GET_CONTEXT | \
+                          THREAD_SUSPEND_RESUME | THREAD_TERMINATE
+
 void (*_put_files_struct)(struct files_struct* files);
+
+static type_object* thread_type = NULL;
 
 static int thread_start(void* arg) {
     context* ctx = arg;
@@ -68,17 +94,20 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                                POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
                                PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
                                BOOLEAN CreateSuspended) {
+    NTSTATUS Status;
     struct task_struct* ts;
     context* ctx;
-
-    printk(KERN_INFO "NtCreateThread(%px, %x, %px, %lx, %px, %px, %px, %x): stub\n",
-        ThreadHandle, DesiredAccess, ObjectAttributes, (uintptr_t)ProcessHandle,
-        ClientId, ThreadContext, InitialTeb, CreateSuspended);
+    ACCESS_MASK access;
+    thread_object* obj;
 
     if (ProcessHandle != NtCurrentProcess()) {
         printk("NtCreateThread: FIXME - support process handles\n"); // FIXME
         return STATUS_NOT_IMPLEMENTED;
     }
+
+    access = sanitize_access_mask(DesiredAccess, thread_type);
+    if (access & MAXIMUM_ALLOWED)
+        access = thread_type->valid;
 
     ctx = kmalloc(sizeof(context), GFP_KERNEL);
     if (!ctx)
@@ -109,10 +138,34 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     wait_for_completion(&ctx->thread_created);
 
     // FIXME - set ClientId
-    // FIXME - create thread object
-    // FIXME - create handle, with access mask as valid bits from DesiredAccess
 
-    return STATUS_NOT_IMPLEMENTED;
+    // create thread object
+
+    obj = kzalloc(sizeof(thread_object), GFP_KERNEL);
+    if (!obj)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    obj->header.refcount = 1;
+
+    obj->header.type = thread_type;
+    __sync_add_and_fetch(&thread_type->header.refcount, 1);
+
+    spin_lock_init(&obj->header.path_lock);
+
+    get_task_struct(ts);
+    obj->ts = ts;
+
+    Status = muwine_add_handle(&obj->header, ThreadHandle,
+                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
+
+    if (!NT_SUCCESS(Status)) {
+        if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
+            obj->header.type->close(&obj->header);
+
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
@@ -186,10 +239,34 @@ NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
     return NtTerminateThread(ThreadHandle, ExitStatus);
 }
 
+static void thread_object_close(object_header* obj) {
+    thread_object* t = (thread_object*)obj;
+
+    put_task_struct(t->ts);
+
+    free_object(&t->header);
+}
+
 NTSTATUS muwine_init_threads(void) {
     NTSTATUS Status;
+    UNICODE_STRING us;
 
-    // FIXME - create thread object type
+    static const WCHAR thread_name[] = L"Thread";
+
+    us.Length = us.MaximumLength = sizeof(thread_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)thread_name;
+
+    thread_type = muwine_add_object_type(&us, thread_object_close, NULL,
+                                         THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION | READ_CONTROL,
+                                         THREAD_TERMINATE | THREAD_SUSPEND_RESUME | THREAD_ALERT |
+                                         THREAD_SET_CONTEXT | THREAD_SET_INFORMATION |
+                                         THREAD_SET_LIMITED_INFORMATION | READ_CONTROL,
+                                         THREAD_QUERY_LIMITED_INFORMATION | READ_CONTROL | SYNCHRONIZE,
+                                         THREAD_ALL_ACCESS, THREAD_ALL_ACCESS);
+    if (IS_ERR(thread_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)thread_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)thread_type);
+    }
 
     Status = get_func_ptr("put_files_struct", (void**)&_put_files_struct);
     if (!NT_SUCCESS(Status))
