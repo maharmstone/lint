@@ -10,6 +10,7 @@ typedef struct {
     struct sighand_struct* sighand;
     struct files_struct* files;
     pid_t tgid;
+    struct completion thread_created;
 } context;
 
 void (*_put_files_struct)(struct files_struct* files);
@@ -36,6 +37,10 @@ static int thread_start(void* arg) {
     // FIXME - free context
 
     // FIXME - allocate and populate TEB, and set in gs
+
+    complete(&ctx->thread_created);
+
+    // FIXME - wait here if CreateSuspended not set
 
     // FIXME - set registers
 
@@ -92,13 +97,16 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     ctx->tgid = current->tgid;
 
+    init_completion(&ctx->thread_created);
+
     ts = kthread_create_on_node(thread_start, ctx, NUMA_NO_NODE, "%s", "");
 
     ts->flags &= ~PF_KTHREAD;
 
-    // FIXME - wait for thread to start
+    wake_up_process(ts);
 
-    wake_up_process(ts); // FIXME - only if CreateSuspended set
+    // wait for thread to start
+    wait_for_completion(&ctx->thread_created);
 
     // FIXME - set ClientId
     // FIXME - create thread object
