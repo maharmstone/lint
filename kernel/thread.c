@@ -8,8 +8,8 @@ typedef struct {
     CONTEXT thread_context;
     struct mm_struct* mm;
     struct sighand_struct* sighand;
+    struct signal_struct* signal;
     struct files_struct* files;
-    pid_t tgid;
     struct completion thread_created;
 } context;
 
@@ -38,6 +38,7 @@ typedef struct {
                           THREAD_SUSPEND_RESUME | THREAD_TERMINATE
 
 void (*_put_files_struct)(struct files_struct* files);
+void (*_change_pid)(struct task_struct* task, enum pid_type type, struct pid* pid);
 
 static type_object* thread_type = NULL;
 
@@ -54,8 +55,6 @@ static int thread_start(void* arg) {
         _put_files_struct(current->files);
 
     current->files = ctx->files;
-
-    // FIXME - attach to parent TGID
 
     cs = __USER_CS;
     ds = __USER_DS;
@@ -124,13 +123,39 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     atomic_inc(&current->files->count);
     ctx->files = current->files;
 
-    ctx->tgid = current->tgid;
-
     init_completion(&ctx->thread_created);
 
     ts = kthread_create_on_node(thread_start, ctx, NUMA_NO_NODE, "%s", "");
 
     ts->flags &= ~PF_KTHREAD;
+    ts->exit_signal = -1;
+    ts->group_leader = current->group_leader;
+    ts->tgid = current->tgid;
+
+    spin_lock(&current->sighand->siglock);
+
+    ts->signal = current->signal;
+    current->signal->nr_threads++;
+    atomic_inc(&current->signal->live);
+    refcount_inc(&current->signal->sigcnt);
+    list_add_tail_rcu(&ts->thread_group, &ts->group_leader->thread_group);
+    list_add_tail_rcu(&ts->thread_node, &ts->signal->thread_head);
+
+    // FIXME - should have tasklist_lock held for this?
+
+    list_del_rcu(&ts->tasks);
+    list_del(&ts->sibling);
+
+    // FIXME - this is wrong, but we get use-after-frees without it
+    get_task_struct(ts);
+
+    _change_pid(ts, PIDTYPE_TGID, task_tgid(current));
+    _change_pid(ts, PIDTYPE_SID, task_session(current));
+    _change_pid(ts, PIDTYPE_PGID, task_pgrp(current));
+
+    spin_unlock(&current->sighand->siglock);
+
+    // FIXME - set ts->comm
 
     wake_up_process(ts);
 
@@ -272,6 +297,10 @@ NTSTATUS muwine_init_threads(void) {
     }
 
     Status = get_func_ptr("put_files_struct", (void**)&_put_files_struct);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = get_func_ptr("change_pid", (void**)&_change_pid);
     if (!NT_SUCCESS(Status))
         return Status;
 
