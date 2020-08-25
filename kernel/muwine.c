@@ -78,6 +78,8 @@ static struct file_operations file_ops = {
     .unlocked_ioctl = muwine_ioctl
 };
 
+void (*_fput)(struct file* file);
+
 bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen) {
     while (maxlen > 0) {
         char c;
@@ -543,6 +545,11 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 
         if (get_user(arg2, temp) < 0)
             return STATUS_INVALID_PARAMETER;
+
+        // account for fact NtTerminateThread won't return
+        // FIXME - account for when arg1 is handle to current thread
+        if (funcs[cmd].func == user_NtTerminateThread && (HANDLE)arg1 == NtCurrentThread())
+            _fput(file);
 
         return ((muwine_func2arg)funcs[cmd].func)(arg1, arg2);
     } else if (num_args == 3) {
@@ -1232,6 +1239,10 @@ static int __init muwine_init(void) {
     ret = init_kretprobes();
     if (ret < 0)
         return ret;
+
+    Status = get_func_ptr("fput", (void**)&_fput);
+    if (!NT_SUCCESS(Status))
+        return -ENOMEM;
 
     printk(KERN_INFO "muwine module loaded with device major number %d\n", major_num);
 
