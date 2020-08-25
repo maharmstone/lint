@@ -38,7 +38,7 @@ typedef struct {
                           THREAD_SUSPEND_RESUME | THREAD_TERMINATE
 
 void (*_put_files_struct)(struct files_struct* files);
-void (*_change_pid)(struct task_struct* task, enum pid_type type, struct pid* pid);
+void (*_detach_pid)(struct task_struct* task, enum pid_type type);
 
 static type_object* thread_type = NULL;
 
@@ -127,6 +127,10 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     ts = kthread_create_on_node(thread_start, ctx, NUMA_NO_NODE, "%s", "");
 
+    _detach_pid(ts, PIDTYPE_TGID);
+    _detach_pid(ts, PIDTYPE_SID);
+    _detach_pid(ts, PIDTYPE_PGID);
+
     ts->flags &= ~PF_KTHREAD;
     ts->exit_signal = -1;
     ts->group_leader = current->group_leader;
@@ -145,13 +149,6 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     list_del_rcu(&ts->tasks);
     list_del(&ts->sibling);
-
-    // FIXME - this is wrong, but we get use-after-frees without it
-    get_task_struct(ts);
-
-    _change_pid(ts, PIDTYPE_TGID, task_tgid(current));
-    _change_pid(ts, PIDTYPE_SID, task_session(current));
-    _change_pid(ts, PIDTYPE_PGID, task_pgrp(current));
 
     spin_unlock(&current->sighand->siglock);
 
@@ -300,7 +297,7 @@ NTSTATUS muwine_init_threads(void) {
     if (!NT_SUCCESS(Status))
         return Status;
 
-    Status = get_func_ptr("change_pid", (void**)&_change_pid);
+    Status = get_func_ptr("detach_pid", (void**)&_detach_pid);
     if (!NT_SUCCESS(Status))
         return Status;
 
