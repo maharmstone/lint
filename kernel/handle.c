@@ -176,6 +176,17 @@ void muwine_free_kernel_handles(void) {
     }
 }
 
+NTSTATUS NtWaitForMultipleObjects(ULONG ObjectCount, PHANDLE ObjectsArray,
+                                  OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
+                                  PLARGE_INTEGER TimeOut) {
+    printk(KERN_INFO "NtWaitForMultipleObjects(%x, %px, %x, %x, %px): stub\n", ObjectCount,
+           ObjectsArray, WaitType, Alertable, TimeOut);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut) {
     printk(KERN_INFO "NtWaitForSingleObject(%lx, %x, %px): stub\n", (uintptr_t)ObjectHandle,
            Alertable, TimeOut);
