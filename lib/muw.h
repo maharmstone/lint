@@ -512,6 +512,11 @@ typedef struct __attribute__((aligned(16))) {
     DWORD64 LastExceptionFromRip;
 } CONTEXT, *PCONTEXT;
 
+typedef enum {
+    WaitAllObject,
+    WaitAnyObject
+} OBJECT_WAIT_TYPE;
+
 #endif
 
 #define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
@@ -625,6 +630,11 @@ NTSTATUS __stdcall NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAcces
                                   PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
                                   BOOLEAN CreateSuspended);
 NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
+NTSTATUS __stdcall NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable,
+                                         const LARGE_INTEGER* TimeOut);
+NTSTATUS __stdcall NtWaitForMultipleObjects(ULONG ObjectCount, const HANDLE* ObjectsArray,
+                                            OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
+                                            const LARGE_INTEGER* TimeOut);
 
 #ifdef __cplusplus
 }

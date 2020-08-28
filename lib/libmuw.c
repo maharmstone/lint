@@ -1044,3 +1044,42 @@ NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable,
+                                         const LARGE_INTEGER* TimeOut) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)ObjectHandle,
+        (uintptr_t)Alertable,
+        (uintptr_t)TimeOut
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTWAITFORSINGLEOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtWaitForMultipleObjects(ULONG ObjectCount, const HANDLE* ObjectsArray,
+                                            OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
+                                            const LARGE_INTEGER* TimeOut) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)ObjectCount,
+        (uintptr_t)ObjectsArray,
+        (uintptr_t)WaitType,
+        (uintptr_t)Alertable,
+        (uintptr_t)TimeOut
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTWAITFORMULTIPLEOBJECTS, args, ret);
+
+    return (NTSTATUS)ret;
+}
