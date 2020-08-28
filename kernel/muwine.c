@@ -65,6 +65,7 @@ static struct muwine_func funcs[] = {
     { NtSetEaFile, 4 },
     { user_NtCreateThread, 8 },
     { user_NtTerminateThread, 2 },
+    { NtWaitForSingleObject, 3 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)

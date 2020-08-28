@@ -175,3 +175,12 @@ void muwine_free_kernel_handles(void) {
         kfree(hand);
     }
 }
+
+NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut) {
+    printk(KERN_INFO "NtWaitForSingleObject(%lx, %x, %px): stub\n", (uintptr_t)ObjectHandle,
+           Alertable, TimeOut);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
