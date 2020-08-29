@@ -1,6 +1,5 @@
 #include "ioctls.h"
 #include "muwine.h"
-#include <linux/kprobes.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Mark Harmstone");
@@ -959,7 +958,7 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
     }
 }
 
-static int exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
+static int group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     pid_t pid = task_tgid_vnr(current);
     struct list_head* le;
     process* p = NULL;
@@ -1136,8 +1135,13 @@ static struct kretprobe fork_kretprobe = {
     .maxactive  = 20,
 };
 
+static struct kretprobe group_exit_kretprobe = {
+    .entry_handler  = group_exit_handler,
+    .maxactive      = 20,
+};
+
 static struct kretprobe exit_kretprobe = {
-    .entry_handler  = exit_handler,
+    .entry_handler  = muwine_thread_exit_handler,
     .maxactive      = 20,
 };
 
@@ -1153,12 +1157,23 @@ static int init_kretprobes(void) {
         return ret;
     }
 
-    exit_kretprobe.kp.symbol_name = "do_group_exit";
+    group_exit_kretprobe.kp.symbol_name = "do_group_exit";
+
+    ret = register_kretprobe(&group_exit_kretprobe);
+
+    if (ret < 0) {
+        unregister_kretprobe(&fork_kretprobe);
+        printk(KERN_ERR "register_kretprobe failed, returned %d\n", ret);
+        return ret;
+    }
+
+    exit_kretprobe.kp.symbol_name = "do_exit";
 
     ret = register_kretprobe(&exit_kretprobe);
 
     if (ret < 0) {
-        unregister_kretprobe(&exit_kretprobe);
+        unregister_kretprobe(&group_exit_kretprobe);
+        unregister_kretprobe(&fork_kretprobe);
         printk(KERN_ERR "register_kretprobe failed, returned %d\n", ret);
         return ret;
     }
@@ -1255,6 +1270,7 @@ static void __exit muwine_exit(void) {
     unregister_chrdev(major_num, "muwine");
 
     unregister_kretprobe(&fork_kretprobe);
+    unregister_kretprobe(&group_exit_kretprobe);
     unregister_kretprobe(&exit_kretprobe);
 
     muwine_free_kernel_handles();

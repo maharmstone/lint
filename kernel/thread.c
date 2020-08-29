@@ -14,8 +14,9 @@ typedef struct {
 } context;
 
 typedef struct {
-    object_header header;
+    sync_object header;
     struct task_struct* ts;
+    struct list_head list;
 } thread_object;
 
 #define THREAD_TERMINATE 0x0001
@@ -39,6 +40,9 @@ typedef struct {
 
 void (*_put_files_struct)(struct files_struct* files);
 void (*_detach_pid)(struct task_struct* task, enum pid_type type);
+
+static LIST_HEAD(thread_list);
+static DEFINE_SPINLOCK(thread_list_lock);
 
 static type_object* thread_type = NULL;
 
@@ -152,7 +156,25 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     spin_unlock(&current->sighand->siglock);
 
-    // FIXME - set ts->comm
+    // create thread object
+
+    obj = kzalloc(sizeof(thread_object), GFP_KERNEL);
+    if (!obj)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    obj->header.h.refcount = 1;
+
+    obj->header.h.type = thread_type;
+    __sync_add_and_fetch(&thread_type->header.refcount, 1);
+
+    spin_lock_init(&obj->header.h.path_lock);
+
+    get_task_struct(ts);
+    obj->ts = ts;
+
+    spin_lock(&thread_list_lock);
+    list_add_tail(&obj->list, &thread_list);
+    spin_unlock(&thread_list_lock);
 
     wake_up_process(ts);
 
@@ -161,28 +183,12 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     // FIXME - set ClientId
 
-    // create thread object
-
-    obj = kzalloc(sizeof(thread_object), GFP_KERNEL);
-    if (!obj)
-        return STATUS_INSUFFICIENT_RESOURCES;
-
-    obj->header.refcount = 1;
-
-    obj->header.type = thread_type;
-    __sync_add_and_fetch(&thread_type->header.refcount, 1);
-
-    spin_lock_init(&obj->header.path_lock);
-
-    get_task_struct(ts);
-    obj->ts = ts;
-
-    Status = muwine_add_handle(&obj->header, ThreadHandle,
+    Status = muwine_add_handle(&obj->header.h, ThreadHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
 
     if (!NT_SUCCESS(Status)) {
-        if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-            obj->header.type->close(&obj->header);
+        if (__sync_sub_and_fetch(&obj->header.h.refcount, 1) == 0)
+            obj->header.h.type->close(&obj->header.h);
 
         return Status;
     }
@@ -267,9 +273,50 @@ NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
 static void thread_object_close(object_header* obj) {
     thread_object* t = (thread_object*)obj;
 
+    spin_lock(&thread_list_lock);
+    list_del(&t->list);
+    spin_unlock(&thread_list_lock);
+
     put_task_struct(t->ts);
 
-    free_object(&t->header);
+    free_object(&t->header.h);
+}
+
+int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
+    thread_object* t = NULL;
+    struct list_head* le;
+
+    if (!current->mm) // kernel thread
+        return 0;
+
+    spin_lock(&thread_list_lock);
+
+    le = thread_list.next;
+    while (le != &thread_list) {
+        thread_object* t2 = list_entry(le, thread_object, list);
+
+        if (t2->ts == current) {
+            t = t2;
+            __sync_add_and_fetch(&t->header.h.refcount, 1);
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock(&thread_list_lock);
+
+    if (!t)
+        return 0;
+
+    printk(KERN_INFO "muwine_thread_exit_handler: %u\n", current->pid);
+
+    // FIXME
+
+    if (__sync_sub_and_fetch(&t->header.h.refcount, 1) == 0)
+        t->header.h.type->close(&t->header.h);
+
+    return 0;
 }
 
 NTSTATUS muwine_init_threads(void) {

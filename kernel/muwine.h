@@ -6,6 +6,7 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <asm/uaccess.h>
+#include <linux/kprobes.h>
 
 #ifdef CONFIG_X86_64
 #define _WIN64
@@ -231,6 +232,11 @@ typedef struct _object_header {
     UNICODE_STRING path;
     spinlock_t path_lock;
 } object_header;
+
+typedef struct {
+    object_header h;
+    bool signalled;
+} sync_object;
 
 typedef struct _token token;
 
@@ -916,3 +922,4 @@ NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                              PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
                              BOOLEAN CreateSuspended);
 NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
+int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
