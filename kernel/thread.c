@@ -169,6 +169,9 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     spin_lock_init(&obj->header.h.path_lock);
 
+    spin_lock_init(&obj->header.sync_lock);
+    INIT_LIST_HEAD(&obj->header.waiters);
+
     get_task_struct(ts);
     obj->ts = ts;
 
@@ -282,6 +285,26 @@ static void thread_object_close(object_header* obj) {
     free_object(&t->header.h);
 }
 
+static void signal_object(sync_object* obj) {
+    struct list_head* le;
+
+    obj->signalled = true;
+
+    spin_lock(&obj->sync_lock);
+
+    // wake up waiting threads
+    le = obj->waiters.next;
+    while (le != &obj->waiters) {
+        waiter* w = list_entry(le, waiter, list);
+
+        wake_up_process(w->ts);
+
+        le = le->next;
+    }
+
+    spin_unlock(&obj->sync_lock);
+}
+
 int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     thread_object* t = NULL;
     struct list_head* le;
@@ -309,9 +332,7 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
     if (!t)
         return 0;
 
-    printk(KERN_INFO "muwine_thread_exit_handler: %u\n", current->pid);
-
-    // FIXME
+    signal_object(&t->header);
 
     if (__sync_sub_and_fetch(&t->header.h.refcount, 1) == 0)
         t->header.h.type->close(&t->header.h);

@@ -20,6 +20,8 @@ struct muwine_func {
 };
 
 #define STATUS_SUCCESS                      0x00000000
+#define STATUS_WAIT_0                       0x00000000
+#define STATUS_TIMEOUT                      0x00000102
 #define STATUS_SOME_NOT_MAPPED              0x00000107
 #define STATUS_OBJECT_NAME_EXISTS           0x40000000
 #define STATUS_BUFFER_OVERFLOW              0x80000005
@@ -236,7 +238,14 @@ typedef struct _object_header {
 typedef struct {
     object_header h;
     bool signalled;
+    spinlock_t sync_lock;
+    struct list_head waiters;
 } sync_object;
+
+typedef struct {
+    struct task_struct* ts;
+    struct list_head list;
+} waiter;
 
 typedef struct _token token;
 

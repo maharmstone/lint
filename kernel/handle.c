@@ -188,12 +188,82 @@ NTSTATUS NtWaitForMultipleObjects(ULONG ObjectCount, PHANDLE ObjectsArray,
 }
 
 static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut) {
-    printk(KERN_INFO "NtWaitForSingleObject(%lx, %x, %px): stub\n", (uintptr_t)ObjectHandle,
-           Alertable, TimeOut);
+    NTSTATUS Status;
+    ACCESS_MASK access;
+    sync_object* obj;
+    waiter* w;
 
-    // FIXME
+    obj = (sync_object*)get_object_from_handle(ObjectHandle, &access);
+    if (!obj)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    __sync_add_and_fetch(&obj->h.refcount, 1);
+
+    if (!(access & SYNCHRONIZE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    if (obj->signalled) {
+        Status = STATUS_WAIT_0;
+        goto end;
+    }
+
+    if (TimeOut && TimeOut->QuadPart == 0) {
+        Status = STATUS_TIMEOUT;
+        goto end;
+    }
+
+    w = kmalloc(sizeof(waiter), GFP_KERNEL);
+    if (!w) {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    spin_lock(&obj->sync_lock);
+
+    // check again if signalled
+    if (obj->signalled) {
+        spin_unlock(&obj->sync_lock);
+        kfree(w);
+        Status = STATUS_WAIT_0;
+        goto end;
+    }
+
+    w->ts = current;
+    get_task_struct(current);
+
+    list_add_tail(&w->list, &obj->waiters);
+
+    spin_unlock(&obj->sync_lock);
+
+    // FIXME - make sure waiter freed if thread killed while waiting
+
+    while (true) {
+        if (obj->signalled) {
+            spin_lock(&obj->sync_lock);
+            list_del(&w->list);
+            spin_unlock(&obj->sync_lock);
+
+            put_task_struct(w->ts);
+            kfree(w);
+
+            Status = STATUS_WAIT_0;
+            goto end;
+        }
+
+        set_current_state(TASK_INTERRUPTIBLE);
+        schedule();
+    }
+
+    // FIXME - timeout
+    // FIXME - APCs
+
+end:
+    if (__sync_sub_and_fetch(&obj->h.refcount, 1) == 0)
+        obj->h.type->close(&obj->h);
+
+    return Status;
 }
 
 NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut) {
