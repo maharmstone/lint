@@ -65,7 +65,7 @@ static struct muwine_func funcs[] = {
     { NtSetEaFile, 4 },
     { user_NtCreateThread, 8 },
     { user_NtTerminateThread, 2 },
-    { NtWaitForSingleObject, 3 },
+    { user_NtWaitForSingleObject, 3 },
     { NtWaitForMultipleObjects, 5 },
 };
 

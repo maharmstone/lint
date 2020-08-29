@@ -671,7 +671,7 @@ NTSTATUS user_NtClose(HANDLE Handle);
 NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel, ACCESS_MASK access);
 object_header* get_object_from_handle(HANDLE h, ACCESS_MASK* access);
 void muwine_free_kernel_handles(void);
-NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut);
+NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut);
 NTSTATUS NtWaitForMultipleObjects(ULONG ObjectCount, PHANDLE ObjectsArray,
                                   OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
                                   PLARGE_INTEGER TimeOut);

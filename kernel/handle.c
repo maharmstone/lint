@@ -187,11 +187,23 @@ NTSTATUS NtWaitForMultipleObjects(ULONG ObjectCount, PHANDLE ObjectsArray,
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut) {
+static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut) {
     printk(KERN_INFO "NtWaitForSingleObject(%lx, %x, %px): stub\n", (uintptr_t)ObjectHandle,
            Alertable, TimeOut);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut) {
+    LARGE_INTEGER to;
+
+    if ((uintptr_t)ObjectHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (TimeOut && get_user(to.QuadPart, &TimeOut->QuadPart) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    return NtWaitForSingleObject(ObjectHandle, Alertable, TimeOut ? &to : NULL);
 }
