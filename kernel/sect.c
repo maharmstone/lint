@@ -19,10 +19,8 @@ func_mprotect_fixup _mprotect_fixup;
 static void section_object_close(object_header* obj) {
     section_object* sect = (section_object*)obj;
 
-    if (sect->file) {
-        if (__sync_sub_and_fetch(&sect->file->header.refcount, 1) == 0)
-            sect->file->header.type->close(&sect->file->header);
-    }
+    if (sect->file)
+        dec_obj_refcount(&sect->file->header);
 
     if (sect->anon_file)
         filp_close(sect->anon_file, NULL);
@@ -272,17 +270,22 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
         file = (file_object*)get_object_from_handle(FileHandle, &file_access);
 
-        if (!file || file->header.type != file_type)
+        if (!file)
             return STATUS_INVALID_HANDLE;
+
+        if (file->header.type != file_type) {
+            dec_obj_refcount(&file->header);
+            return STATUS_INVALID_HANDLE;
+        }
 
         Status = NtQueryInformationFile(FileHandle, &iosb, &fsi, sizeof(fsi),
                                         FileStandardInformation);
-        if (!NT_SUCCESS(Status))
+        if (!NT_SUCCESS(Status)) {
+            dec_obj_refcount(&file->header);
             return Status;
+        }
 
         file_size = fsi.EndOfFile.QuadPart;
-
-        __sync_add_and_fetch(&file->header.refcount, 1);
     } else {
         if (!MaximumSize)
             return STATUS_INVALID_PARAMETER;
@@ -299,9 +302,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
         Status = load_image(FileHandle, file_size, &anon_file, &image_size, &obj);
         if (!NT_SUCCESS(Status)) {
-            if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
-                file->header.type->close(&file->header);
-
+            dec_obj_refcount(&file->header);
             return Status;
         }
 
@@ -309,10 +310,8 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     } else {
         obj = kzalloc(offsetof(section_object, sections), GFP_KERNEL);
         if (!obj) {
-            if (file) {
-                if (__sync_sub_and_fetch(&file->header.refcount, 1) == 0)
-                    file->header.type->close(&file->header);
-            }
+            if (file)
+                dec_obj_refcount(&file->header);
 
             if (anon_file)
                 filp_close(anon_file, NULL);
@@ -356,8 +355,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
             if (us_alloc)
                 kfree(us.Buffer);
 
-            if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                obj->header.type->close(&obj->header);
+            dec_obj_refcount(&obj->header);
 
             return Status;
         }
@@ -366,8 +364,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
             if (us_alloc)
                 kfree(us.Buffer);
 
-            if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                obj->header.type->close(&obj->header);
+            dec_obj_refcount(&obj->header);
 
             return STATUS_INVALID_PARAMETER;
         }
@@ -378,8 +375,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
             if (us_alloc)
                 kfree(us.Buffer);
 
-            if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                obj->header.type->close(&obj->header);
+            dec_obj_refcount(&obj->header);
 
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -391,9 +387,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
         Status = muwine_add_entry_in_hierarchy(&obj->header.path, &obj->header, false);
         if (!NT_SUCCESS(Status)) {
-            if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-                obj->header.type->close(&obj->header);
-
+            dec_obj_refcount(&obj->header);
             return Status;
         }
     }
@@ -402,9 +396,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, 0);
 
     if (!NT_SUCCESS(Status)) {
-        if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-            obj->header.type->close(&obj->header);
-
+        dec_obj_refcount(&obj->header);
         return Status;
     }
 
@@ -463,6 +455,7 @@ NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
 static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                    SIZE_T CommitSize, PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, SECTION_INHERIT InheritDisposition,
                                    ULONG AllocationType, ULONG Win32Protect) {
+    NTSTATUS Status;
     ACCESS_MASK access;
     section_object* sect = (section_object*)get_object_from_handle(SectionHandle, &access);
     unsigned long prot, ret, flags, len, off;
@@ -473,17 +466,25 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     struct list_head* le;
     unsigned int i;
 
-    if (!sect || sect->header.type != section_type)
+    if (!sect)
         return STATUS_INVALID_HANDLE;
+
+    if (sect->header.type != section_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
 
     if (ProcessHandle == NtCurrentProcess()) {
         p = muwine_current_process();
 
-        if (!p)
-            return STATUS_INTERNAL_ERROR;
+        if (!p) {
+            Status = STATUS_INTERNAL_ERROR;
+            goto end;
+        }
     } else {
         printk("NtMapViewOfSection: FIXME - support process handles\n"); // FIXME
-        return STATUS_NOT_IMPLEMENTED;
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
     }
 
     // FIXME - ZeroBits
@@ -501,7 +502,8 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
         prot = PROT_READ | PROT_WRITE;
     else {
         printk("NtMapViewOfSection: unhandle Win32Protect value %x\n", Win32Protect);
-        return STATUS_NOT_IMPLEMENTED;
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
     }
 
     // FIXME - Windows insists on 0x10000 increments for SectionOffset?
@@ -515,8 +517,10 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     else
         off = 0;
 
-    if (off > sect->max_size)
-        return STATUS_INVALID_PARAMETER;
+    if (off > sect->max_size) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
 
     if (*ViewSize == 0)
         len = sect->max_size - off;
@@ -535,18 +539,24 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     if (sect->anon_file)
         file = sect->anon_file;
     else {
-        if (!sect->file)
-            return STATUS_INVALID_PARAMETER;
+        if (!sect->file) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
 
         file = sect->file->dev->get_filp(sect->file);
 
-        if (!file)
-            return STATUS_INVALID_PARAMETER;
+        if (!file) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
     }
 
     map = kmalloc(sizeof(section_map), GFP_KERNEL);
-    if (!map)
-        return STATUS_INSUFFICIENT_RESOURCES;
+    if (!map) {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
 
     addr = *BaseAddress;
 
@@ -567,7 +577,8 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     ret = vm_mmap(file, (uintptr_t)addr, len, prot, flags, off);
     if (IS_ERR((void*)ret)) {
         kfree(map);
-        return muwine_error_to_ntstatus(ret);
+        Status = muwine_error_to_ntstatus(ret);
+        goto end;
     }
 
     addr = (void*)(uintptr_t)ret;
@@ -605,7 +616,8 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
                               flags | MAP_FIXED, off2);
                 if (IS_ERR((void*)ret)) {
                     kfree(map);
-                    return muwine_error_to_ntstatus(ret);
+                    Status = muwine_error_to_ntstatus(ret);
+                    goto end;
                 }
             }
         }
@@ -630,7 +642,8 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
             list_add(&map->list, le->prev);
             up_write(&p->mapping_list_sem);
 
-            return STATUS_SUCCESS;
+            Status = STATUS_SUCCESS;
+            goto end;
         }
 
         le = le->next;
@@ -639,7 +652,12 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     list_add_tail(&map->list, &p->mapping_list);
     up_write(&p->mapping_list_sem);
 
-    return STATUS_SUCCESS;
+    Status = STATUS_SUCCESS;
+
+end:
+    dec_obj_refcount(&sect->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
@@ -762,8 +780,13 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
         ACCESS_MASK access;
         object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory, &access);
 
-        if (!obj || obj->type != file_type)
+        if (!obj)
             return STATUS_INVALID_HANDLE;
+
+        if (obj->type != file_type) {
+            dec_obj_refcount(obj);
+            return STATUS_INVALID_HANDLE;
+        }
 
         spin_lock(&obj->path_lock);
 
@@ -772,6 +795,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
 
         if (!us.Buffer) {
             spin_unlock(&obj->path_lock);
+            dec_obj_refcount(obj);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -781,6 +805,8 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
                ObjectAttributes->ObjectName->Length);
 
         spin_unlock(&obj->path_lock);
+
+        dec_obj_refcount(obj);
     } else {
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -791,9 +817,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
         goto end;
 
     if (sect->header.type != section_type || after.Length != 0) {
-        if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)
-            sect->header.type->close(&sect->header);
-
+        dec_obj_refcount(&sect->header);
         Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
@@ -801,9 +825,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
     Status = muwine_add_handle(&sect->header, SectionHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
-        if (__sync_sub_and_fetch(&sect->header.refcount, 1) == 0)
-            sect->header.type->close(&sect->header);
-
+        dec_obj_refcount(&sect->header);
         goto end;
     }
 

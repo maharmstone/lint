@@ -20,8 +20,13 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         ACCESS_MASK access;
         object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory, &access);
 
-        if (!obj || obj->type != file_type)
+        if (!obj)
             return STATUS_INVALID_HANDLE;
+
+        if (obj->type != file_type) {
+            dec_obj_refcount(&obj->header);
+            return STATUS_INVALID_HANDLE;
+        }
 
         spin_lock(&obj->path_lock);
 
@@ -30,6 +35,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
 
         if (!us.Buffer) {
             spin_unlock(&obj->path_lock);
+            dec_obj_refcount(&obj->header);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -39,6 +45,8 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
                ObjectAttributes->ObjectName->Length);
 
         spin_unlock(&obj->path_lock);
+
+        dec_obj_refcount(&obj->header);
     } else {
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -205,17 +213,30 @@ NTSTATUS user_NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_
 NTSTATUS NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                     PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                     PULONG Key) {
+    NTSTATUS Status;
     ACCESS_MASK access;
     file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
 
-    if (!obj || obj->header.type != file_type)
+    if (!obj)
         return STATUS_INVALID_HANDLE;
 
-    if (!obj->dev->read)
-        return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.type != file_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
 
-    return obj->dev->read(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
-                          ByteOffset, Key);
+    if (!obj->dev->read) {
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    Status = obj->dev->read(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
+                            ByteOffset, Key);
+
+end:
+    dec_obj_refcount(&obj->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
@@ -269,17 +290,30 @@ NTSTATUS user_NtReadFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRou
 
 NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                                 ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    NTSTATUS Status;
     ACCESS_MASK access;
     file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
 
-    if (!obj || obj->header.type != file_type)
+    if (!obj)
         return STATUS_INVALID_HANDLE;
 
-    if (!obj->dev->query_information)
-        return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.type != file_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
 
-    return obj->dev->query_information(obj, access, IoStatusBlock, FileInformation,
-                                       Length, FileInformationClass);
+    if (!obj->dev->query_information) {
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    Status = obj->dev->query_information(obj, access, IoStatusBlock, FileInformation,
+                                         Length, FileInformationClass);
+
+end:
+    dec_obj_refcount(&obj->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
@@ -317,17 +351,30 @@ NTSTATUS user_NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatu
 NTSTATUS NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
                      PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length, PLARGE_INTEGER ByteOffset,
                      PULONG Key) {
+    NTSTATUS Status;
     ACCESS_MASK access;
     file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
 
-    if (!obj || obj->header.type != file_type)
+    if (!obj)
         return STATUS_INVALID_HANDLE;
 
-    if (!obj->dev->write)
-        return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.type != file_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
 
-    return obj->dev->write(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
-                           ByteOffset, Key);
+    if (!obj->dev->write) {
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    Status = obj->dev->write(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
+                             ByteOffset, Key);
+
+end:
+    dec_obj_refcount(&obj->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
@@ -380,35 +427,54 @@ NTSTATUS user_NtWriteFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRo
 
 NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
                               ULONG Length, FILE_INFORMATION_CLASS FileInformationClass) {
+    NTSTATUS Status;
     ACCESS_MASK access;
     file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
 
-    if (!obj || obj->header.type != file_type)
+    if (!obj)
         return STATUS_INVALID_HANDLE;
 
-    if (!obj->dev->set_information)
-        return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.type != file_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    if (!obj->dev->set_information) {
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
 
     if (FileInformationClass == FileRenameInformation) {
-        NTSTATUS Status;
         FILE_RENAME_INFORMATION* fri = FileInformation;
         UNICODE_STRING us;
         bool us_alloc = false;
         ULONG fri2len;
         FILE_RENAME_INFORMATION* fri2;
 
-        if (Length < offsetof(FILE_RENAME_INFORMATION, FileName))
-            return STATUS_INVALID_PARAMETER;
+        if (Length < offsetof(FILE_RENAME_INFORMATION, FileName)) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
 
-        if (Length < offsetof(FILE_RENAME_INFORMATION, FileName) + fri->FileNameLength)
-            return STATUS_INVALID_PARAMETER;
+        if (Length < offsetof(FILE_RENAME_INFORMATION, FileName) + fri->FileNameLength) {
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
 
         if (fri->RootDirectory) {
             ACCESS_MASK dir_access;
             file_object* obj2 = (file_object*)get_object_from_handle(fri->RootDirectory, &dir_access);
 
-            if (!obj2 || obj2->header.type != file_type)
-                return STATUS_INVALID_HANDLE;
+            if (!obj2) {
+                Status = STATUS_INVALID_HANDLE;
+                goto end;
+            }
+
+            if (obj2->header.type != file_type) {
+                dec_obj_refcount(&obj2->header);
+                Status = STATUS_INVALID_HANDLE;
+                goto end;
+            }
 
             spin_lock(&obj2->header.path_lock);
 
@@ -417,7 +483,9 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
 
             if (!us.Buffer) {
                 spin_unlock(&obj2->header.path_lock);
-                return STATUS_INSUFFICIENT_RESOURCES;
+                dec_obj_refcount(&obj2->header);
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                goto end;
             }
 
             memcpy(us.Buffer, obj2->header.path.Buffer, obj2->header.path.Length);
@@ -428,6 +496,8 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
             spin_unlock(&obj2->header.path_lock);
 
             us_alloc = true;
+
+            dec_obj_refcount(&obj2->header);
         } else {
             // FIXME - resolve device symlinks in FileName
             us.Buffer = fri->FileName;
@@ -440,7 +510,8 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
             if (us_alloc)
                 kfree(us.Buffer);
 
-            return STATUS_NOT_SAME_DEVICE;
+            Status = STATUS_NOT_SAME_DEVICE;
+            goto end;
         }
 
         if (wcsnicmp(us.Buffer, obj->dev->header.path.Buffer, obj->dev->header.path.Length / sizeof(WCHAR)) ||
@@ -448,7 +519,8 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
             if (us_alloc)
                 kfree(us.Buffer);
 
-            return STATUS_NOT_SAME_DEVICE;
+            Status = STATUS_NOT_SAME_DEVICE;
+            goto end;
         }
 
         fri2len = offsetof(FILE_RENAME_INFORMATION, FileName) + us.Length - obj->dev->header.path.Length;
@@ -458,7 +530,8 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
             if (us_alloc)
                 kfree(us.Buffer);
 
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
         }
 
         fri2->ReplaceIfExists = fri->ReplaceIfExists;
@@ -474,10 +547,13 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
         Status = obj->dev->set_information(obj, access, IoStatusBlock, fri2, fri2len, FileInformationClass);
 
         kfree(fri2);
-
-        return Status;
     } else
-        return obj->dev->set_information(obj, access, IoStatusBlock, FileInformation, Length, FileInformationClass);
+        Status = obj->dev->set_information(obj, access, IoStatusBlock, FileInformation, Length, FileInformationClass);
+
+end:
+    dec_obj_refcount(&obj->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FileInformation,
@@ -528,15 +604,25 @@ NTSTATUS NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
     ACCESS_MASK access;
     file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
 
-    if (!obj || obj->header.type != file_type)
+    if (!obj)
         return STATUS_INVALID_HANDLE;
 
-    if (!obj->dev->query_directory)
-        return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.type != file_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
 
-    Status = obj->dev->query_directory(obj, Event, ApcRoutine, ApcContext, IoStatusBlock, FileInformation,
-                                     Length, FileInformationClass, ReturnSingleEntry, FileMask,
-                                     RestartScan);
+    if (!obj->dev->query_directory) {
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    Status = obj->dev->query_directory(obj, Event, ApcRoutine, ApcContext, IoStatusBlock,
+                                       FileInformation, Length, FileInformationClass,
+                                       ReturnSingleEntry, FileMask, RestartScan);
+
+end:
+    dec_obj_refcount(&obj->header);
 
     return Status;
 }
@@ -592,17 +678,30 @@ NTSTATUS user_NtQueryDirectoryFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUT
 
 static NTSTATUS NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                              ULONG Length, FS_INFORMATION_CLASS FsInformationClass) {
+    NTSTATUS Status;
     ACCESS_MASK access;
     file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
 
-    if (!obj || obj->header.type != file_type)
+    if (!obj)
         return STATUS_INVALID_HANDLE;
 
-    if (!obj->dev->query_volume_information)
-        return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.type != file_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
 
-    return obj->dev->query_volume_information(obj, IoStatusBlock, FsInformation, Length,
-                                              FsInformationClass);
+    if (!obj->dev->query_volume_information) {
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    Status = obj->dev->query_volume_information(obj, IoStatusBlock, FsInformation, Length,
+                                                FsInformationClass);
+
+end:
+    dec_obj_refcount(&obj->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtQueryVolumeInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,

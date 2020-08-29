@@ -662,8 +662,13 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         ACCESS_MASK access;
         key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory, &access);
 
-        if (!key || key->header.type != key_type)
+        if (!key)
             return STATUS_INVALID_HANDLE;
+
+        if (key->header.type != key_type) {
+            dec_obj_refcount(&key->header);
+            return STATUS_INVALID_HANDLE;
+        }
 
         spin_lock(&key->header.path_lock);
 
@@ -672,6 +677,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
         if (!us.Buffer) {
             spin_unlock(&key->header.path_lock);
+            dec_obj_refcount(&key->header);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -681,6 +687,8 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                ObjectAttributes->ObjectName->Length);
 
         spin_unlock(&key->header.path_lock);
+
+        dec_obj_refcount(&key->header);
     } else {
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -1194,8 +1202,13 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     bool is_volatile;
 
     key = (key_object*)get_object_from_handle(KeyHandle, &access);
-    if (!key || key->header.type != key_type)
+    if (!key)
         return STATUS_INVALID_HANDLE;
+
+    if (key->header.type != key_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end2;
+    }
 
     // FIXME - check access mask of handle for KEY_ENUMERATE_SUB_KEYS
 
@@ -1206,28 +1219,27 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     size = -*(int32_t*)((uint8_t*)bins + key->offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     if (Index >= kn->SubKeyCount + kn->VolatileSubKeyCount) {
-        up_read(&key->h->sem);
-        return STATUS_NO_MORE_ENTRIES;
+        Status = STATUS_NO_MORE_ENTRIES;
+        goto end;
     }
 
     if (Index >= kn->SubKeyCount) {
         Status = get_key_item_by_index(key->h, kn, Index - kn->SubKeyCount, &cell_offset, true);
         if (!NT_SUCCESS(Status)) {
             printk(KERN_INFO "get_key_item_by_index returned %08x\n", Status);
-            up_read(&key->h->sem);
-            return Status;
+            goto end;
         }
 
         is_volatile = true;
@@ -1235,8 +1247,7 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
         Status = get_key_item_by_index(key->h, kn, Index, &cell_offset, false);
         if (!NT_SUCCESS(Status)) {
             printk(KERN_INFO "get_key_item_by_index returned %08x\n", Status);
-            up_read(&key->h->sem);
-            return Status;
+            goto end;
         }
 
         is_volatile = false;
@@ -1249,26 +1260,30 @@ static NTSTATUS NtEnumerateKey(HANDLE KeyHandle, ULONG Index, KEY_INFORMATION_CL
     size = -*(int32_t*)((uint8_t*)bins2 + cell_offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     kn2 = (CM_KEY_NODE*)((uint8_t*)bins2 + cell_offset + sizeof(int32_t));
 
     if (kn2->Signature != CM_KEY_NODE_SIGNATURE) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn2->NameLength) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     Status = query_key_info(KeyInformationClass, KeyInformation, kn2,
                             Length, ResultLength);
 
+end:
     up_read(&key->h->sem);
+
+end2:
+    dec_obj_refcount(&key->header);
 
     return Status;
 }
@@ -1543,8 +1558,13 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     void* bins;
 
     key = (key_object*)get_object_from_handle(KeyHandle, &access);
-    if (!key || key->header.type != key_type)
+    if (!key)
         return STATUS_INVALID_HANDLE;
+
+    if (key->header.type != key_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end2;
+    }
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
 
@@ -1555,20 +1575,20 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     size = -*(int32_t*)((uint8_t*)bins + key->offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     if (Index >= kn->ValuesCount) {
-        up_read(&key->h->sem);
-        return STATUS_NO_MORE_ENTRIES;
+        Status = STATUS_NO_MORE_ENTRIES;
+        goto end;
     }
 
     // FIXME - check not out of bounds
@@ -1576,8 +1596,8 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     size = -*(int32_t*)((uint8_t*)bins + kn->Values);
 
     if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
@@ -1588,14 +1608,18 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
     vk = (CM_KEY_VALUE*)((uint8_t*)bins + values_list[Index] + sizeof(int32_t));
 
     if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length,
                              ResultLength, key->is_volatile);
 
+end:
     up_read(&key->h->sem);
+
+end2:
+    dec_obj_refcount(&key->header);
 
     return Status;
 }
@@ -1651,8 +1675,13 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
         return STATUS_INVALID_PARAMETER;
 
     key = (key_object*)get_object_from_handle(KeyHandle, &access);
-    if (!key || key->header.type != key_type)
+    if (!key)
         return STATUS_INVALID_HANDLE;
+
+    if (key->header.type != key_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end2;
+    }
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE
 
@@ -1663,20 +1692,20 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
     size = -*(int32_t*)((uint8_t*)bins + key->offset);
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     kn = (CM_KEY_NODE*)((uint8_t*)bins + key->offset + sizeof(int32_t));
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     if (kn->ValuesCount == 0) {
-        up_read(&key->h->sem);
-        return STATUS_OBJECT_NAME_NOT_FOUND;
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        goto end;
     }
 
     // FIXME - check not out of bounds
@@ -1684,8 +1713,8 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
     size = -*(int32_t*)((uint8_t*)bins + kn->Values);
 
     if (size < sizeof(int32_t) + (kn->ValuesCount * sizeof(uint32_t))) {
-        up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     values_list = (uint32_t*)((uint8_t*)bins + kn->Values + sizeof(int32_t));
@@ -1698,8 +1727,8 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
         size = -*(int32_t*)((uint8_t*)bins + values_list[i]);
 
         if (vk->Signature != CM_KEY_VALUE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength) {
-            up_read(&key->h->sem);
-            return STATUS_REGISTRY_CORRUPT;
+            Status = STATUS_REGISTRY_CORRUPT;
+            goto end;
         }
 
         if (vk->Flags & VALUE_COMP_NAME) {
@@ -1727,8 +1756,7 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
                 if (found) {
                     Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length,
                                              ResultLength, key->is_volatile);
-                    up_read(&key->h->sem);
-                    return Status;
+                    goto end;
                 }
             }
         } else {
@@ -1755,16 +1783,21 @@ static NTSTATUS NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY
                 if (found) {
                     Status = query_key_value(key->h, vk, KeyValueInformationClass, KeyValueInformation, Length,
                                              ResultLength, key->is_volatile);
-                    up_read(&key->h->sem);
-                    return Status;
+                    goto end;
                 }
             }
         }
     }
 
+    Status = STATUS_OBJECT_NAME_NOT_FOUND;
+
+end:
     up_read(&key->h->sem);
 
-    return STATUS_OBJECT_NAME_NOT_FOUND;
+end2:
+    dec_obj_refcount(&key->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtQueryValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, KEY_VALUE_INFORMATION_CLASS KeyValueInformationClass,
@@ -2148,8 +2181,13 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
     // FIXME - should we be rejecting short REG_DWORDs etc. here?
 
     key = (key_object*)get_object_from_handle(KeyHandle, &access);
-    if (!key || key->header.type != key_type)
+    if (!key)
         return STATUS_INVALID_HANDLE;
+
+    if (key->header.type != key_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end2;
+    }
 
     // FIXME - check for KEY_SET_VALUE in access mask
 
@@ -2461,6 +2499,9 @@ end:
 
     up_write(&key->h->sem);
 
+end2:
+    dec_obj_refcount(&key->header);
+
     return Status;
 }
 
@@ -2523,8 +2564,13 @@ static NTSTATUS NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     void* bins;
 
     key = (key_object*)get_object_from_handle(KeyHandle, &access);
-    if (!key || key->header.type != key_type)
+    if (!key)
         return STATUS_INVALID_HANDLE;
+
+    if (key->header.type != key_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end2;
+    }
 
     // FIXME - check for KEY_SET_VALUE in access mask
 
@@ -2733,6 +2779,9 @@ end:
         key->h->dirty = true;
 
     up_write(&key->h->sem);
+
+end2:
+    dec_obj_refcount(&key->header);
 
     return Status;
 }
@@ -3661,8 +3710,13 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         ACCESS_MASK access;
         key_object* key = (key_object*)get_object_from_handle(ObjectAttributes->RootDirectory, &access);
 
-        if (!key || key->header.type != key_type)
+        if (!key)
             return STATUS_INVALID_HANDLE;
+
+        if (key->header.type != key_type) {
+            dec_obj_refcount(&key->header);
+            return STATUS_INVALID_HANDLE;
+        }
 
         spin_lock(&key->header.path_lock);
 
@@ -3671,6 +3725,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
         if (!us.Buffer) {
             spin_unlock(&key->header.path_lock);
+            dec_obj_refcount(&key->header);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -3680,6 +3735,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                ObjectAttributes->ObjectName->Length);
 
         spin_unlock(&key->header.path_lock);
+
+        dec_obj_refcount(&key->header);
     } else {
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -3851,8 +3908,13 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
     uint32_t subkey_list;
 
     key = (key_object*)get_object_from_handle(KeyHandle, &access);
-    if (!key || key->header.type != key_type)
+    if (!key)
         return STATUS_INVALID_HANDLE;
+
+    if (key->header.type != key_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end2;
+    }
 
     // FIXME - check access mask has DELETE permission
 
@@ -4060,6 +4122,9 @@ end:
 
     up_write(&key->h->sem);
 
+end2:
+    dec_obj_refcount(&key->header);
+
     return Status;
 }
 
@@ -4186,6 +4251,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
         fs_path.Buffer = kmalloc(fileobj->path.Length, GFP_KERNEL);
         if (!fs_path.Buffer) {
             spin_unlock(&fileobj->path_lock);
+            dec_obj_refcount(fileobj);
             vfree(h->data);
             kfree(h->path.Buffer);
             kfree(h);
@@ -4198,6 +4264,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
     }
 
     spin_unlock(&fileobj->path_lock);
+    dec_obj_refcount(fileobj);
 
     NtClose(fh);
 
@@ -4804,14 +4871,24 @@ static NTSTATUS flush_hive(hive* h) {
 }
 
 NTSTATUS NtFlushKey(HANDLE KeyHandle) {
+    NTSTATUS Status;
     ACCESS_MASK access;
     key_object* key;
 
     key = (key_object*)get_object_from_handle(KeyHandle, &access);
-    if (!key || key->header.type != key_type)
+    if (!key)
         return STATUS_INVALID_HANDLE;
 
-    return flush_hive(key->h);
+    if (key->header.type != key_type) {
+        dec_obj_refcount(&key->header);
+        return STATUS_INVALID_HANDLE;
+    }
+
+    Status = flush_hive(key->h);
+
+    dec_obj_refcount(&key->header);
+
+    return Status;
 }
 
 static int reboot_callback(struct notifier_block* self, unsigned long val, void* data) {
@@ -4844,8 +4921,13 @@ static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformatio
     CM_KEY_NODE* kn;
 
     key = (key_object*)get_object_from_handle(KeyHandle, &access);
-    if (!key || key->header.type != key_type)
+    if (!key)
         return STATUS_INVALID_HANDLE;
+
+    if (key->header.type != key_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
 
     // FIXME - check access mask of handle for KEY_QUERY_VALUE (unless KeyNameInformation or KeyHandleTagsInformation)
 
@@ -4858,7 +4940,8 @@ static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformatio
 
     if (size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0])) {
         up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     if (key->is_volatile)
@@ -4868,12 +4951,16 @@ static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformatio
 
     if (kn->Signature != CM_KEY_NODE_SIGNATURE || size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + kn->NameLength) {
         up_read(&key->h->sem);
-        return STATUS_REGISTRY_CORRUPT;
+        Status = STATUS_REGISTRY_CORRUPT;
+        goto end;
     }
 
     Status = query_key_info(KeyInformationClass, KeyInformation, kn, Length, ResultLength);
 
     up_read(&key->h->sem);
+
+end:
+    dec_obj_refcount(&key->header);
 
     return Status;
 }

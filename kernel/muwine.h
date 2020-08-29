@@ -755,6 +755,11 @@ typedef struct _type_object {
     uint32_t valid;
 } type_object;
 
+static void __inline dec_obj_refcount(object_header* obj) {
+    if (__sync_sub_and_fetch(&obj->refcount, 1) == 0)
+        obj->type->close(obj);
+}
+
 void free_object(object_header* obj);
 type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close,
                                     muwine_cleanup_object cleanup, uint32_t generic_read,

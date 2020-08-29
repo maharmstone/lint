@@ -81,6 +81,7 @@ object_header* get_object_from_handle(HANDLE h, ACCESS_MASK* access) {
         if (h2->number == (uintptr_t)h) {
             object_header* obj = h2->object;
 
+            __sync_add_and_fetch(&obj->refcount, 1);
             *access = h2->access;
 
             spin_unlock(lock);
@@ -197,8 +198,6 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
     if (!obj)
         return STATUS_INVALID_HANDLE;
 
-    __sync_add_and_fetch(&obj->h.refcount, 1);
-
     if (!(access & SYNCHRONIZE)) {
         Status = STATUS_ACCESS_DENIED;
         goto end;
@@ -260,8 +259,7 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
     // FIXME - APCs
 
 end:
-    if (__sync_sub_and_fetch(&obj->h.refcount, 1) == 0)
-        obj->h.type->close(&obj->h);
+    dec_obj_refcount(&obj->h);
 
     return Status;
 }
