@@ -38,18 +38,15 @@ static type_object* symlink_type = NULL;
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part);
 
 void muwine_free_objs(void) {
-    if (__sync_sub_and_fetch(&dir_root->header.refcount, 1) == 0)
-        dir_root->header.type->close(&dir_root->header);
+    dec_obj_refcount(&dir_root->header);
 }
 
 void free_object(object_header* obj) {
     if (obj->path.Buffer)
         kfree(obj->path.Buffer);
 
-    if (obj != &type_type->header) {
-        if (__sync_sub_and_fetch(&obj->type->header.refcount, 1) == 0)
-            obj->type->header.type->close(&obj->type->header);
-    }
+    if (obj != &type_type->header)
+        dec_obj_refcount(&obj->type->header);
 
     kfree(obj);
 }
@@ -246,8 +243,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
 
                     spin_unlock(&parent->children_lock);
 
-                    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-                        parent->header.type->close(&parent->header);
+                    dec_obj_refcount(&parent->header);
 
                     after->Buffer = NULL;
                     after->Length = 0;
@@ -264,8 +260,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
 
                     spin_unlock(&parent->children_lock);
 
-                    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-                        parent->header.type->close(&parent->header);
+                    dec_obj_refcount(&parent->header);
 
                     *after_alloc = us_alloc;
                     after->Length = left.Length;
@@ -324,15 +319,13 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
 
         spin_unlock(&parent->children_lock);
 
-        if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-            parent->header.type->close(&parent->header);
+        dec_obj_refcount(&parent->header);
 
         parent = new_parent;
         next_part(&left, &part);
     } while (true);
 
-    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-        parent->header.type->close(&parent->header);
+    dec_obj_refcount(&parent->header);
 
     if (us_alloc)
         kfree(us2.Buffer);
@@ -346,8 +339,7 @@ static void dir_object_close(object_header* obj) {
     while (!list_empty(&dir->children)) {
         dir_item* item = list_entry(dir->children.next, dir_item, list);
 
-        if (__sync_sub_and_fetch(&item->object->refcount, 1) == 0)
-            item->object->type->close(item->object);
+        dec_obj_refcount(item->object);
 
         list_del(&item->list);
 
@@ -446,8 +438,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
                 if (left.Length == 0) {
                     spin_unlock(&parent->children_lock);
 
-                    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-                        parent->header.type->close(&parent->header);
+                    dec_obj_refcount(&parent->header);
 
                     if (us_alloc)
                         kfree(us2.Buffer);
@@ -458,8 +449,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
                 if (item->object->type != dir_type) {
                     spin_unlock(&parent->children_lock);
 
-                    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-                        parent->header.type->close(&parent->header);
+                    dec_obj_refcount(&parent->header);
 
                     if (us_alloc)
                         kfree(us2.Buffer);
@@ -483,8 +473,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
             if (!item) {
                 spin_unlock(&parent->children_lock);
 
-                if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-                    parent->header.type->close(&parent->header);
+                dec_obj_refcount(&parent->header);
 
                 if (us_alloc)
                     kfree(us2.Buffer);
@@ -502,8 +491,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
 
             spin_unlock(&parent->children_lock);
 
-            if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-                parent->header.type->close(&parent->header);
+            dec_obj_refcount(&parent->header);
 
             if (us_alloc)
                 kfree(us2.Buffer);
@@ -516,15 +504,13 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
         if (!new_parent)
             break;
 
-        if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-            parent->header.type->close(&parent->header);
+        dec_obj_refcount(&parent->header);
 
         parent = new_parent;
         next_part(&left, &part);
     } while (true);
 
-    if (__sync_sub_and_fetch(&parent->header.refcount, 1) == 0)
-        parent->header.type->close(&parent->header);
+    dec_obj_refcount(&parent->header);
 
     if (us_alloc)
         kfree(us2.Buffer);
@@ -570,9 +556,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
     Status = muwine_add_handle(&obj->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
-        if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-            obj->header.type->close(&obj->header);
-
+        dec_obj_refcount(&obj->header);
         return Status;
     }
 
@@ -806,9 +790,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     Status = muwine_add_handle(&obj->header, pHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
-        if (__sync_sub_and_fetch(&obj->header.refcount, 1) == 0)
-            obj->header.type->close(&obj->header);
-
+        dec_obj_refcount(&obj->header);
         return Status;
     }
 

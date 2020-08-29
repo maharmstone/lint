@@ -190,9 +190,7 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
 
     if (!NT_SUCCESS(Status)) {
-        if (__sync_sub_and_fetch(&obj->header.h.refcount, 1) == 0)
-            obj->header.h.type->close(&obj->header.h);
-
+        dec_obj_refcount(&obj->header.h);
         return Status;
     }
 
@@ -334,8 +332,7 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
 
     signal_object(&t->header);
 
-    if (__sync_sub_and_fetch(&t->header.h.refcount, 1) == 0)
-        t->header.h.type->close(&t->header.h);
+    dec_obj_refcount(&t->header.h);
 
     return 0;
 }

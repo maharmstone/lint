@@ -1002,10 +1002,8 @@ static int group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
 
             list_del(&sm->list);
 
-            if (sm->sect) {
-                if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
-                    sm->sect->type->close(sm->sect);
-            }
+            if (sm->sect)
+                dec_obj_refcount(sm->sect);
 
             kfree(sm);
         }
@@ -1022,8 +1020,7 @@ static int group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
                     hand->object->type->cleanup(hand->object);
             }
 
-            if (__sync_sub_and_fetch(&hand->object->refcount, 1) == 0)
-                hand->object->type->close(hand->object);
+            dec_obj_refcount(hand->object);
 
             kfree(hand);
         }

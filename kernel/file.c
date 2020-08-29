@@ -24,7 +24,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
             return STATUS_INVALID_HANDLE;
 
         if (obj->type != file_type) {
-            dec_obj_refcount(&obj->header);
+            dec_obj_refcount(obj);
             return STATUS_INVALID_HANDLE;
         }
 
@@ -35,7 +35,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
 
         if (!us.Buffer) {
             spin_unlock(&obj->path_lock);
-            dec_obj_refcount(&obj->header);
+            dec_obj_refcount(obj);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -46,7 +46,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
 
         spin_unlock(&obj->path_lock);
 
-        dec_obj_refcount(&obj->header);
+        dec_obj_refcount(obj);
     } else {
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -57,17 +57,13 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         goto end;
 
     if (dev->header.type != device_type) {
-        if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
-            dev->header.type->close(&dev->header);
-
+        dec_obj_refcount(&dev->header);
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
     }
 
     if (!dev->create) {
-        if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
-            dev->header.type->close(&dev->header);
-
+        dec_obj_refcount(&dev->header);
         Status = STATUS_NOT_IMPLEMENTED;
         goto end;
     }
@@ -78,8 +74,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
                          ShareAccess, CreateDisposition, CreateOptions, EaBuffer, EaLength,
                          ObjectAttributes->Attributes);
 
-    if (__sync_sub_and_fetch(&dev->header.refcount, 1) == 0)
-        dev->header.type->close(&dev->header);
+    dec_obj_refcount(&dev->header);
 
 end:
     if (oa_us_alloc)

@@ -48,8 +48,7 @@ static void file_object_close(object_header* obj) {
     if (f->fileobj.query_string.Buffer)
         kfree(f->fileobj.query_string.Buffer);
 
-    if (__sync_sub_and_fetch(&f->fileobj.dev->header.refcount, 1) == 0)
-        f->fileobj.dev->header.type->close(&f->fileobj.dev->header);
+    dec_obj_refcount(&f->fileobj.dev->header);
 
     free_object(&f->fileobj.header);
 }
@@ -556,8 +555,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     obj->fileobj.header.path.Buffer = kmalloc(obj->fileobj.header.path.Length, GFP_KERNEL);
 
     if (!obj->fileobj.header.path.Buffer) {
-        if (__sync_sub_and_fetch(&file_type->header.refcount, 1) == 0)
-            file_type->header.type->close(&file_type->header);
+        dec_obj_refcount(&file_type->header);
 
         kfree(obj);
 
@@ -593,11 +591,8 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         free_unixfs_inode(ui);
         up_write(&file_list_sem);
 
-        if (__sync_sub_and_fetch(&obj->fileobj.dev->header.refcount, 1) == 0)
-            obj->fileobj.dev->header.type->close(&obj->fileobj.dev->header);
-
-        if (__sync_sub_and_fetch(&file_type->header.refcount, 1) == 0)
-            file_type->header.type->close(&file_type->header);
+        dec_obj_refcount(&obj->fileobj.dev->header);
+        dec_obj_refcount(&file_type->header);
 
         kfree(obj->fileobj.header.path.Buffer);
         kfree(obj);

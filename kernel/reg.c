@@ -801,8 +801,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                 if (us_alloc)
                     kfree(orig_us.Buffer);
 
-                if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
-                    key_type->header.type->close(&key_type->header);
+                dec_obj_refcount(&key_type->header);
 
                 kfree(k);
 
@@ -826,9 +825,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
             if (!NT_SUCCESS(Status)) {
-                if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
-                    key_type->header.type->close(&key_type->header);
-
+                dec_obj_refcount(&key_type->header);
                 kfree(k);
             }
 
@@ -3651,9 +3648,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
     if (!k->header.path.Buffer) {
-        if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
-            key_type->header.type->close(&key_type->header);
-
+        dec_obj_refcount(&key_type->header);
         kfree(k);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -3680,9 +3675,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     Status = muwine_add_handle(&k->header, KeyHandle, oa_attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
-        if (__sync_sub_and_fetch(&key_type->header.refcount, 1) == 0)
-            key_type->header.type->close(&key_type->header);
-
+        dec_obj_refcount(&key_type->header);
         kfree(k);
         return Status;
     }

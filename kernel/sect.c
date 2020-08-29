@@ -743,8 +743,7 @@ static NTSTATUS NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress) {
     if (((section_object*)sm->sect)->file)
         __sync_add_and_fetch(&((section_object*)sm->sect)->file->mapping_count, 1);
 
-    if (__sync_sub_and_fetch(&sm->sect->refcount, 1) == 0)
-        sm->sect->type->close(sm->sect);
+    dec_obj_refcount(sm->sect);
 
     kfree(sm);
 
