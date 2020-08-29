@@ -323,7 +323,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     obj->header.refcount = 1;
 
     obj->header.type = section_type;
-    __sync_add_and_fetch(&section_type->header.refcount, 1);
+    inc_obj_refcount(&section_type->header);
 
     spin_lock_init(&obj->header.path_lock);
 
@@ -624,7 +624,7 @@ static NTSTATUS NtMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, P
     }
 
     map->sect = &sect->header;
-    __sync_add_and_fetch(&map->sect->refcount, 1);
+    inc_obj_refcount(map->sect);
 
     *BaseAddress = addr;
     *ViewSize = len;

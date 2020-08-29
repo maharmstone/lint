@@ -755,6 +755,10 @@ typedef struct _type_object {
     uint32_t valid;
 } type_object;
 
+static void __inline inc_obj_refcount(object_header* obj) {
+    __sync_add_and_fetch(&obj->refcount, 1);
+}
+
 static void __inline dec_obj_refcount(object_header* obj) {
     if (__sync_sub_and_fetch(&obj->refcount, 1) == 0)
         obj->type->close(obj);

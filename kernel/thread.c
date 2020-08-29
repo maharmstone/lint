@@ -165,7 +165,7 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     obj->header.h.refcount = 1;
 
     obj->header.h.type = thread_type;
-    __sync_add_and_fetch(&thread_type->header.refcount, 1);
+    inc_obj_refcount(&thread_type->header);
 
     spin_lock_init(&obj->header.h.path_lock);
 
@@ -318,7 +318,7 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
 
         if (t2->ts == current) {
             t = t2;
-            __sync_add_and_fetch(&t->header.h.refcount, 1);
+            inc_obj_refcount(&t->header.h);
             break;
         }
 

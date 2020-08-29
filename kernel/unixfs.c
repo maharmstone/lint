@@ -548,7 +548,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     obj->fileobj.header.refcount = 1;
     obj->fileobj.header.type = file_type;
-    __sync_add_and_fetch(&file_type->header.refcount, 1);
+    inc_obj_refcount(&file_type->header);
 
     spin_lock_init(&obj->fileobj.header.path_lock);
     obj->fileobj.header.path.Length = obj->fileobj.header.path.MaximumLength = us->Length + dev->header.path.Length;
@@ -575,7 +575,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     obj->fileobj.options = CreateOptions;
     obj->inode = ui;
 
-    __sync_add_and_fetch(&dev->header.refcount, 1);
+    inc_obj_refcount(&dev->header);
 
     down_write(&file_list_sem);
     list_add_tail(&obj->list, &file_list);
@@ -1722,7 +1722,7 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->header.refcount = 1;
 
     dev->header.type = device_type;
-    __sync_add_and_fetch(&dev->header.type->header.refcount, 1);
+    inc_obj_refcount(&device_type->header);
 
     spin_lock_init(&dev->header.path_lock);
 

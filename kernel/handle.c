@@ -81,7 +81,7 @@ object_header* get_object_from_handle(HANDLE h, ACCESS_MASK* access) {
         if (h2->number == (uintptr_t)h) {
             object_header* obj = h2->object;
 
-            __sync_add_and_fetch(&obj->refcount, 1);
+            inc_obj_refcount(obj);
             *access = h2->access;
 
             spin_unlock(lock);

@@ -789,7 +789,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             k->header.refcount = 1;
 
             k->header.type = key_type;
-            __sync_add_and_fetch(&key_type->header.refcount, 1);
+            inc_obj_refcount(&key_type->header);
 
             spin_lock_init(&k->header.path_lock);
             k->header.path.Length = k->header.path.MaximumLength = orig_us.Length + sizeof(prefix) - sizeof(WCHAR);
@@ -3637,7 +3637,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     k->header.refcount = 1;
     k->header.type = key_type;
-    __sync_add_and_fetch(&key_type->header.refcount, 1);
+    inc_obj_refcount(&key_type->header);
 
     spin_lock_init(&k->header.path_lock);
     k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + h->path.Length + us->Length;
