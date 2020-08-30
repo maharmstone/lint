@@ -261,6 +261,15 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
             goto end;
         }
 
+        if (signal_pending(current)) {
+            Status = -EINTR;
+
+            if (TimeOut)
+                TimeOut->QuadPart = -jiffies_to_msecs(timeout) * 10000;
+
+            goto end;
+        }
+
         timeout = schedule_timeout_interruptible(timeout);
         if (timeout == 0) {
             Status = STATUS_TIMEOUT;
@@ -277,6 +286,7 @@ end:
 }
 
 NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLARGE_INTEGER TimeOut) {
+    NTSTATUS Status;
     LARGE_INTEGER to;
 
     if ((uintptr_t)ObjectHandle & KERNEL_HANDLE_MASK)
@@ -285,5 +295,12 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
     if (TimeOut && get_user(to.QuadPart, &TimeOut->QuadPart) < 0)
         return STATUS_ACCESS_VIOLATION;
 
-    return NtWaitForSingleObject(ObjectHandle, Alertable, TimeOut ? &to : NULL);
+    Status = NtWaitForSingleObject(ObjectHandle, Alertable, TimeOut ? &to : NULL);
+
+    if (Status == -EINTR && TimeOut) {
+        if (put_user(to.QuadPart, &TimeOut->QuadPart) < 0)
+            Status = STATUS_ACCESS_VIOLATION;
+    }
+
+    return Status;
 }
