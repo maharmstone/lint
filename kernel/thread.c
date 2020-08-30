@@ -40,6 +40,7 @@ typedef struct {
 
 void (*_put_files_struct)(struct files_struct* files);
 void (*_detach_pid)(struct task_struct* task, enum pid_type type);
+void (*_ptrace_notify)(int exit_code);
 
 static LIST_HEAD(thread_list);
 static DEFINE_SPINLOCK(thread_list_lock);
@@ -108,6 +109,29 @@ static int thread_start(void* arg) {
     // doesn't return
 
     return 0;
+}
+
+static void _ptrace_event(int event, unsigned long message) {
+    if (unlikely(ptrace_event_enabled(current, event))) {
+        current->ptrace_message = message;
+        _ptrace_notify((event << 8) | SIGTRAP);
+    } else if (event == PTRACE_EVENT_EXEC) {
+        if ((current->ptrace & (PT_PTRACED|PT_SEIZED)) == PT_PTRACED)
+            send_sig(SIGTRAP, current, 0);
+    }
+}
+
+static void _ptrace_event_pid(int event, struct pid* pid) {
+    unsigned long message = 0;
+    struct pid_namespace *ns;
+
+    rcu_read_lock();
+    ns = task_active_pid_ns(rcu_dereference(current->parent));
+    if (ns)
+        message = pid_nr_ns(pid, ns);
+    rcu_read_unlock();
+
+    _ptrace_event(event, message);
 }
 
 static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
@@ -197,6 +221,14 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     spin_unlock(&thread_list_lock);
 
     wake_up_process(ts);
+
+    if (current->ptrace) {
+        struct pid* pid = get_task_pid(ts, PIDTYPE_PID);
+
+        _ptrace_event_pid(PTRACE_EVENT_CLONE, pid);
+
+        put_pid(pid);
+    }
 
     // wait for thread to start
     wait_for_completion(&ctx->thread_created);
@@ -381,6 +413,10 @@ NTSTATUS muwine_init_threads(void) {
         return Status;
 
     Status = get_func_ptr("detach_pid", (void**)&_detach_pid);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Status = get_func_ptr("ptrace_notify", (void**)&_ptrace_notify);
     if (!NT_SUCCESS(Status))
         return Status;
 
