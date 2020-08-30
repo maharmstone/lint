@@ -49,6 +49,7 @@ static type_object* thread_type = NULL;
 static int thread_start(void* arg) {
     context* ctx = arg;
     uint64_t cs, ds;
+    CONTEXT regs;
 
     current->mm = current->active_mm = ctx->mm;
 
@@ -67,25 +68,41 @@ static int thread_start(void* arg) {
 
     // FIXME - allocate and populate TEB, and set in gs
 
+    memcpy(&regs, &ctx->thread_context, sizeof(CONTEXT));
+
     complete(&ctx->thread_created);
 
     // FIXME - wait here if CreateSuspended not set
 
-    // FIXME - set registers
-
     asm volatile(
+        "lea %0, %%rax\n\t"
+        "mov 0x80(%%rax), %%rcx\n\t"
+        "mov 0x88(%%rax), %%rdx\n\t"
+        "mov 0x90(%%rax), %%rbx\n\t"
+        "mov 0xa8(%%rax), %%rsi\n\t"
+        "mov 0xb0(%%rax), %%rdi\n\t"
+        "mov 0xb8(%%rax), %%r8\n\t"
+        "mov 0xc0(%%rax), %%r9\n\t"
+        "mov 0xc8(%%rax), %%r10\n\t"
+        "mov 0xd0(%%rax), %%r11\n\t"
+        "mov 0xd8(%%rax), %%r12\n\t"
+        "mov 0xe0(%%rax), %%r13\n\t"
+        "mov 0xe8(%%rax), %%r14\n\t"
+        "mov 0xf0(%%rax), %%r15\n\t"
         "cli\n\t"
-        "push %1\n\t"               // push new SS
-        "push %3\n\t"               // push new RSP
-        "pushfq\n\t"                // push RFLAGS
-        "orq $0x3000, (%%rsp)\n\t"  // change IOPL to ring 3
-        "orq $0x200, (%%rsp)\n\t"   // re-enable interrupts in usermode
-        "push %0\n\t"               // push new CS
-        "push %2\n\t"               // push new RIP
+        "push $0x2b\n\t"                // push new SS
+        "push 0x98(%%rax)\n\t"          // push new RSP
+        "pushfq\n\t"                    // push RFLAGS
+        "orq $0x3000, (%%rsp)\n\t"      // change IOPL to ring 3
+        "orq $0x200, (%%rsp)\n\t"       // re-enable interrupts in usermode
+        "push $0x33\n\t"                // push new CS
+        "push 0xf8(%%rax)\n\t"          // push new RIP
+        "mov 0xa0(%%rax), %%rbp\n\t"
+        "mov 0x78(%%rax), %%rax\n\t"
         "swapgs\n\t"
         "iretq\n\t"
         :
-        : "r" ((uint64_t)__USER_CS), "r" ((uint64_t)__USER_DS), "m" (ctx->thread_context.Rip), "m" (ctx->thread_context.Rsp)
+        : "m" (regs)
     );
 
     // doesn't return
@@ -183,6 +200,7 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     // wait for thread to start
     wait_for_completion(&ctx->thread_created);
+    kfree(ctx);
 
     // FIXME - set ClientId
 
