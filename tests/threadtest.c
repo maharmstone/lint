@@ -34,10 +34,14 @@ NTSTATUS __stdcall NtCreateThreadEx(PHANDLE hThread, ACCESS_MASK DesiredAccess, 
 
 NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 
+#else
+
+#define STATUS_WAIT_0 0x00000000
+
 #endif
 
+uintptr_t answer = 0;
 uint8_t __attribute__((aligned(0x1000))) stack[0x20000];
-volatile bool thread_ended = false;
 
 #ifdef _X86_
 
@@ -56,10 +60,12 @@ volatile bool thread_ended = false;
 
 #endif
 
-static void threadfunc() {
+static void __stdcall threadfunc(uintptr_t val) {
     // FIXME - use NtWriteFile to write message to stdout
 
-    thread_ended = true;
+    answer = val;
+
+    while (true) { }
 
     NtTerminateThread(NtCurrentThread(), 0);
 }
@@ -70,6 +76,7 @@ int main() {
     CLIENT_ID client_id;
     CONTEXT context;
     INITIAL_TEB initial_teb;
+    LARGE_INTEGER timeout;
 
     printf("Starting main thread (func = %p, stack = %p).\n", threadfunc, stack);
 
@@ -101,6 +108,7 @@ int main() {
     context.EFlags = EFLAGS_INTERRUPT_MASK;
     context.Rip = (uintptr_t)threadfunc;
     context.Rsp = (uintptr_t)initial_teb.StackBase;
+    context.Rcx = 42;
     context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS;
 #else
 #error "Unsupported architecture."
@@ -122,9 +130,16 @@ int main() {
 
     printf("Thread created.\n");
 
-    while (!thread_ended) { }
+    timeout.QuadPart = -30000000; // 3 seconds
 
-    printf("Thread finished.\n");
+    Status = NtWaitForSingleObject(h, false, &timeout);
+    if (Status != STATUS_WAIT_0) {
+        fprintf(stderr, "NtWaitForSingleObject returned %08x (answer = %u)\n", (uint32_t)Status, (unsigned int)answer);
+        NtClose(h);
+        return 1;
+    }
+
+    printf("Thread finished (answer = %u).\n", (unsigned int)answer);
 
     NtClose(h);
 
