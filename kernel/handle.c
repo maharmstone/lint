@@ -191,6 +191,13 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
     ACCESS_MASK access;
     sync_object* obj;
     waiter* w;
+    signed long timeout;
+
+    if (TimeOut && TimeOut->QuadPart > 0) {
+        // FIXME - this would imply timeout at an absolute rather than relative time
+        // Does Windows allow this?
+        return STATUS_INVALID_PARAMETER;
+    }
 
     obj = (sync_object*)get_object_from_handle(ObjectHandle, &access);
     if (!obj)
@@ -234,6 +241,11 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
 
     spin_unlock(&obj->sync_lock);
 
+    if (TimeOut)
+        timeout = msecs_to_jiffies(-TimeOut->QuadPart / 10000);
+    else
+        timeout = MAX_SCHEDULE_TIMEOUT;
+
     // FIXME - make sure waiter freed if thread killed while waiting
 
     while (true) {
@@ -249,11 +261,13 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
             goto end;
         }
 
-        set_current_state(TASK_INTERRUPTIBLE);
-        schedule();
+        timeout = schedule_timeout_interruptible(timeout);
+        if (timeout == 0) {
+            Status = STATUS_TIMEOUT;
+            goto end;
+        }
     }
 
-    // FIXME - timeout
     // FIXME - APCs
 
 end:
