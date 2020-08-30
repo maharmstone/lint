@@ -177,6 +177,7 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     _detach_pid(ts, PIDTYPE_PGID);
 
     ts->flags &= ~PF_KTHREAD;
+    ts->flags &= ~PF_NOFREEZE;
     ts->exit_signal = -1;
     ts->group_leader = current->group_leader;
     ts->tgid = current->tgid;
@@ -194,6 +195,18 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     list_del_rcu(&ts->tasks);
     list_del(&ts->sibling);
+
+    if (current->ptrace) { // e.g. currently attached to GDB
+        ts->ptrace = current->ptrace;
+        list_add(&ts->ptrace_entry, &current->parent->ptraced);
+        ts->parent = current->parent;
+        ts->ptracer_cred = get_cred(current->ptracer_cred);
+
+        if (ts->ptrace & PT_SEIZED)
+            ts->jobctl |= JOBCTL_TRAP_STOP;
+        else
+            sigaddset(&ts->pending.signal, SIGSTOP);
+    }
 
     spin_unlock(&current->sighand->siglock);
 
