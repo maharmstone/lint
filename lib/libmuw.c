@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <errno.h>
 
 #define STATUS_NOT_IMPLEMENTED              (NTSTATUS)0xc0000002
 
@@ -1048,17 +1049,23 @@ NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
 NTSTATUS __stdcall NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable,
                                          const LARGE_INTEGER* TimeOut) {
     long ret;
+    LARGE_INTEGER to;
+
+    if (TimeOut)
+        to.QuadPart = TimeOut->QuadPart;
 
     uintptr_t args[] = {
         3,
         (uintptr_t)ObjectHandle,
         (uintptr_t)Alertable,
-        (uintptr_t)TimeOut
+        (uintptr_t)(TimeOut ? &to : NULL)
     };
 
     init_muwine();
 
-    do_ioctl(MUWINE_IOCTL_NTWAITFORSINGLEOBJECT, args, ret);
+    do {
+        do_ioctl(MUWINE_IOCTL_NTWAITFORSINGLEOBJECT, args, ret);
+    } while (ret == -EINTR);
 
     return (NTSTATUS)ret;
 }
