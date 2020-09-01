@@ -391,12 +391,9 @@ NTSTATUS muwine_init_threads(void) {
     us.Buffer = (WCHAR*)thread_name;
 
     thread_type = muwine_add_object_type(&us, thread_object_close, NULL,
-                                         THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION | READ_CONTROL,
-                                         THREAD_TERMINATE | THREAD_SUSPEND_RESUME | THREAD_ALERT |
-                                         THREAD_SET_CONTEXT | THREAD_SET_INFORMATION |
-                                         THREAD_SET_LIMITED_INFORMATION | READ_CONTROL,
-                                         THREAD_QUERY_LIMITED_INFORMATION | READ_CONTROL | SYNCHRONIZE,
-                                         THREAD_ALL_ACCESS, THREAD_ALL_ACCESS);
+                                         THREAD_GENERIC_READ, THREAD_GENERIC_WRITE,
+                                         THREAD_GENERIC_EXECUTE, THREAD_ALL_ACCESS,
+                                         THREAD_ALL_ACCESS);
     if (IS_ERR(thread_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)thread_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)thread_type);
