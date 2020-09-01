@@ -261,6 +261,12 @@ typedef struct {
     struct list_head mapping_list;
 } process;
 
+typedef struct {
+    sync_object header;
+    struct list_head list;
+    pid_t pid;
+} process_object;
+
 typedef struct _device device;
 
 // muwine.c

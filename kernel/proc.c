@@ -35,17 +35,19 @@
                            PROCESS_RESERVED2 | DELETE | READ_CONTROL | WRITE_DAC | WRITE_OWNER | \
                            SYNCHRONIZE
 
-typedef struct {
-    sync_object header;
-} process_object;
-
 static type_object* process_type = NULL;
 
 static LIST_HEAD(pid_list);
 static DEFINE_SPINLOCK(pid_list_lock);
+static LIST_HEAD(process_list);
+static DEFINE_SPINLOCK(process_list_lock);
 
 static void process_object_close(object_header* obj) {
     process_object* p = (process_object*)obj;
+
+    spin_lock(&process_list_lock);
+    list_del(&p->list);
+    spin_unlock(&process_list_lock);
 
     free_object(&p->header.h);
 }
@@ -79,6 +81,7 @@ void muwine_add_current_process(void) {
     process* p;
     struct list_head* le;
     bool found = false;
+    process_object* obj;
 
     p = kzalloc(sizeof(process), GFP_KERNEL);
 
@@ -112,6 +115,40 @@ void muwine_add_current_process(void) {
         kfree(p);
 
     spin_unlock(&pid_list_lock);
+
+    obj = kzalloc(sizeof(process_object), GFP_KERNEL);
+    // FIXME - handle out of memory
+
+    obj->header.h.refcount = 1;
+
+    obj->header.h.type = process_type;
+    inc_obj_refcount(&process_type->header);
+
+    spin_lock_init(&obj->header.h.path_lock);
+    spin_lock_init(&obj->header.sync_lock);
+    INIT_LIST_HEAD(&obj->header.waiters);
+
+    obj->pid = task_tgid_vnr(current);
+
+    spin_lock(&process_list_lock);
+
+    le = process_list.next;
+
+    while (le != &process_list) {
+        process_object* obj2 = list_entry(le, process_object, list);
+
+        if (obj2->pid == obj->pid) {
+            spin_unlock(&process_list_lock);
+            dec_obj_refcount(&obj->header.h);
+            return;
+        }
+
+        le = le->next;
+    }
+
+    list_add_tail(&obj->list, &process_list);
+
+    spin_unlock(&process_list_lock);
 }
 
 int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
@@ -119,6 +156,7 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
     struct list_head* le;
     process* p = NULL;
     bool found = false;
+    process_object* obj = NULL;
 
     // skip kernel threads
     if (!current->mm)
@@ -185,6 +223,34 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
 
         kfree(p);
     }
+
+    // find process_object
+
+    spin_lock(&process_list_lock);
+
+    le = process_list.next;
+
+    while (le != &process_list) {
+        process_object* obj2 = list_entry(le, process_object, list);
+
+        if (obj2->pid == pid) {
+            obj = obj2;
+            inc_obj_refcount(&obj->header.h);
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock(&process_list_lock);
+
+    if (!obj)
+        return 0;
+
+    // FIXME - free handles etc.
+
+    dec_obj_refcount(&obj->header.h);
+    dec_obj_refcount(&obj->header.h);
 
     return 0;
 }
