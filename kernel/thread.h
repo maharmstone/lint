@@ -33,3 +33,108 @@ typedef struct {
                           THREAD_SET_THREAD_TOKEN | THREAD_QUERY_INFORMATION | \
                           THREAD_SET_INFORMATION | THREAD_SET_CONTEXT | THREAD_GET_CONTEXT | \
                           THREAD_SUSPEND_RESUME | THREAD_TERMINATE
+
+typedef struct _NT_TIB {
+    struct _EXCEPTION_REGISTRATION_RECORD* ExceptionList;
+    PVOID StackBase;
+    PVOID StackLimit;
+    PVOID SubSystemTib;
+    union {
+        PVOID FiberData;
+        DWORD Version;
+    } DUMMYUNIONNAME;
+    PVOID ArbitraryUserPointer;
+    struct _NT_TIB* Self;
+} NT_TIB;
+
+typedef struct _LIST_ENTRY {
+    struct _LIST_ENTRY* Flink;
+    struct _LIST_ENTRY* Blink;
+} LIST_ENTRY;
+
+typedef struct {
+    ULONG Flags;
+    ULONG NextCookieSequenceNumber;
+    struct _RTL_ACTIVATION_CONTEXT_STACK_FRAME* ActiveFrame;
+    LIST_ENTRY FrameListCache;
+} ACTIVATION_CONTEXT_STACK;
+
+typedef struct {
+    ULONG Offset;
+    HANDLE HDC;
+    ULONG Buffer[0x136];
+} GDI_TEB_BATCH;
+
+// FIXME - _WIN64 definition
+
+typedef struct {
+    NT_TIB Tib;
+    PVOID EnvironmentPointer;
+    CLIENT_ID ClientId;
+    PVOID ActiveRpcHandle;
+    PVOID ThreadLocalStoragePointer;
+    struct _PEB* Peb;
+    ULONG LastErrorValue;
+    ULONG CountOfOwnedCriticalSections;
+    PVOID CsrClientThread;
+    PVOID Win32ThreadInfo;
+    ULONG Win32ClientInfo[31];
+    PVOID WOW32Reserved;
+    ULONG CurrentLocale;
+    ULONG FpSoftwareStatusRegister;
+    PVOID SystemReserved1[54];
+    LONG ExceptionCode;
+    ACTIVATION_CONTEXT_STACK ActivationContextStack;
+    BYTE SpareBytes1[24];
+    PVOID SystemReserved2[10];
+    GDI_TEB_BATCH GdiTebBatch;
+    HANDLE gdiRgn;
+    HANDLE gdiPen;
+    HANDLE gdiBrush;
+    CLIENT_ID RealClientId;
+    HANDLE GdiCachedProcessHandle;
+    ULONG GdiClientPID;
+    ULONG GdiClientTID;
+    PVOID GdiThreadLocaleInfo;
+    ULONG UserReserved[5];
+    PVOID glDispatchTable[280];
+    PVOID glReserved1[26];
+    PVOID glReserved2;
+    PVOID glSectionInfo;
+    PVOID glSection;
+    PVOID glTable;
+    PVOID glCurrentRC;
+    PVOID glContext;
+    ULONG LastStatusValue;
+    UNICODE_STRING StaticUnicodeString;
+    WCHAR StaticUnicodeBuffer[261];
+    PVOID DeallocationStack;
+    PVOID TlsSlots[64];
+    LIST_ENTRY TlsLinks;
+    PVOID Vdm;
+    PVOID ReservedForNtRpc;
+    PVOID DbgSsReserved[2];
+    ULONG HardErrorDisabled;
+    PVOID Instrumentation[16];
+    PVOID WinSockData;
+    ULONG GdiBatchCount;
+    ULONG Spare2;
+    ULONG GuaranteedStackBytes;
+    PVOID ReservedForPerf;
+    PVOID ReservedForOle;
+    ULONG WaitingOnLoaderLock;
+    PVOID Reserved5[3];
+    PVOID* TlsExpansionSlots;
+#ifdef _WIN64
+    PVOID DeallocationBStore;
+    PVOID BStoreLimit;
+#endif
+    ULONG ImpersonationLocale;
+    ULONG IsImpersonating;
+    PVOID NlsCache;
+    PVOID ShimData;
+    ULONG HeapVirtualAffinity;
+    PVOID CurrentTransactionHandle;
+    struct _TEB_ACTIVE_FRAME* ActiveFrame;
+    PVOID* FlsSlots;
+} TEB;
