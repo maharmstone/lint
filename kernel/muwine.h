@@ -943,3 +943,6 @@ NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                              BOOLEAN CreateSuspended);
 NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
+
+// proc.c
+NTSTATUS muwine_init_processes(void);

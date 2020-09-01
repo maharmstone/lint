@@ -1250,6 +1250,12 @@ static int __init muwine_init(void) {
         return -ENOMEM;
     }
 
+    Status = muwine_init_processes();
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "muwine_init_processes returned %08x\n", Status);
+        return -ENOMEM;
+    }
+
     ret = init_kretprobes();
     if (ret < 0)
         return ret;
