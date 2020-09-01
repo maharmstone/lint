@@ -1,5 +1,6 @@
 #include "muwine.h"
 #include "thread.h"
+#include "sect.h"
 #include <linux/kthread.h>
 #include <linux/sched/task_stack.h>
 #include <linux/sched/mm.h>
@@ -108,6 +109,8 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     thread_start_context* ctx;
     ACCESS_MASK access;
     thread_object* obj;
+    uintptr_t teb;
+    size_t teb_size;
 
     if (ProcessHandle != NtCurrentProcess()) {
         printk("NtCreateThread: FIXME - support process handles\n"); // FIXME
@@ -121,6 +124,17 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     ctx = kmalloc(sizeof(thread_start_context), GFP_KERNEL);
     if (!ctx)
         return STATUS_INSUFFICIENT_RESOURCES;
+
+    teb = 0;
+    teb_size = sizeof(TEB);
+
+    Status = NtAllocateVirtualMemory(NtCurrentProcess(), (void**)&teb, 0, &teb_size, MEM_COMMIT, NT_PAGE_READWRITE);
+    if (!NT_SUCCESS(Status)) {
+        kfree(ctx);
+        return Status;
+    }
+
+    // FIXME - set TEB fields(?)
 
     memcpy(&ctx->thread_context, ThreadContext, sizeof(CONTEXT));
 
@@ -197,6 +211,8 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     spin_lock(&thread_list_lock);
     list_add_tail(&obj->list, &thread_list);
     spin_unlock(&thread_list_lock);
+
+    ts->thread.gsbase = teb;
 
     wake_up_process(ts);
 

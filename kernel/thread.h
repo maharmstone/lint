@@ -67,7 +67,7 @@ typedef struct {
 
 // FIXME - _WIN64 definition
 
-typedef struct {
+typedef struct _TEB {
     NT_TIB Tib;
     PVOID EnvironmentPointer;
     CLIENT_ID ClientId;

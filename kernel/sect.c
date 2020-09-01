@@ -1037,8 +1037,8 @@ NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, S
     return Status;
 }
 
-static NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
-                                        PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
+NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
+                                 PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
     process* p;
     uintptr_t addr = (uintptr_t)*BaseAddress;
     size_t size = *RegionSize;
