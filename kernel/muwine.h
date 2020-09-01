@@ -270,7 +270,6 @@ bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us);
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
 int strnicmp(const char* string1, const char* string2, size_t count);
-process* muwine_current_process(void);
 NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, const char* src, ULONG src_len);
 NTSTATUS utf16_to_utf8(char* dest, ULONG dest_max, ULONG* dest_len, const WCHAR* src, ULONG src_len);
 NTSTATUS get_func_ptr(const char* name, void** func);
@@ -946,3 +945,7 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
 
 // proc.c
 NTSTATUS muwine_init_processes(void);
+void muwine_add_current_process(void);
+process* muwine_current_process(void);
+int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
+int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
