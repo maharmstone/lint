@@ -898,7 +898,6 @@ NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS Informat
 
 static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
                                        ULONG NewAccessProtection, PULONG OldAccessProtection) {
-    process* p;
     uintptr_t addr = (uintptr_t)*BaseAddress;
     size_t size = *NumberOfBytesToProtect;
     unsigned long prot, nstart, oldflags;
@@ -907,10 +906,7 @@ static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
     struct vm_area_struct* prev;
 
     if (ProcessHandle == NtCurrentProcess()) {
-        p = muwine_current_process();
-
-        if (!p)
-            return STATUS_INTERNAL_ERROR;
+        // FIXME - get process object
     } else {
         printk("NtProtectVirtualMemory: FIXME - support process handles\n"); // FIXME
         return STATUS_NOT_IMPLEMENTED;

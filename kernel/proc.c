@@ -37,8 +37,6 @@
 
 static type_object* process_type = NULL;
 
-static LIST_HEAD(pid_list);
-static DEFINE_SPINLOCK(pid_list_lock);
 static LIST_HEAD(process_list);
 static DEFINE_SPINLOCK(process_list_lock);
 
@@ -52,31 +50,6 @@ static void process_object_close(object_header* obj) {
     spin_unlock(&process_list_lock);
 
     free_object(&p->header.h);
-}
-
-process* muwine_current_process(void) {
-    struct list_head* le;
-    pid_t pid = task_tgid_vnr(current);
-
-    spin_lock(&pid_list_lock);
-
-    le = pid_list.next;
-
-    while (le != &pid_list) {
-        process* p2 = list_entry(le, process, list);
-
-        if (p2->pid == pid) {
-            spin_unlock(&pid_list_lock);
-
-            return p2;
-        }
-
-        le = le->next;
-    }
-
-    spin_unlock(&pid_list_lock);
-
-    return NULL;
 }
 
 process_object* muwine_current_process_object(void) {
@@ -106,37 +79,8 @@ process_object* muwine_current_process_object(void) {
 }
 
 void muwine_add_current_process(void) {
-    process* p;
     struct list_head* le;
-    bool found = false;
     process_object* obj;
-
-    p = kzalloc(sizeof(process), GFP_KERNEL);
-
-    p->pid = task_tgid_vnr(current);
-    p->refcount = 1;
-
-    spin_lock(&pid_list_lock);
-
-    le = pid_list.next;
-
-    while (le != &pid_list) {
-        process* p2 = list_entry(le, process, list);
-
-        if (p2->pid == p->pid) {
-            found = true;
-            break;
-        }
-
-        le = le->next;
-    }
-
-    if (!found)
-        list_add_tail(&p->list, &pid_list);
-    else
-        kfree(p);
-
-    spin_unlock(&pid_list_lock);
 
     obj = kzalloc(sizeof(process_object), GFP_KERNEL);
     // FIXME - handle out of memory
@@ -185,42 +129,11 @@ void muwine_add_current_process(void) {
 int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     pid_t pid = task_tgid_vnr(current);
     struct list_head* le;
-    process* p = NULL;
-    bool found = false;
     process_object* obj = NULL;
 
     // skip kernel threads
     if (!current->mm)
         return 1;
-
-    // remove pid from process list
-
-    spin_lock(&pid_list_lock);
-
-    le = pid_list.next;
-
-    while (le != &pid_list) {
-        process* p2 = list_entry(le, process, list);
-
-        if (p2->pid == pid) {
-            p2->refcount--;
-            found = true;
-
-            if (p2->refcount == 0) {
-                list_del(&p2->list);
-                p = p2;
-            }
-
-            break;
-        }
-
-        le = le->next;
-    }
-
-    spin_unlock(&pid_list_lock);
-
-    if (p)
-        kfree(p);
 
     // find process_object
 
@@ -294,9 +207,6 @@ static void duplicate_handle(handle* old, handle** new) {
 int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     long retval;
     struct list_head* le;
-    process* p = NULL;
-    process* new_p = NULL;
-    pid_t pid = task_tgid_vnr(current);
     process_object* obj = muwine_current_process_object();
     process_object* new_obj;
 
@@ -312,42 +222,9 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
         return 0;
     }
 
-    spin_lock(&pid_list_lock);
-
-    le = pid_list.next;
-
-    while (le != &pid_list) {
-        process* p2 = list_entry(le, process, list);
-
-        if (p2->pid == pid) {
-            p = p2;
-            break;
-        }
-
-        le = le->next;
-    }
-
-    spin_unlock(&pid_list_lock);
-
-    if (!p) {
-        dec_obj_refcount(&obj->header.h);
-        return 0;
-    }
-
-    new_p = kzalloc(sizeof(process), GFP_KERNEL);
-    if (!new_p) {
-        printk(KERN_ERR "muwine fork_handler: out of memory\n");
-        dec_obj_refcount(&obj->header.h);
-        return 0;
-    }
-
-    new_p->pid = retval;
-    new_p->refcount = 1;
-
     new_obj = kzalloc(sizeof(process_object), GFP_KERNEL);
     if (!new_obj) {
         printk(KERN_ERR "muwine fork_handler: out of memory\n");
-        kfree(new_p);
         dec_obj_refcount(&obj->header.h);
         return 0;
     }
@@ -390,10 +267,6 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     }
 
     spin_unlock(&obj->handle_list_lock);
-
-    spin_lock(&pid_list_lock);
-    list_add_tail(&new_p->list, &pid_list);
-    spin_unlock(&pid_list_lock);
 
     spin_lock(&process_list_lock);
     list_add_tail(&new_obj->list, &process_list);
