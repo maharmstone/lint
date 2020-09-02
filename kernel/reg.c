@@ -4642,7 +4642,9 @@ NTSTATUS muwine_init_registry(void) {
     us.Length = us.MaximumLength = sizeof(key_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)key_name;
 
-    key_type = muwine_add_object_type(&us, key_object_close, NULL, 0, 0, 0, 0, 0);
+    key_type = muwine_add_object_type(&us, key_object_close, NULL, KEY_GENERIC_READ,
+                                      KEY_GENERIC_WRITE, KEY_GENERIC_EXECUTE,
+                                      KEY_ALL_ACCESS, KEY_ALL_ACCESS);
     if (IS_ERR(key_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)key_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)key_type);
