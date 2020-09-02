@@ -218,6 +218,9 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     ts->thread.gsbase = teb;
 
+    ClientId->UniqueProcess = (HANDLE)(uintptr_t)task_tgid_vnr(ts);
+    ClientId->UniqueThread = (HANDLE)(uintptr_t)ts->pid;
+
     wake_up_process(ts);
 
     if (current->ptrace) {
@@ -231,8 +234,6 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     // wait for thread to start
     wait_for_completion(&ctx->thread_created);
     kfree(ctx);
-
-    // FIXME - set ClientId
 
     Status = muwine_add_handle(&obj->header.h, ThreadHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
