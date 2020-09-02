@@ -87,6 +87,3 @@ typedef struct {
     uint32_t Mask;
 } ACCESS_ALLOWED_ACE;
 
-typedef struct {
-    object_header header;
-} token_object;

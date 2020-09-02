@@ -2806,7 +2806,7 @@ NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
     return Status;
 }
 
-static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* off, token* tok,
+static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* off, token_object* tok,
                                       bool is_volatile, bool parent_is_volatile) {
     NTSTATUS Status;
     int32_t size;
@@ -3395,14 +3395,19 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
 
     if (kn->Security != 0xffffffff) {
         process_object* p = muwine_current_process_object();
+        token_object* tok;
 
         if (!p)
             return STATUS_INTERNAL_ERROR;
 
-        Status = allocate_inherited_sk(h, kn->Security, &kn2->Security, p->token,
+        tok = p->token;
+        inc_obj_refcount(&tok->header);
+        dec_obj_refcount(&p->header.h);
+
+        Status = allocate_inherited_sk(h, kn->Security, &kn2->Security, tok,
                                        is_volatile, parent_is_volatile); // FIXME - owner and group
 
-        dec_obj_refcount(&p->header.h);
+        dec_obj_refcount(&tok->header);
 
         if (!NT_SUCCESS(Status))
             return Status;

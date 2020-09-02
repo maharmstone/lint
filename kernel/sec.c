@@ -9,9 +9,15 @@ static const uint8_t sid_creator_owner[] = { 1, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0 
 static type_object* token_type = NULL;
 
 static void token_object_close(object_header* obj) {
-    token_object* t = (token_object*)obj;
+    token_object* tok = (token_object*)obj;
 
-    free_object(&t->header);
+    if (tok->owner)
+        kfree(tok->owner);
+
+    if (tok->group)
+        kfree(tok->group);
+
+    free_object(&tok->header);
 }
 
 static unsigned int sid_length(SID* sid) {
@@ -71,7 +77,7 @@ static void get_inherited_acl(ACL* src, ACL* dest, bool container) {
 }
 
 NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len, bool container,
-                                    token* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen) {
+                                    token_object* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen) {
     unsigned int len = sizeof(SECURITY_DESCRIPTOR);
     SECURITY_DESCRIPTOR* sd;
     uint8_t* ptr;
@@ -241,50 +247,23 @@ static void gid_to_sid(SID** sid, kgid_t gid) {
     *sid = s;
 }
 
-void muwine_make_process_token(token** t) {
-    token* tok;
+void muwine_make_process_token(token_object** t) {
+    token_object* tok;
 
-    tok = kzalloc(sizeof(token), GFP_KERNEL);
+    tok = kzalloc(sizeof(token_object), GFP_KERNEL);
     // FIXME - handle malloc failure
+
+    tok->header.refcount = 1;
+
+    tok->header.type = token_type;
+    inc_obj_refcount(&token_type->header);
+
+    spin_lock_init(&tok->header.path_lock);
 
     uid_to_sid(&tok->owner, current_euid());
     gid_to_sid(&tok->group, current_egid());
 
     *t = tok;
-}
-
-static void duplicate_sid(SID* old, SID** new) {
-    unsigned int len = sid_length(old);
-    SID* s = kmalloc(len, GFP_KERNEL); // FIXME - handle malloc failure
-
-    memcpy(s, old, len);
-
-    *new = s;
-}
-
-void muwine_duplicate_token(token* old, token** new) {
-    token* tok;
-
-    tok = kzalloc(sizeof(token), GFP_KERNEL);
-    // FIXME - handle malloc failure
-
-    if (old->owner)
-        duplicate_sid(old->owner, &tok->owner);
-
-    if (old->group)
-        duplicate_sid(old->group, &tok->group);
-
-    *new = tok;
-}
-
-void muwine_free_token(token* token) {
-    if (token->owner)
-        kfree(token->owner);
-
-    if (token->group)
-        kfree(token->group);
-
-    kfree(token);
 }
 
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen) {

@@ -247,7 +247,7 @@ typedef struct {
     struct list_head list;
 } waiter;
 
-typedef struct _token token;
+typedef struct _token_object token_object;
 
 typedef struct {
     sync_object header;
@@ -256,7 +256,7 @@ typedef struct {
     struct list_head handle_list;
     spinlock_t handle_list_lock;
     uintptr_t next_handle_no;
-    token* token;
+    token_object* token;
     struct rw_semaphore mapping_list_sem;
     struct list_head mapping_list;
 } process_object;
@@ -311,16 +311,15 @@ NTSTATUS NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJECT_ATTRIB
 typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;
 typedef struct _SID SID;
 
-typedef struct _token {
+typedef struct _token_object {
+    object_header header;
     SID* owner;
     SID* group;
-} token;
+} token_object;
 
 NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len, bool container,
-                                    token* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
-void muwine_make_process_token(token** t);
-void muwine_free_token(token* token);
-void muwine_duplicate_token(token* old, token** new);
+                                    token_object* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
+void muwine_make_process_token(token_object** t);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type);
 NTSTATUS muwine_init_tokens(void);
