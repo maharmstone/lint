@@ -3394,8 +3394,16 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
     hash = calc_subkey_hash(us);
 
     if (kn->Security != 0xffffffff) {
-        Status = allocate_inherited_sk(h, kn->Security, &kn2->Security, muwine_current_process()->token,
+        process_object* p = muwine_current_process_object();
+
+        if (!p)
+            return STATUS_INTERNAL_ERROR;
+
+        Status = allocate_inherited_sk(h, kn->Security, &kn2->Security, p->token,
                                        is_volatile, parent_is_volatile); // FIXME - owner and group
+
+        dec_obj_refcount(&p->header.h);
+
         if (!NT_SUCCESS(Status))
             return Status;
 

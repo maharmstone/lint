@@ -45,6 +45,8 @@ static DEFINE_SPINLOCK(process_list_lock);
 static void process_object_close(object_header* obj) {
     process_object* p = (process_object*)obj;
 
+    muwine_free_token(p->token);
+
     spin_lock(&process_list_lock);
     list_del(&p->list);
     spin_unlock(&process_list_lock);
@@ -113,7 +115,6 @@ void muwine_add_current_process(void) {
 
     p->pid = task_tgid_vnr(current);
     p->refcount = 1;
-    muwine_make_process_token(&p->token);
     init_rwsem(&p->mapping_list_sem);
     INIT_LIST_HEAD(&p->mapping_list);
 
@@ -156,6 +157,8 @@ void muwine_add_current_process(void) {
     INIT_LIST_HEAD(&obj->handle_list);
     spin_lock_init(&obj->handle_list_lock);
     obj->next_handle_no = MUW_FIRST_HANDLE + 4;
+
+    muwine_make_process_token(&obj->token);
 
     spin_lock(&process_list_lock);
 
@@ -228,8 +231,6 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
 
             kfree(sm);
         }
-
-        muwine_free_token(p->token);
 
         kfree(p);
     }
@@ -342,7 +343,6 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
 
     new_p->pid = retval;
     new_p->refcount = 1;
-    muwine_duplicate_token(p->token, &new_p->token);
     init_rwsem(&new_p->mapping_list_sem);
     INIT_LIST_HEAD(&new_p->mapping_list);
 
@@ -364,6 +364,8 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     INIT_LIST_HEAD(&new_obj->header.waiters);
 
     new_obj->pid = retval;
+
+    muwine_duplicate_token(obj->token, &new_obj->token);
 
     INIT_LIST_HEAD(&new_obj->handle_list);
     spin_lock_init(&new_obj->handle_list_lock);

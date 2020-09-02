@@ -253,7 +253,6 @@ typedef struct {
     struct list_head list;
     pid_t pid;
     int refcount;
-    token* token;
     struct rw_semaphore mapping_list_sem;
     struct list_head mapping_list;
 } process;
@@ -265,6 +264,7 @@ typedef struct {
     struct list_head handle_list;
     spinlock_t handle_list_lock;
     uintptr_t next_handle_no;
+    token* token;
 } process_object;
 
 typedef struct _device device;
