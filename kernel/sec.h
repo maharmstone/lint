@@ -25,6 +25,32 @@
 
 #define ACCESS_ALLOWED_ACE_TYPE     0x0
 
+#define TOKEN_ASSIGN_PRIMARY        0x0001
+#define TOKEN_DUPLICATE             0x0002
+#define TOKEN_IMPERSONATE           0x0004
+#define TOKEN_QUERY                 0x0008
+#define TOKEN_QUERY_SOURCE          0x0010
+#define TOKEN_ADJUST_PRIVILEGES     0x0020
+#define TOKEN_ADJUST_GROUPS         0x0040
+#define TOKEN_ADJUST_DEFAULT        0x0080
+#define TOKEN_ADJUST_SESSIONID      0x0100
+
+#define TOKEN_GENERIC_READ TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_QUERY_SOURCE | \
+                           READ_CONTROL
+
+#define TOKEN_GENERIC_WRITE TOKEN_ADJUST_PRIVILEGES | TOKEN_ADJUST_GROUPS | \
+                            TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID | \
+                            READ_CONTROL
+
+#define TOKEN_GENERIC_EXECUTE TOKEN_ASSIGN_PRIMARY | TOKEN_IMPERSONATE | \
+                              READ_CONTROL
+
+#define TOKEN_ALL_ACCESS TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_IMPERSONATE | \
+                         TOKEN_QUERY | TOKEN_QUERY_SOURCE | TOKEN_ADJUST_PRIVILEGES | \
+                         TOKEN_ADJUST_GROUPS | TOKEN_ADJUST_DEFAULT | \
+                         TOKEN_ADJUST_SESSIONID | DELETE | READ_CONTROL | WRITE_DAC | \
+                         WRITE_OWNER
+
 typedef struct _SID {
     uint8_t Revision;
     uint8_t SubAuthorityCount;
@@ -60,3 +86,7 @@ typedef struct {
     ACE_HEADER Header;
     uint32_t Mask;
 } ACCESS_ALLOWED_ACE;
+
+typedef struct {
+    object_header header;
+} token_object;

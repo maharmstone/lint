@@ -1016,6 +1016,12 @@ static int __init muwine_init(void) {
         return -ENOMEM;
     }
 
+    Status = muwine_init_tokens();
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_ALERT "muwine_init_tokens returned %08x\n", Status);
+        return -ENOMEM;
+    }
+
     Status = muwine_init_processes();
     if (!NT_SUCCESS(Status)) {
         printk(KERN_ALERT "muwine_init_processes returned %08x\n", Status);

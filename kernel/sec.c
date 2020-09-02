@@ -6,6 +6,14 @@ static const uint8_t sid_administrators[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0
 static const uint8_t sid_local_system[] = { 1, 1, 0, 0, 0, 0, 0, 5, 0x12, 0, 0, 0 }; // S-1-5-18
 static const uint8_t sid_creator_owner[] = { 1, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0 }; // S-1-3-0
 
+static type_object* token_type = NULL;
+
+static void token_object_close(object_header* obj) {
+    token_object* t = (token_object*)obj;
+
+    free_object(&t->header);
+}
+
 static unsigned int sid_length(SID* sid) {
     return offsetof(SID, SubAuthority[0]) + (sid->SubAuthorityCount * sizeof(uint32_t));
 }
@@ -391,4 +399,24 @@ ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type) {
     access &= type->valid;
 
     return access;
+}
+
+NTSTATUS muwine_init_tokens(void) {
+    UNICODE_STRING us;
+
+    static const WCHAR token_name[] = L"Token";
+
+    us.Length = us.MaximumLength = sizeof(token_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)token_name;
+
+    token_type = muwine_add_object_type(&us, token_object_close, NULL,
+                                        TOKEN_GENERIC_READ, TOKEN_GENERIC_WRITE,
+                                        TOKEN_GENERIC_EXECUTE, TOKEN_ALL_ACCESS,
+                                        TOKEN_ALL_ACCESS);
+    if (IS_ERR(token_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)token_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)token_type);
+    }
+
+    return STATUS_SUCCESS;
 }
