@@ -77,6 +77,32 @@ process* muwine_current_process(void) {
     return NULL;
 }
 
+process_object* muwine_current_process_object(void) {
+    struct list_head* le;
+    pid_t pid = task_tgid_vnr(current);
+
+    spin_lock(&process_list_lock);
+
+    le = process_list.next;
+
+    while (le != &process_list) {
+        process_object* obj = list_entry(le, process_object, list);
+
+        if (obj->pid == pid) {
+            inc_obj_refcount(&obj->header.h);
+            spin_unlock(&process_list_lock);
+
+            return obj;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock(&process_list_lock);
+
+    return NULL;
+}
+
 void muwine_add_current_process(void) {
     process* p;
     struct list_head* le;
@@ -87,9 +113,6 @@ void muwine_add_current_process(void) {
 
     p->pid = task_tgid_vnr(current);
     p->refcount = 1;
-    INIT_LIST_HEAD(&p->handle_list);
-    spin_lock_init(&p->handle_list_lock);
-    p->next_handle_no = MUW_FIRST_HANDLE + 4;
     muwine_make_process_token(&p->token);
     init_rwsem(&p->mapping_list_sem);
     INIT_LIST_HEAD(&p->mapping_list);
@@ -129,6 +152,10 @@ void muwine_add_current_process(void) {
     INIT_LIST_HEAD(&obj->header.waiters);
 
     obj->pid = task_tgid_vnr(current);
+
+    INIT_LIST_HEAD(&obj->handle_list);
+    spin_lock_init(&obj->handle_list_lock);
+    obj->next_handle_no = MUW_FIRST_HANDLE + 4;
 
     spin_lock(&process_list_lock);
 
@@ -202,23 +229,6 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
             kfree(sm);
         }
 
-        // force close of all open handles
-
-        while (!list_empty(&p->handle_list)) {
-            handle* hand = list_entry(p->handle_list.next, handle, list);
-
-            list_del(&hand->list);
-
-            if (__sync_sub_and_fetch(&hand->object->handle_count, 1) == 0) {
-                if (hand->object->type->cleanup)
-                    hand->object->type->cleanup(hand->object);
-            }
-
-            dec_obj_refcount(hand->object);
-
-            kfree(hand);
-        }
-
         muwine_free_token(p->token);
 
         kfree(p);
@@ -235,7 +245,6 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
 
         if (obj2->pid == pid) {
             obj = obj2;
-            inc_obj_refcount(&obj->header.h);
             break;
         }
 
@@ -247,9 +256,23 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
     if (!obj)
         return 0;
 
-    // FIXME - free handles etc.
+    // force close of all open handles
 
-    dec_obj_refcount(&obj->header.h);
+    while (!list_empty(&obj->handle_list)) {
+        handle* hand = list_entry(obj->handle_list.next, handle, list);
+
+        list_del(&hand->list);
+
+        if (__sync_sub_and_fetch(&hand->object->handle_count, 1) == 0) {
+            if (hand->object->type->cleanup)
+                hand->object->type->cleanup(hand->object);
+        }
+
+        dec_obj_refcount(hand->object);
+
+        kfree(hand);
+    }
+
     dec_obj_refcount(&obj->header.h);
 
     return 0;
@@ -273,13 +296,20 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     process* p = NULL;
     process* new_p = NULL;
     pid_t pid = task_tgid_vnr(current);
+    process_object* obj = muwine_current_process_object();
+    process_object* new_obj;
+
+    if (!obj)
+        return 0;
 
     // FIXME - should we be doing this for the clone syscall as well?
 
     retval = regs_return_value(regs);
 
-    if (retval < 0) // fork failed
+    if (retval < 0) { // fork failed
+        dec_obj_refcount(&obj->header.h);
         return 0;
+    }
 
     spin_lock(&pid_list_lock);
 
@@ -296,55 +326,76 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
         le = le->next;
     }
 
+    spin_unlock(&pid_list_lock);
+
     if (!p) {
-        spin_unlock(&pid_list_lock);
-        return 0;
-    }
-
-    spin_lock(&p->handle_list_lock);
-
-    if (list_empty(&p->handle_list)) {
-        spin_unlock(&p->handle_list_lock);
-        spin_unlock(&pid_list_lock);
+        dec_obj_refcount(&obj->header.h);
         return 0;
     }
 
     new_p = kzalloc(sizeof(process), GFP_KERNEL);
     if (!new_p) {
         printk(KERN_ERR "muwine fork_handler: out of memory\n");
-        spin_unlock(&p->handle_list_lock);
-        spin_unlock(&pid_list_lock);
+        dec_obj_refcount(&obj->header.h);
         return 0;
     }
 
     new_p->pid = retval;
     new_p->refcount = 1;
-    INIT_LIST_HEAD(&new_p->handle_list);
-    spin_lock_init(&new_p->handle_list_lock);
-    new_p->next_handle_no = p->next_handle_no;
     muwine_duplicate_token(p->token, &new_p->token);
     init_rwsem(&new_p->mapping_list_sem);
     INIT_LIST_HEAD(&new_p->mapping_list);
 
+    new_obj = kzalloc(sizeof(process_object), GFP_KERNEL);
+    if (!new_obj) {
+        printk(KERN_ERR "muwine fork_handler: out of memory\n");
+        kfree(new_p);
+        dec_obj_refcount(&obj->header.h);
+        return 0;
+    }
+
+    new_obj->header.h.refcount = 1;
+
+    new_obj->header.h.type = process_type;
+    inc_obj_refcount(&process_type->header);
+
+    spin_lock_init(&new_obj->header.h.path_lock);
+    spin_lock_init(&new_obj->header.sync_lock);
+    INIT_LIST_HEAD(&new_obj->header.waiters);
+
+    new_obj->pid = retval;
+
+    INIT_LIST_HEAD(&new_obj->handle_list);
+    spin_lock_init(&new_obj->handle_list_lock);
+
+    spin_lock(&obj->handle_list_lock);
+    new_obj->next_handle_no = obj->next_handle_no;
+
     // duplicate handles
 
-    le = p->handle_list.next;
+    le = obj->handle_list.next;
 
-    while (le != &p->handle_list) {
+    while (le != &obj->handle_list) {
         handle* h = list_entry(le, handle, list);
         handle* h2;
 
         duplicate_handle(h, &h2);
-        list_add_tail(&h2->list, &new_p->handle_list);
+        list_add_tail(&h2->list, &new_obj->handle_list);
 
         le = le->next;
     }
 
-    spin_unlock(&p->handle_list_lock);
+    spin_unlock(&obj->handle_list_lock);
 
+    spin_lock(&pid_list_lock);
     list_add_tail(&new_p->list, &pid_list);
-
     spin_unlock(&pid_list_lock);
+
+    spin_lock(&process_list_lock);
+    list_add_tail(&new_obj->list, &process_list);
+    spin_unlock(&process_list_lock);
+
+    dec_obj_refcount(&obj->header.h);
 
     return 0;
 }

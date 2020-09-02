@@ -253,9 +253,6 @@ typedef struct {
     struct list_head list;
     pid_t pid;
     int refcount;
-    struct list_head handle_list;
-    spinlock_t handle_list_lock;
-    uintptr_t next_handle_no;
     token* token;
     struct rw_semaphore mapping_list_sem;
     struct list_head mapping_list;
@@ -265,6 +262,9 @@ typedef struct {
     sync_object header;
     struct list_head list;
     pid_t pid;
+    struct list_head handle_list;
+    spinlock_t handle_list_lock;
+    uintptr_t next_handle_no;
 } process_object;
 
 typedef struct _device device;
@@ -953,5 +953,6 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
 NTSTATUS muwine_init_processes(void);
 void muwine_add_current_process(void);
 process* muwine_current_process(void);
+process_object* muwine_current_process_object(void);
 int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
 int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs);

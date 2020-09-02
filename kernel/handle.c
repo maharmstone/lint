@@ -10,13 +10,14 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel, ACCESS_MA
     spinlock_t* lock;
     uintptr_t* next_handle;
     struct list_head* list;
+    process_object* p = NULL;
 
     if (kernel) {
         lock = &kernel_handle_list_lock;
         next_handle = &next_kernel_handle_no;
         list = &kernel_handle_list;
     } else {
-        process* p = muwine_current_process();
+        process_object* p = muwine_current_process_object();
 
         if (!p)
             return STATUS_INTERNAL_ERROR;
@@ -29,8 +30,12 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel, ACCESS_MA
     // add entry to handle list for pid
 
     hand = kmalloc(sizeof(handle), GFP_KERNEL);
-    if (!hand)
+    if (!hand) {
+        if (p)
+            dec_obj_refcount(&p->header.h);
+
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     hand->object = obj;
     hand->access = access;
@@ -48,6 +53,9 @@ NTSTATUS muwine_add_handle(object_header* obj, PHANDLE h, bool kernel, ACCESS_MA
 
     __sync_add_and_fetch(&obj->handle_count, 1);
 
+    if (p)
+        dec_obj_refcount(&p->header.h);
+
     return STATUS_SUCCESS;
 }
 
@@ -55,12 +63,13 @@ object_header* get_object_from_handle(HANDLE h, ACCESS_MASK* access) {
     struct list_head* le;
     spinlock_t* lock;
     struct list_head* list;
+    process_object* p = NULL;
 
     if ((uintptr_t)h & KERNEL_HANDLE_MASK) {
         lock = &kernel_handle_list_lock;
         list = &kernel_handle_list;
     } else {
-        process* p = muwine_current_process();
+        p = muwine_current_process_object();
 
         if (!p)
             return NULL;
@@ -86,6 +95,9 @@ object_header* get_object_from_handle(HANDLE h, ACCESS_MASK* access) {
 
             spin_unlock(lock);
 
+            if (p)
+                dec_obj_refcount(&p->header.h);
+
             return obj;
         }
 
@@ -93,6 +105,9 @@ object_header* get_object_from_handle(HANDLE h, ACCESS_MASK* access) {
     }
 
     spin_unlock(lock);
+
+    if (p)
+        dec_obj_refcount(&p->header.h);
 
     return NULL;
 }
@@ -102,12 +117,13 @@ NTSTATUS NtClose(HANDLE Handle) {
     handle* h = NULL;
     spinlock_t* lock;
     struct list_head* list;
+    process_object* p = NULL;
 
     if ((uintptr_t)h & KERNEL_HANDLE_MASK) {
         lock = &kernel_handle_list_lock;
         list = &kernel_handle_list;
     } else {
-        process* p = muwine_current_process();
+        p = muwine_current_process_object();
 
         if (!p)
             return STATUS_INTERNAL_ERROR;
@@ -136,8 +152,12 @@ NTSTATUS NtClose(HANDLE Handle) {
 
     spin_unlock(lock);
 
-    if (!h)
+    if (!h) {
+        if (p)
+            dec_obj_refcount(&p->header.h);
+
         return STATUS_INVALID_HANDLE;
+    }
 
     if (__sync_sub_and_fetch(&h->object->handle_count, 1) == 0) {
         if (h->object->type->cleanup)
@@ -147,6 +167,9 @@ NTSTATUS NtClose(HANDLE Handle) {
     dec_obj_refcount(h->object);
 
     kfree(h);
+
+    if (p)
+        dec_obj_refcount(&p->header.h);
 
     return STATUS_SUCCESS;
 }
