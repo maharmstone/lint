@@ -346,9 +346,18 @@ NTSTATUS muwine_init_tokens(void);
 #define FILE_DELETE_CHILD                 0x0040
 #define FILE_READ_ATTRIBUTES              0x0080
 #define FILE_WRITE_ATTRIBUTES             0x0100
-#define FILE_ALL_ACCESS                   STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | FILE_WRITE_ATTRIBUTES | \
-                                          FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_READ_EA | \
-                                          FILE_WRITE_EA | FILE_EXECUTE | FILE_DELETE_CHILD | FILE_READ_ATTRIBUTES
+
+// FIXME - these should all have SYNCHRONIZE as well
+#define FILE_GENERIC_READ FILE_READ_DATA | FILE_READ_EA | FILE_READ_ATTRIBUTES | \
+                          READ_CONTROL
+#define FILE_GENERIC_WRITE FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | \
+                           FILE_WRITE_ATTRIBUTES | READ_CONTROL
+#define FILE_GENERIC_EXECUTE FILE_EXECUTE | FILE_READ_ATTRIBUTES | READ_CONTROL
+#define FILE_ALL_ACCESS FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | \
+                        FILE_READ_EA | FILE_WRITE_EA | FILE_EXECUTE | \
+                        FILE_DELETE_CHILD | FILE_READ_ATTRIBUTES | \
+                        FILE_WRITE_ATTRIBUTES | DELETE | READ_CONTROL | \
+                        WRITE_DAC | WRITE_OWNER
 
 #define FILE_DIRECTORY_FILE               0x00000001
 #define FILE_WRITE_THROUGH                0x00000002
