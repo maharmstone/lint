@@ -1,31 +1,5 @@
 #include "muwine.h"
-
-typedef struct {
-    struct list_head list;
-    object_header* object;
-    unsigned int name_len;
-    WCHAR name[1];
-} dir_item;
-
-typedef struct {
-    object_header header;
-    spinlock_t children_lock;
-    struct list_head children;
-} dir_object;
-
-typedef struct {
-    struct list_head list;
-    unsigned int depth;
-    UNICODE_STRING src;
-    UNICODE_STRING dest;
-} symlink_cache;
-
-typedef struct {
-    object_header header;
-    UNICODE_STRING dest;
-    symlink_cache* cache;
-} symlink_object;
-
+#include "obj.h"
 
 static LIST_HEAD(symlink_list);
 static DEFINE_SPINLOCK(symlink_list_lock);
@@ -869,7 +843,9 @@ NTSTATUS muwine_init_objdir(void) {
     us.Length = us.MaximumLength = sizeof(type_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)type_name;
 
-    type_type = muwine_add_object_type(&us, type_object_close, NULL, 0, 0, 0, 0, 0);
+    type_type = muwine_add_object_type(&us, type_object_close, NULL, READ_CONTROL,
+                                       READ_CONTROL, READ_CONTROL, OBJECT_TYPE_ALL_ACCESS,
+                                       OBJECT_TYPE_ALL_ACCESS);
     if (IS_ERR(type_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)type_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)type_type);
