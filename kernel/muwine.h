@@ -821,6 +821,8 @@ NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG
                                  PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
 NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
                                       PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
+NTSTATUS NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize,
+                             ULONG FreeType);
 NTSTATUS user_NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, PSIZE_T RegionSize,
                                   ULONG FreeType);
 NTSTATUS muwine_init_sections(void);

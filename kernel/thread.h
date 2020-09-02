@@ -13,6 +13,8 @@ typedef struct {
     sync_object header;
     struct task_struct* ts;
     struct list_head list;
+    uintptr_t teb;
+    process_object* process;
 } thread_object;
 
 #define THREAD_TERMINATE 0x0001

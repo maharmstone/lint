@@ -208,6 +208,10 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     get_task_struct(ts);
     obj->ts = ts;
 
+    obj->teb = teb;
+    inc_obj_refcount(&obj->header.h);
+    obj->process = muwine_current_process_object();
+
     spin_lock(&thread_list_lock);
     list_add_tail(&obj->list, &thread_list);
     spin_unlock(&thread_list_lock);
@@ -375,6 +379,17 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
         return 0;
 
     signal_object(&t->header);
+
+    if (t->teb) {
+        void* base_address = (void*)t->teb;
+        size_t region_size = 0;
+
+        NtFreeVirtualMemory(NtCurrentProcess(), &base_address, &region_size, MEM_RELEASE);
+
+        dec_obj_refcount(&t->header.h);
+    }
+
+    dec_obj_refcount(&t->process->header.h);
 
     dec_obj_refcount(&t->header.h);
 

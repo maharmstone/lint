@@ -1288,13 +1288,13 @@ NTSTATUS user_NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, 
     return Status;
 }
 
-static NTSTATUS NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
-                                    PSIZE_T RegionSize, ULONG FreeType) {
+NTSTATUS NtFreeVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress,
+                             PSIZE_T RegionSize, ULONG FreeType) {
     process_object* p;
     uintptr_t addr = (uintptr_t)*BaseAddress;
     size_t size = *RegionSize;
     struct list_head* le;
-    section_map* sm;
+    section_map* sm = NULL;
 
     if (ProcessHandle == NtCurrentProcess()) {
         p = muwine_current_process_object();
