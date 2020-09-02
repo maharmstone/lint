@@ -854,7 +854,9 @@ NTSTATUS muwine_init_objdir(void) {
     us.Length = us.MaximumLength = sizeof(dir_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)dir_name;
 
-    dir_type = muwine_add_object_type(&us, dir_object_close, NULL, 0, 0, 0, 0, 0);
+    dir_type = muwine_add_object_type(&us, dir_object_close, NULL, DIRECTORY_GENERIC_READ,
+                                      DIRECTORY_GENERIC_WRITE, DIRECTORY_GENERIC_EXECUTE,
+                                      DIRECTORY_ALL_ACCESS, DIRECTORY_ALL_ACCESS);
     if (IS_ERR(dir_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)dir_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)dir_type);
