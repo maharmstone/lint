@@ -865,7 +865,11 @@ NTSTATUS muwine_init_objdir(void) {
     us.Length = us.MaximumLength = sizeof(symlink_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)symlink_name;
 
-    symlink_type = muwine_add_object_type(&us, symlink_object_close, NULL, 0, 0, 0, 0, 0);
+    symlink_type = muwine_add_object_type(&us, symlink_object_close, NULL,
+                                          SYMBOLIC_LINK_GENERIC_READ,
+                                          SYMBOLIC_LINK_GENERIC_WRITE,
+                                          SYMBOLIC_LINK_GENERIC_EXECUTE,
+                                          SYMBOLIC_LINK_ALL_ACCESS, SYMBOLIC_LINK_ALL_ACCESS);
     if (IS_ERR(symlink_type)) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)symlink_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)symlink_type);
