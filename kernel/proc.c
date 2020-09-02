@@ -115,8 +115,6 @@ void muwine_add_current_process(void) {
 
     p->pid = task_tgid_vnr(current);
     p->refcount = 1;
-    init_rwsem(&p->mapping_list_sem);
-    INIT_LIST_HEAD(&p->mapping_list);
 
     spin_lock(&pid_list_lock);
 
@@ -159,6 +157,9 @@ void muwine_add_current_process(void) {
     obj->next_handle_no = MUW_FIRST_HANDLE + 4;
 
     muwine_make_process_token(&obj->token);
+
+    init_rwsem(&obj->mapping_list_sem);
+    INIT_LIST_HEAD(&obj->mapping_list);
 
     spin_lock(&process_list_lock);
 
@@ -218,22 +219,8 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
 
     spin_unlock(&pid_list_lock);
 
-    if (p) {
-        // force remove mappings of any sections
-
-        while (!list_empty(&p->mapping_list)) {
-            section_map* sm = list_entry(p->mapping_list.next, section_map, list);
-
-            list_del(&sm->list);
-
-            if (sm->sect)
-                dec_obj_refcount(sm->sect);
-
-            kfree(sm);
-        }
-
+    if (p)
         kfree(p);
-    }
 
     // find process_object
 
@@ -256,6 +243,19 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
 
     if (!obj)
         return 0;
+
+    // force remove mappings of any sections
+
+    while (!list_empty(&obj->mapping_list)) {
+        section_map* sm = list_entry(obj->mapping_list.next, section_map, list);
+
+        list_del(&sm->list);
+
+        if (sm->sect)
+            dec_obj_refcount(sm->sect);
+
+        kfree(sm);
+    }
 
     // force close of all open handles
 
@@ -343,8 +343,6 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
 
     new_p->pid = retval;
     new_p->refcount = 1;
-    init_rwsem(&new_p->mapping_list_sem);
-    INIT_LIST_HEAD(&new_p->mapping_list);
 
     new_obj = kzalloc(sizeof(process_object), GFP_KERNEL);
     if (!new_obj) {
@@ -366,6 +364,10 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     new_obj->pid = retval;
 
     muwine_duplicate_token(obj->token, &new_obj->token);
+
+    init_rwsem(&new_obj->mapping_list_sem);
+    INIT_LIST_HEAD(&new_obj->mapping_list);
+    // FIXME - duplicate mappings
 
     INIT_LIST_HEAD(&new_obj->handle_list);
     spin_lock_init(&new_obj->handle_list_lock);
