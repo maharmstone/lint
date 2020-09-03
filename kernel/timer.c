@@ -1,4 +1,7 @@
 #include "muwine.h"
+#include "timer.h"
+
+static type_object* timer_type = NULL;
 
 static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
                               POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType) {
@@ -89,4 +92,30 @@ NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState) {
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static void timer_object_close(object_header* obj) {
+    timer_object* t = (timer_object*)obj;
+
+    free_object(&t->header.h);
+}
+
+NTSTATUS muwine_init_timers(void) {
+    UNICODE_STRING us;
+
+    static const WCHAR timer_name[] = L"Timer";
+
+    us.Length = us.MaximumLength = sizeof(timer_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)timer_name;
+
+    timer_type = muwine_add_object_type(&us, timer_object_close, NULL,
+                                        TIMER_GENERIC_READ, TIMER_GENERIC_WRITE,
+                                        TIMER_GENERIC_EXECUTE, TIMER_ALL_ACCESS,
+                                        TIMER_ALL_ACCESS);
+    if (IS_ERR(timer_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)timer_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)timer_type);
+    }
+
+    return STATUS_SUCCESS;
 }
