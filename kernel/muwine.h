@@ -973,8 +973,8 @@ typedef enum {
     SynchronizationTimer
 } TIMER_TYPE;
 
-NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
-                       POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType);
+NTSTATUS user_NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                            POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType);
 NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
                      POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformationClass,
