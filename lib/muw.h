@@ -9,6 +9,8 @@ extern "C" {
 
 #define MUW_FIRST_HANDLE 0x1000000
 
+#define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
+
 #ifndef MUW_FUNCS_ONLY
 
 #include <wchar.h>
@@ -29,7 +31,7 @@ typedef DWORD ACCESS_MASK;
 typedef wchar_t WCHAR;
 typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
 typedef uint8_t UCHAR;
-typedef uint8_t BOOLEAN;
+typedef uint8_t BOOLEAN, *PBOOLEAN;
 typedef uintptr_t ULONG_PTR;
 typedef ULONG_PTR SIZE_T, *PSIZE_T;
 typedef intptr_t LONG_PTR;
@@ -517,9 +519,18 @@ typedef enum {
     WaitAnyObject
 } OBJECT_WAIT_TYPE;
 
-#endif
+typedef void (__stdcall *PTIMER_APC_ROUTINE)(PVOID TimerContext, ULONG TimerLowValue,
+                                             LONG TimerHighValue);
+typedef enum {
+    TimerBasicInformation
+} TIMER_INFORMATION_CLASS;
 
-#define __stdcall __attribute__((ms_abi)) __attribute__((__force_align_arg_pointer__))
+typedef enum {
+    NotificationTimer,
+    SynchronizationTimer
+} TIMER_TYPE;
+
+#endif
 
 void close_muwine();
 
@@ -635,6 +646,17 @@ NTSTATUS __stdcall NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable,
 NTSTATUS __stdcall NtWaitForMultipleObjects(ULONG ObjectCount, const HANDLE* ObjectsArray,
                                             OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
                                             const LARGE_INTEGER* TimeOut);
+NTSTATUS __stdcall NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                                 POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType);
+NTSTATUS __stdcall NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                               POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS __stdcall NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformationClass,
+                                PVOID TimerInformation, ULONG TimerInformationLength,
+                                PULONG ReturnLength);
+NTSTATUS __stdcall NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
+                              PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
+                              BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
+NTSTATUS __stdcall NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);
 
 #ifdef __cplusplus
 }

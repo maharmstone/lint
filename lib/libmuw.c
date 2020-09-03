@@ -1090,3 +1090,100 @@ NTSTATUS __stdcall NtWaitForMultipleObjects(ULONG ObjectCount, const HANDLE* Obj
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                                 POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)TimerHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)TimerType
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCREATETIMER, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                               POBJECT_ATTRIBUTES ObjectAttributes) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)TimerHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENTIMER, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformationClass,
+                                PVOID TimerInformation, ULONG TimerInformationLength,
+                                PULONG ReturnLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)TimerHandle,
+        (uintptr_t)TimerInformationClass,
+        (uintptr_t)TimerInformation,
+        (uintptr_t)TimerInformationLength,
+        (uintptr_t)ReturnLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYTIMER, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
+                              PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
+                              BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState) {
+    long ret;
+
+    uintptr_t args[] = {
+        7,
+        (uintptr_t)TimerHandle,
+        (uintptr_t)DueTime,
+        (uintptr_t)TimerApcRoutine,
+        (uintptr_t)TimerContext,
+        (uintptr_t)ResumeTimer,
+        (uintptr_t)Period,
+        (uintptr_t)PreviousState
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETTIMER, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)TimerHandle,
+        (uintptr_t)CurrentState
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCANCELTIMER, args, ret);
+
+    return (NTSTATUS)ret;
+}
