@@ -65,7 +65,7 @@ typedef DWORD ACCESS_MASK;
 typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef uint8_t UCHAR;
-typedef uint8_t BOOLEAN;
+typedef uint8_t BOOLEAN, *PBOOLEAN;
 typedef uintptr_t ULONG_PTR;
 typedef ULONG_PTR SIZE_T, *PSIZE_T;
 typedef char CCHAR;
@@ -960,3 +960,27 @@ void muwine_add_current_process(void);
 process_object* muwine_current_process_object(void);
 int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
 int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
+
+// timer.c
+typedef void (*PTIMER_APC_ROUTINE)(PVOID TimerContext, ULONG TimerLowValue,
+                                   LONG TimerHighValue);
+typedef enum {
+    TimerBasicInformation
+} TIMER_INFORMATION_CLASS;
+
+typedef enum {
+    NotificationTimer,
+    SynchronizationTimer
+} TIMER_TYPE;
+
+NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                       POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType);
+NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                     POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformationClass,
+                      PVOID TimerInformation, ULONG TimerInformationLength,
+                      PULONG ReturnLength);
+NTSTATUS NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
+                    PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
+                    BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
+NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);
