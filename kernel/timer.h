@@ -14,4 +14,5 @@
 
 typedef struct {
     sync_object header;
+    TIMER_TYPE type;
 } timer_object;

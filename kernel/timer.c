@@ -5,12 +5,44 @@ static type_object* timer_type = NULL;
 
 static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
                               POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType) {
-    printk(KERN_INFO "NtCreateTimer(%px, %x, %px, %x): stub\n", TimerHandle,
-           DesiredAccess, ObjectAttributes, TimerType);
+    NTSTATUS Status;
+    timer_object* obj;
+    ACCESS_MASK access;
 
-    // FIXME
+    access = sanitize_access_mask(DesiredAccess, timer_type);
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (access == MAXIMUM_ALLOWED)
+        access = TIMER_ALL_ACCESS;
+
+    // create object
+
+    obj = kzalloc(sizeof(timer_object), GFP_KERNEL);
+    if (!obj)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    obj->header.h.refcount = 1;
+
+    obj->header.h.type = timer_type;
+    inc_obj_refcount(&timer_type->header);
+
+    spin_lock_init(&obj->header.h.path_lock);
+
+    spin_lock_init(&obj->header.sync_lock);
+    INIT_LIST_HEAD(&obj->header.waiters);
+
+    obj->type = TimerType;
+
+    // FIXME - add to hierarchy if ObjectAttributes set
+
+    Status = muwine_add_handle(&obj->header.h, TimerHandle,
+                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
+
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&obj->header.h);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
