@@ -247,6 +247,7 @@ typedef struct _token_object token_object;
 typedef struct {
     sync_object header;
     struct list_head list;
+    struct list_head dead_list;
     pid_t pid;
     struct list_head handle_list;
     spinlock_t handle_list_lock;
@@ -984,3 +985,4 @@ NTSTATUS user_NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
                          PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
                          BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
 NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);
+void muwine_free_proc(void);

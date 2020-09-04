@@ -1,4 +1,5 @@
 #include "muwine.h"
+#include <linux/kthread.h>
 
 #define PROCESS_TERMINATE                   0x0001
 #define PROCESS_CREATE_THREAD               0x0002
@@ -39,6 +40,11 @@ static type_object* process_type = NULL;
 
 static LIST_HEAD(process_list);
 static DEFINE_SPINLOCK(process_list_lock);
+
+static LIST_HEAD(dead_process_list);
+static DEFINE_SPINLOCK(dead_process_list_lock);
+static struct task_struct* proc_reaper_thread = NULL;
+static bool proc_reaper_thread_running = true;
 
 static void process_object_close(object_header* obj) {
     process_object* p = (process_object*)obj;
@@ -126,37 +132,7 @@ void muwine_add_current_process(void) {
     spin_unlock(&process_list_lock);
 }
 
-int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
-    pid_t pid = task_tgid_vnr(current);
-    struct list_head* le;
-    process_object* obj = NULL;
-
-    // skip kernel threads
-    if (!current->mm)
-        return 1;
-
-    // find process_object
-
-    spin_lock(&process_list_lock);
-
-    le = process_list.next;
-
-    while (le != &process_list) {
-        process_object* obj2 = list_entry(le, process_object, list);
-
-        if (obj2->pid == pid) {
-            obj = obj2;
-            break;
-        }
-
-        le = le->next;
-    }
-
-    spin_unlock(&process_list_lock);
-
-    if (!obj)
-        return 0;
-
+static void reap_process(process_object* obj) {
     // force remove mappings of any sections
 
     while (!list_empty(&obj->mapping_list)) {
@@ -188,6 +164,74 @@ int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* reg
     }
 
     dec_obj_refcount(&obj->header.h);
+}
+
+static int proc_reaper_thread_func(void* data) {
+    while (proc_reaper_thread_running) {
+        set_current_state(TASK_INTERRUPTIBLE);
+
+        schedule(); // yield
+
+        while (true) {
+            process_object* obj = NULL;
+
+            spin_lock(&dead_process_list_lock);
+
+            if (!list_empty(&dead_process_list)) {
+                obj = list_entry(dead_process_list.next, process_object, dead_list);
+                list_del(&obj->dead_list);
+            }
+
+            spin_unlock(&dead_process_list_lock);
+
+            if (obj) {
+                reap_process(obj);
+                dec_obj_refcount(&obj->header.h);
+            } else
+                break;
+        }
+    }
+
+    set_current_state(TASK_RUNNING);
+
+    do_exit(0);
+}
+
+int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
+    pid_t pid = task_tgid_vnr(current);
+    struct list_head* le;
+    process_object* obj = NULL;
+
+    // skip kernel threads
+    if (!current->mm)
+        return 1;
+
+    // find process_object
+
+    spin_lock(&process_list_lock);
+
+    le = process_list.next;
+
+    while (le != &process_list) {
+        process_object* obj2 = list_entry(le, process_object, list);
+
+        if (obj2->pid == pid) {
+            obj = obj2;
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock(&process_list_lock);
+
+    if (!obj)
+        return 0;
+
+    spin_lock(&dead_process_list_lock);
+    list_add(&obj->dead_list, &dead_process_list);
+    wake_up_process(proc_reaper_thread);
+    spin_unlock(&dead_process_list_lock);
 
     return 0;
 }
@@ -295,5 +339,19 @@ NTSTATUS muwine_init_processes(void) {
         return muwine_error_to_ntstatus((int)(uintptr_t)process_type);
     }
 
+    proc_reaper_thread = kthread_run(proc_reaper_thread_func, NULL, "muwine_proc_reap");
+
+    if (!proc_reaper_thread) {
+        printk(KERN_ALERT "muwine failed to create process reaper thread\n");
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
     return STATUS_SUCCESS;
+}
+
+void muwine_free_proc(void) {
+    if (proc_reaper_thread) {
+        proc_reaper_thread_running = false;
+        wake_up_process(proc_reaper_thread);
+    }
 }

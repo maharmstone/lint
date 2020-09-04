@@ -1063,6 +1063,7 @@ static void __exit muwine_exit(void) {
 
     muwine_free_reg();
     muwine_free_objs();
+    muwine_free_proc();
 
     printk(KERN_INFO "muwine unloaded\n");
 }

@@ -324,7 +324,6 @@ end2:
 
 end:
     dec_obj_refcount(&obj->h);
-
     return Status;
 }
 
