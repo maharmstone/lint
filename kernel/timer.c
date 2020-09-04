@@ -48,6 +48,7 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 
     obj->type = TimerType;
     spin_lock_init(&obj->lock);
+    lockdep_register_key(&obj->key);
     init_timer_key(&obj->timer, timer_fire, 0, "muw-timer", &obj->key);
 
     // FIXME - add to hierarchy if ObjectAttributes set
@@ -211,6 +212,7 @@ static void timer_object_close(object_header* obj) {
     timer_object* t = (timer_object*)obj;
 
     del_timer(&t->timer);
+    lockdep_unregister_key(&t->key);
 
     free_object(&t->header.h);
 }

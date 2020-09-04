@@ -222,6 +222,7 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
     waiter* w;
     signed long timeout;
     thread_object* thread;
+    unsigned long flags;
 
     if (TimeOut && TimeOut->QuadPart > 0) {
         // FIXME - this would imply timeout at an absolute rather than relative time
@@ -260,11 +261,11 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
         goto end2;
     }
 
-    spin_lock(&obj->sync_lock);
+    spin_lock_irqsave(&obj->sync_lock, flags);
 
     // check again if signalled
     if (obj->signalled) {
-        spin_unlock(&obj->sync_lock);
+        spin_unlock_irqrestore(&obj->sync_lock, flags);
         kfree(w);
         Status = STATUS_WAIT_0;
         goto end2;
@@ -277,7 +278,7 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
 
     thread->wait_count = 1;
 
-    spin_unlock(&obj->sync_lock);
+    spin_unlock_irqrestore(&obj->sync_lock, flags);
 
     if (TimeOut)
         timeout = msecs_to_jiffies(-TimeOut->QuadPart / 10000);
@@ -287,10 +288,10 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
     // FIXME - make sure waiter freed if thread killed while waiting
 
     while (true) {
-        spin_lock(&obj->sync_lock);
+        spin_lock_irqsave(&obj->sync_lock, flags);
 
         if (thread->wait_count == 0) {
-            spin_unlock(&obj->sync_lock);
+            spin_unlock_irqrestore(&obj->sync_lock, flags);
 
             kfree(w);
 
@@ -298,7 +299,7 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
             goto end2;
         }
 
-        spin_unlock(&obj->sync_lock);
+        spin_unlock_irqrestore(&obj->sync_lock, flags);
 
         if (signal_pending(current)) {
             Status = -EINTR;
@@ -349,10 +350,11 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
 
 void signal_object(sync_object* obj, bool auto_reset) {
     struct list_head* le;
+    unsigned long flags;
 
     obj->signalled = true;
 
-    spin_lock(&obj->sync_lock);
+    spin_lock_irqsave(&obj->sync_lock, flags);
 
     // wake up waiting threads
 
@@ -381,5 +383,5 @@ void signal_object(sync_object* obj, bool auto_reset) {
         }
     }
 
-    spin_unlock(&obj->sync_lock);
+    spin_unlock_irqrestore(&obj->sync_lock, flags);
 }
