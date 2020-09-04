@@ -51,11 +51,53 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
     lockdep_register_key(&obj->key);
     init_timer_key(&obj->timer, timer_fire, 0, "muw-timer", &obj->key);
 
-    // FIXME - add to hierarchy if ObjectAttributes set
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        UNICODE_STRING us;
+        bool us_alloc = false;
+
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+        Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
+        if (!NT_SUCCESS(Status)) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            goto end;
+        }
+
+        if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+
+        obj->header.h.path.Length = us.Length;
+        obj->header.h.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+        if (!obj->header.h.path.Buffer) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        memcpy(obj->header.h.path.Buffer, us.Buffer, us.Length);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false);
+        if (!NT_SUCCESS(Status))
+            goto end;
+    }
 
     Status = muwine_add_handle(&obj->header.h, TimerHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
 
+end:
     if (!NT_SUCCESS(Status)) {
         dec_obj_refcount(&obj->header.h);
         return Status;
