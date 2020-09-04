@@ -200,12 +200,39 @@ NTSTATUS user_NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
 }
 
 static NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState) {
-    printk(KERN_INFO "NtCancelTimer(%lx, %px): stub\n", (uintptr_t)TimerHandle,
-           CurrentState);
+    NTSTATUS Status;
+    ACCESS_MASK access;
+    timer_object* t;
 
-    // FIXME
+    t = (timer_object*)get_object_from_handle(TimerHandle, &access);
+    if (!t)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (t->header.h.type != timer_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    if (!(access & TIMER_MODIFY_STATE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    spin_lock(&t->lock);
+
+    del_timer(&t->timer);
+
+    if (CurrentState)
+        *CurrentState = t->header.signalled;
+
+    spin_unlock(&t->lock);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    dec_obj_refcount(&t->header.h);
+
+    return Status;
 }
 
 NTSTATUS user_NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState) {
