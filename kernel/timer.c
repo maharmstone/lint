@@ -211,8 +211,12 @@ NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState) {
 static void timer_object_close(object_header* obj) {
     timer_object* t = (timer_object*)obj;
 
-    del_timer(&t->timer);
+    spin_lock(&t->lock);
+
+    del_timer_sync(&t->timer);
     lockdep_unregister_key(&t->key);
+
+    spin_unlock(&t->lock);
 
     free_object(&t->header.h);
 }
