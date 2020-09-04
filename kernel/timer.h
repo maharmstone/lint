@@ -15,4 +15,7 @@
 typedef struct {
     sync_object header;
     TIMER_TYPE type;
+    struct timer_list timer;
+    spinlock_t lock;
+    LONG period;
 } timer_object;

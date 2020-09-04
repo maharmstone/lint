@@ -327,3 +327,23 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
 
     return Status;
 }
+
+void signal_object(sync_object* obj) {
+    struct list_head* le;
+
+    obj->signalled = true;
+
+    spin_lock(&obj->sync_lock);
+
+    // wake up waiting threads
+    le = obj->waiters.next;
+    while (le != &obj->waiters) {
+        waiter* w = list_entry(le, waiter, list);
+
+        wake_up_process(w->ts);
+
+        le = le->next;
+    }
+
+    spin_unlock(&obj->sync_lock);
+}

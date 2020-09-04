@@ -1,7 +1,18 @@
 #include "muwine.h"
 #include "timer.h"
+#include <linux/timer.h>
 
 static type_object* timer_type = NULL;
+
+static void timer_fire(struct timer_list* timer) {
+    timer_object* t = list_entry(timer, timer_object, timer);
+
+    t->header.signalled = true;
+    signal_object(&t->header);
+
+    if (t->period != 0 && t->type == SynchronizationTimer)
+        mod_timer(&t->timer, jiffies + msecs_to_jiffies(t->period));
+}
 
 static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
                               POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType) {
@@ -13,6 +24,9 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 
     if (access == MAXIMUM_ALLOWED)
         access = TIMER_ALL_ACCESS;
+
+    if (TimerType != SynchronizationTimer && TimerType != NotificationTimer)
+        return STATUS_INVALID_PARAMETER;
 
     // create object
 
@@ -31,6 +45,8 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
     INIT_LIST_HEAD(&obj->header.waiters);
 
     obj->type = TimerType;
+    spin_lock_init(&obj->lock);
+    init_timer_key(&obj->timer, timer_fire, 0, NULL, NULL);
 
     // FIXME - add to hierarchy if ObjectAttributes set
 
@@ -108,13 +124,51 @@ NTSTATUS NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformati
 static NTSTATUS NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
                            PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
                            BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState) {
-    printk(KERN_INFO "NtSetTimer(%lx, %px, %px, %px, %x, %x, %px): stub\n",
-           (uintptr_t)TimerHandle, DueTime, TimerApcRoutine, TimerContext,
-           ResumeTimer, Period, PreviousState);
+    NTSTATUS Status;
+    timer_object* t;
+    ACCESS_MASK access;
 
-    // FIXME
+    // FIXME - APCs
 
-    return STATUS_NOT_IMPLEMENTED;
+    t = (timer_object*)get_object_from_handle(TimerHandle, &access);
+    if (!t)
+        return STATUS_INVALID_HANDLE;
+
+    if (t->header.h.type != timer_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    if (!(access & TIMER_MODIFY_STATE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    if (DueTime->QuadPart > 0) {
+        printk("NtSetTimer: FIXME - support absolute times\n"); // FIXME
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    spin_lock(&t->lock);
+
+    t->header.signalled = false;
+
+    mod_timer(&t->timer, jiffies + msecs_to_jiffies(-DueTime->QuadPart / 10000));
+
+    t->period = Period;
+
+    if (PreviousState)
+        *PreviousState = t->header.signalled;
+
+    spin_unlock(&t->lock);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    dec_obj_refcount(&t->header.h);
+
+    return Status;
 }
 
 NTSTATUS user_NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
@@ -153,6 +207,8 @@ NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState) {
 
 static void timer_object_close(object_header* obj) {
     timer_object* t = (timer_object*)obj;
+
+    del_timer(&t->timer);
 
     free_object(&t->header.h);
 }

@@ -698,6 +698,7 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
 NTSTATUS NtWaitForMultipleObjects(ULONG ObjectCount, PHANDLE ObjectsArray,
                                   OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
                                   PLARGE_INTEGER TimeOut);
+void signal_object(sync_object* obj);
 
 // unixfs.c
 typedef struct {
