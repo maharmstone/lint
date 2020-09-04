@@ -71,3 +71,21 @@ endif()
 if(NOT MSVC)
 	target_compile_options(proctest PUBLIC -Wall -Werror=cast-function-type -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra -Wconversion -Werror=implicit-function-declaration)
 endif()
+
+# --------------------
+
+add_executable(timertest timertest.c)
+
+if(WIN32)
+    target_link_libraries(timertest ntdll)
+else()
+    target_link_libraries(timertest muw)
+endif()
+
+if(NOT WIN32)
+    target_compile_options(timertest PUBLIC -fshort-wchar)
+endif()
+
+if(NOT MSVC)
+	target_compile_options(timertest PUBLIC -Wall -Werror=cast-function-type -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra -Wconversion -Werror=implicit-function-declaration)
+endif()
