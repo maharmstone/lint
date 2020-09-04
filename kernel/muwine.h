@@ -981,7 +981,7 @@ NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 NTSTATUS NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformationClass,
                       PVOID TimerInformation, ULONG TimerInformationLength,
                       PULONG ReturnLength);
-NTSTATUS NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
-                    PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
-                    BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
+NTSTATUS user_NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
+                         PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
+                         BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
 NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);

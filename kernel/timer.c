@@ -105,9 +105,9 @@ NTSTATUS NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformati
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
-                    PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
-                    BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState) {
+static NTSTATUS NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
+                           PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
+                           BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState) {
     printk(KERN_INFO "NtSetTimer(%lx, %px, %px, %px, %x, %x, %px): stub\n",
            (uintptr_t)TimerHandle, DueTime, TimerApcRoutine, TimerContext,
            ResumeTimer, Period, PreviousState);
@@ -115,6 +115,31 @@ NTSTATUS NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
+                         PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
+                         BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState) {
+    NTSTATUS Status;
+    LARGE_INTEGER time;
+    BOOLEAN prev_state;
+
+    if ((uintptr_t)TimerHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (!DueTime)
+        return STATUS_INVALID_PARAMETER;
+
+    if (get_user(time.QuadPart, &DueTime->QuadPart) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    Status = NtSetTimer(TimerHandle, &time, TimerApcRoutine, TimerContext, ResumeTimer,
+                        Period, PreviousState ? &prev_state : NULL);
+
+    if (PreviousState && put_user(prev_state, PreviousState) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState) {
