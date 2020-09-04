@@ -34,6 +34,7 @@ int main() {
     NTSTATUS Status;
     HANDLE h;
     LARGE_INTEGER time;
+    unsigned int i = 0;
 
     Status = NtCreateTimer(&h, MAXIMUM_ALLOWED, NULL, SynchronizationTimer);
     if (!NT_SUCCESS(Status)) {
@@ -50,6 +51,7 @@ int main() {
         return 1;
     }
 
+    i = 0;
     do {
         Status = NtWaitForSingleObject(h, false, NULL);
         if (Status != STATUS_WAIT_0) {
@@ -59,6 +61,17 @@ int main() {
         }
 
         printf("tick\n");
+
+        i++;
+
+        if (i == 3) {
+            Status = NtCancelTimer(h, NULL);
+            if (!NT_SUCCESS(Status)) {
+                fprintf(stderr, "NtCancelTimer returned %08x\n", (int32_t)Status);
+                NtClose(h);
+                return 1;
+            }
+        }
     } while (true);
 
     NtClose(h);
