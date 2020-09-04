@@ -984,5 +984,5 @@ NTSTATUS NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformati
 NTSTATUS user_NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
                          PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
                          BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
-NTSTATUS NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);
+NTSTATUS user_NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);
 void muwine_free_proc(void);
