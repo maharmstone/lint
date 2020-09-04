@@ -359,7 +359,7 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
     if (!t)
         return 0;
 
-    signal_object(&t->header);
+    signal_object(&t->header, false);
 
     if (t->teb) {
         void* base_address = (void*)t->teb;
@@ -408,4 +408,55 @@ NTSTATUS muwine_init_threads(void) {
         return Status;
 
     return STATUS_SUCCESS;
+}
+
+thread_object* muwine_current_thread_object(void) {
+    struct list_head* le;
+    thread_object* obj;
+
+    spin_lock(&thread_list_lock);
+
+    le = thread_list.next;
+
+    while (le != &thread_list) {
+        obj = list_entry(le, thread_object, list);
+
+        if (obj->ts == current) {
+            inc_obj_refcount(&obj->header.h);
+            spin_unlock(&thread_list_lock);
+
+            return obj;
+        }
+
+        le = le->next;
+    }
+
+    // add new
+
+    obj = kzalloc(sizeof(thread_object), GFP_KERNEL);
+    if (!obj) {
+        spin_unlock(&thread_list_lock);
+        return NULL;
+    }
+
+    obj->header.h.refcount = 1;
+
+    obj->header.h.type = thread_type;
+    inc_obj_refcount(&thread_type->header);
+
+    spin_lock_init(&obj->header.h.path_lock);
+
+    spin_lock_init(&obj->header.sync_lock);
+    INIT_LIST_HEAD(&obj->header.waiters);
+
+    get_task_struct(current);
+    obj->ts = current;
+
+    obj->process = muwine_current_process_object();
+
+    list_add_tail(&obj->list, &thread_list);
+
+    spin_unlock(&thread_list_lock);
+
+    return obj;
 }

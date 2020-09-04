@@ -9,12 +9,13 @@ typedef struct {
     struct completion thread_created;
 } thread_start_context;
 
-typedef struct {
+typedef struct _thread_object {
     sync_object header;
     struct task_struct* ts;
     struct list_head list;
     uintptr_t teb;
     process_object* process;
+    int wait_count;
 } thread_object;
 
 #define THREAD_TERMINATE 0x0001

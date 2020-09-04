@@ -242,11 +242,6 @@ typedef struct {
     struct list_head waiters;
 } sync_object;
 
-typedef struct {
-    struct task_struct* ts;
-    struct list_head list;
-} waiter;
-
 typedef struct _token_object token_object;
 
 typedef struct {
@@ -698,7 +693,7 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
 NTSTATUS NtWaitForMultipleObjects(ULONG ObjectCount, PHANDLE ObjectsArray,
                                   OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
                                   PLARGE_INTEGER TimeOut);
-void signal_object(sync_object* obj);
+void signal_object(sync_object* obj, bool auto_reset);
 
 // unixfs.c
 typedef struct {
@@ -956,11 +951,14 @@ NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
 
 // proc.c
+typedef struct _thread_object thread_object;
+
 NTSTATUS muwine_init_processes(void);
 void muwine_add_current_process(void);
 process_object* muwine_current_process_object(void);
 int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
 int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
+thread_object* muwine_current_thread_object(void) ;
 
 // timer.c
 typedef void (*PTIMER_APC_ROUTINE)(PVOID TimerContext, ULONG TimerLowValue,

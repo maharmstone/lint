@@ -18,4 +18,5 @@ typedef struct {
     struct timer_list timer;
     spinlock_t lock;
     LONG period;
+    struct lock_class_key key;
 } timer_object;

@@ -1,6 +1,12 @@
 #include "muwine.h"
+#include "thread.h"
 
 static uintptr_t next_kernel_handle_no = KERNEL_HANDLE_MASK;
+
+typedef struct {
+    thread_object* thread;
+    struct list_head list;
+} waiter;
 
 static LIST_HEAD(kernel_handle_list);
 static DEFINE_SPINLOCK(kernel_handle_list_lock);
@@ -215,6 +221,7 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
     sync_object* obj;
     waiter* w;
     signed long timeout;
+    thread_object* thread;
 
     if (TimeOut && TimeOut->QuadPart > 0) {
         // FIXME - this would imply timeout at an absolute rather than relative time
@@ -241,10 +248,16 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
         goto end;
     }
 
+    thread = muwine_current_thread_object();
+    if (!thread) {
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+
     w = kmalloc(sizeof(waiter), GFP_KERNEL);
     if (!w) {
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        goto end;
+        goto end2;
     }
 
     spin_lock(&obj->sync_lock);
@@ -254,13 +267,15 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
         spin_unlock(&obj->sync_lock);
         kfree(w);
         Status = STATUS_WAIT_0;
-        goto end;
+        goto end2;
     }
 
-    w->ts = current;
-    get_task_struct(current);
+    w->thread = thread;
+    inc_obj_refcount(&w->thread->header.h);
 
     list_add_tail(&w->list, &obj->waiters);
+
+    thread->wait_count = 1;
 
     spin_unlock(&obj->sync_lock);
 
@@ -272,17 +287,18 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
     // FIXME - make sure waiter freed if thread killed while waiting
 
     while (true) {
-        if (obj->signalled) {
-            spin_lock(&obj->sync_lock);
-            list_del(&w->list);
+        spin_lock(&obj->sync_lock);
+
+        if (thread->wait_count == 0) {
             spin_unlock(&obj->sync_lock);
 
-            put_task_struct(w->ts);
             kfree(w);
 
             Status = STATUS_WAIT_0;
-            goto end;
+            goto end2;
         }
+
+        spin_unlock(&obj->sync_lock);
 
         if (signal_pending(current)) {
             Status = -EINTR;
@@ -290,17 +306,20 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
             if (TimeOut)
                 TimeOut->QuadPart = -jiffies_to_msecs(timeout) * 10000;
 
-            goto end;
+            goto end2;
         }
 
         timeout = schedule_timeout_interruptible(timeout);
         if (timeout == 0) {
             Status = STATUS_TIMEOUT;
-            goto end;
+            goto end2;
         }
     }
 
     // FIXME - APCs
+
+end2:
+    dec_obj_refcount(&thread->header.h);
 
 end:
     dec_obj_refcount(&obj->h);
@@ -328,7 +347,7 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
     return Status;
 }
 
-void signal_object(sync_object* obj) {
+void signal_object(sync_object* obj, bool auto_reset) {
     struct list_head* le;
 
     obj->signalled = true;
@@ -336,13 +355,30 @@ void signal_object(sync_object* obj) {
     spin_lock(&obj->sync_lock);
 
     // wake up waiting threads
-    le = obj->waiters.next;
-    while (le != &obj->waiters) {
-        waiter* w = list_entry(le, waiter, list);
 
-        wake_up_process(w->ts);
+    if (auto_reset) {
+        if (!list_empty(&obj->waiters)) {
+            waiter* w = list_entry(obj->waiters.next, waiter, list);
 
-        le = le->next;
+            list_del(&w->list);
+
+            w->thread->wait_count--;
+            wake_up_process(w->thread->ts);
+
+            obj->signalled = false;
+        }
+    } else {
+        le = obj->waiters.next;
+        while (le != &obj->waiters) {
+            waiter* w = list_entry(le, waiter, list);
+
+            list_del(&w->list);
+
+            w->thread->wait_count--;
+            wake_up_process(w->thread->ts);
+
+            le = le->next;
+        }
     }
 
     spin_unlock(&obj->sync_lock);

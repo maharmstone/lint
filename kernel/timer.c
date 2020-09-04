@@ -7,8 +7,10 @@ static type_object* timer_type = NULL;
 static void timer_fire(struct timer_list* timer) {
     timer_object* t = list_entry(timer, timer_object, timer);
 
-    t->header.signalled = true;
-    signal_object(&t->header);
+    if (t->type == NotificationTimer)
+        t->header.signalled = true;
+
+    signal_object(&t->header, t->type == SynchronizationTimer);
 
     if (t->period != 0 && t->type == SynchronizationTimer)
         mod_timer(&t->timer, jiffies + msecs_to_jiffies(t->period));
@@ -46,7 +48,7 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 
     obj->type = TimerType;
     spin_lock_init(&obj->lock);
-    init_timer_key(&obj->timer, timer_fire, 0, NULL, NULL);
+    init_timer_key(&obj->timer, timer_fire, 0, "muw-timer", &obj->key);
 
     // FIXME - add to hierarchy if ObjectAttributes set
 
