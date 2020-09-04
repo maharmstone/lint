@@ -4,6 +4,8 @@
 
 static type_object* timer_type = NULL;
 
+extern type_object* dir_type;
+
 static void timer_fire(struct timer_list* timer) {
     timer_object* t = list_entry(timer, timer_object, timer);
 
@@ -146,12 +148,84 @@ NTSTATUS user_NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 
 static NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
                             POBJECT_ATTRIBUTES ObjectAttributes) {
-    printk(KERN_INFO "NtOpenTimer(%px, %x, %px): stub\n", TimerHandle,
-           DesiredAccess, ObjectAttributes);
+    NTSTATUS Status;
+    UNICODE_STRING us, after;
+    WCHAR* oa_us_alloc = NULL;
+    timer_object* t;
+    ACCESS_MASK access;
+    bool after_alloc = false;
 
-    // FIXME
+    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES) || !ObjectAttributes->ObjectName)
+        return STATUS_INVALID_PARAMETER;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (ObjectAttributes->RootDirectory) {
+        ACCESS_MASK access;
+        object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory, &access);
+
+        if (!obj)
+            return STATUS_INVALID_HANDLE;
+
+        if (obj->type != dir_type) {
+            dec_obj_refcount(obj);
+            return STATUS_INVALID_HANDLE;
+        }
+
+        spin_lock(&obj->path_lock);
+
+        us.Length = obj->path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
+        us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
+
+        if (!us.Buffer) {
+            spin_unlock(&obj->path_lock);
+            dec_obj_refcount(obj);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memcpy(us.Buffer, obj->path.Buffer, obj->path.Length);
+        us.Buffer[obj->path.Length / sizeof(WCHAR)] = '\\';
+        memcpy(&us.Buffer[(obj->path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
+               ObjectAttributes->ObjectName->Length);
+
+        spin_unlock(&obj->path_lock);
+
+        dec_obj_refcount(obj);
+    } else {
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+    }
+
+    Status = muwine_open_object(&us, (object_header**)&t, &after, &after_alloc);
+    if (!NT_SUCCESS(Status))
+        goto end;
+
+    if (t->header.h.type != timer_type || after.Length != 0) {
+        dec_obj_refcount(&t->header.h);
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    access = sanitize_access_mask(DesiredAccess, timer_type);
+
+    // FIXME - check against SD
+
+    if (access == MAXIMUM_ALLOWED)
+        access = TIMER_ALL_ACCESS; // FIXME - should only be what SD allows
+
+    Status = muwine_add_handle(&t->header.h, TimerHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
+
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&t->header.h);
+        goto end;
+    }
+
+end:
+    if (oa_us_alloc)
+        kfree(oa_us_alloc);
+
+    if (after_alloc)
+        kfree(after.Buffer);
+
+    return Status;
 }
 
 NTSTATUS user_NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,

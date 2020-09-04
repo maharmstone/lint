@@ -6,8 +6,9 @@ static DEFINE_SPINLOCK(symlink_list_lock);
 
 static dir_object* dir_root = NULL;
 static type_object* type_type = NULL;
-static type_object* dir_type = NULL;
 static type_object* symlink_type = NULL;
+
+type_object* dir_type = NULL;
 
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part);
 

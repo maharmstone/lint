@@ -8,6 +8,7 @@
 static type_object* section_type = NULL;
 
 extern type_object* file_type;
+extern type_object* dir_type;
 
 typedef int (*func_mprotect_fixup)(struct vm_area_struct *vma,
                                    struct vm_area_struct **pprev,
@@ -789,7 +790,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
         if (!obj)
             return STATUS_INVALID_HANDLE;
 
-        if (obj->type != file_type) {
+        if (obj->type != dir_type) {
             dec_obj_refcount(obj);
             return STATUS_INVALID_HANDLE;
         }
