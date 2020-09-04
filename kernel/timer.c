@@ -144,14 +144,52 @@ NTSTATUS user_NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
     return Status;
 }
 
-NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
-                     POBJECT_ATTRIBUTES ObjectAttributes) {
+static NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                            POBJECT_ATTRIBUTES ObjectAttributes) {
     printk(KERN_INFO "NtOpenTimer(%px, %x, %px): stub\n", TimerHandle,
            DesiredAccess, ObjectAttributes);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                          POBJECT_ATTRIBUTES ObjectAttributes) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+
+    if (!TimerHandle || !ObjectAttributes)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtOpenTimer(&h, DesiredAccess, &oa);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, TimerHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformationClass,

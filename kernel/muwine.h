@@ -976,8 +976,8 @@ typedef enum {
 NTSTATUS muwine_init_timers(void);
 NTSTATUS user_NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
                             POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType);
-NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
-                     POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS user_NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
+                          POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformationClass,
                       PVOID TimerInformation, ULONG TimerInformationLength,
                       PULONG ReturnLength);

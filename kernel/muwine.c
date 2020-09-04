@@ -67,7 +67,7 @@ static struct muwine_func funcs[] = {
     { user_NtWaitForSingleObject, 3 },
     { NtWaitForMultipleObjects, 5 },
     { user_NtCreateTimer, 4 },
-    { NtOpenTimer, 3 },
+    { user_NtOpenTimer, 3 },
     { NtQueryTimer, 5 },
     { user_NtSetTimer, 7 },
     { user_NtCancelTimer, 2 },
