@@ -162,8 +162,6 @@ static void reap_process(process_object* obj) {
 
         kfree(hand);
     }
-
-    dec_obj_refcount(&obj->header.h);
 }
 
 static int proc_reaper_thread_func(void* data) {
