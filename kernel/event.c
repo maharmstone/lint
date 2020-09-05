@@ -253,12 +253,46 @@ NTSTATUS user_NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
 }
 
 static NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
-    printk(KERN_INFO "NtSetEvent(%lx, %px): stub\n", (uintptr_t)EventHandle,
-           PreviousState);
+    NTSTATUS Status;
+    ACCESS_MASK access;
+    event_object* obj;
 
-    // FIXME
+    obj = (event_object*)get_object_from_handle(EventHandle, &access);
+    if (!obj)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.h.type != event_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    if (!(access & EVENT_MODIFY_STATE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    if (obj->type == NotificationEvent) {
+        spin_lock(&obj->lock);
+
+        if (PreviousState)
+            *PreviousState = obj->header.signalled;
+
+        obj->header.signalled = true;
+
+        spin_unlock(&obj->lock);
+    } else {
+        if (PreviousState)
+            *PreviousState = false;
+    }
+
+    signal_object(&obj->header, obj->type == SynchronizationEvent);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    dec_obj_refcount(&obj->header.h);
+
+    return Status;
 }
 
 NTSTATUS user_NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
