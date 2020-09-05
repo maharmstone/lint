@@ -349,7 +349,6 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
 }
 
 void signal_object(sync_object* obj, bool auto_reset) {
-    struct list_head* le;
     unsigned long flags;
 
     obj->signalled = true;
@@ -370,16 +369,13 @@ void signal_object(sync_object* obj, bool auto_reset) {
             obj->signalled = false;
         }
     } else {
-        le = obj->waiters.next;
-        while (le != &obj->waiters) {
-            waiter* w = list_entry(le, waiter, list);
+        while (!list_empty(&obj->waiters)) {
+            waiter* w = list_entry(obj->waiters.next, waiter, list);
 
             list_del(&w->list);
 
             __sync_sub_and_fetch(&w->thread->wait_count, 1);
             wake_up_process(w->thread->ts);
-
-            le = le->next;
         }
     }
 
