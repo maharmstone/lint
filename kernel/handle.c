@@ -295,9 +295,12 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
             goto end2;
         }
 
-        spin_unlock_irqrestore(&obj->sync_lock, flags);
-
         if (signal_pending(current)) {
+            list_del(&w->list);
+            kfree(w);
+
+            spin_unlock_irqrestore(&obj->sync_lock, flags);
+
             Status = -EINTR;
 
             if (TimeOut)
@@ -305,6 +308,8 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
 
             goto end2;
         }
+
+        spin_unlock_irqrestore(&obj->sync_lock, flags);
 
         timeout = schedule_timeout_interruptible(timeout);
         if (timeout == 0) {
