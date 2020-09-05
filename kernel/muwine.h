@@ -59,7 +59,7 @@ typedef uint16_t WCHAR, *PWSTR;
 typedef void* HANDLE;
 typedef HANDLE* PHANDLE;
 typedef uint32_t ULONG, *PULONG;
-typedef int32_t LONG;
+typedef int32_t LONG, *PLONG;
 typedef ULONG DWORD;
 typedef DWORD ACCESS_MASK;
 typedef void* PVOID;
@@ -986,3 +986,26 @@ NTSTATUS user_NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
                          BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
 NTSTATUS user_NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);
 void muwine_free_proc(void);
+
+// event.c
+typedef enum {
+    EventBasicInformation
+} EVENT_INFORMATION_CLASS;
+
+typedef enum {
+    NotificationEvent,
+    SynchronizationEvent
+} EVENT_TYPE;
+
+NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                       POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
+                       BOOLEAN InitialState);
+NTSTATUS NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                     POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS NtResetEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS NtClearEvent(HANDLE EventHandle);
+NTSTATUS NtPulseEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformationClass,
+                      PVOID EventInformation, ULONG EventInformationLength,
+                      PULONG ReturnLength);

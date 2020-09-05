@@ -71,6 +71,13 @@ static struct muwine_func funcs[] = {
     { NtQueryTimer, 5 },
     { user_NtSetTimer, 7 },
     { user_NtCancelTimer, 2 },
+    { NtCreateEvent, 5 },
+    { NtOpenEvent, 3 },
+    { NtSetEvent, 2 },
+    { NtResetEvent, 2 },
+    { NtClearEvent, 1 },
+    { NtPulseEvent, 2 },
+    { NtQueryEvent, 5 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)

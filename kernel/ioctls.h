@@ -62,5 +62,12 @@
 #define MUWINE_IOCTL_NTQUERYTIMER                   MUWINE_IOCTL(55)
 #define MUWINE_IOCTL_NTSETTIMER                     MUWINE_IOCTL(56)
 #define MUWINE_IOCTL_NTCANCELTIMER                  MUWINE_IOCTL(57)
+#define MUWINE_IOCTL_NTCREATEEVENT                  MUWINE_IOCTL(58)
+#define MUWINE_IOCTL_NTOPENEVENT                    MUWINE_IOCTL(59)
+#define MUWINE_IOCTL_NTSETEVENT                     MUWINE_IOCTL(60)
+#define MUWINE_IOCTL_NTRESETEVENT                   MUWINE_IOCTL(61)
+#define MUWINE_IOCTL_NTCLEAREVENT                   MUWINE_IOCTL(62)
+#define MUWINE_IOCTL_NTPULSEEVENT                   MUWINE_IOCTL(63)
+#define MUWINE_IOCTL_NTQUERYEVENT                   MUWINE_IOCTL(64)
 
-#define MUWINE_IOCTL_MAX                  57
+#define MUWINE_IOCTL_MAX                  64
