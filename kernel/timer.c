@@ -91,7 +91,8 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
         if (us_alloc)
             kfree(us.Buffer);
 
-        Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false);
+        Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false,
+                                               ObjectAttributes->Attributes & OBJ_PERMANENT);
         if (!NT_SUCCESS(Status))
             goto end;
     }
@@ -194,7 +195,7 @@ static NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
     }
 
-    Status = muwine_open_object(&us, (object_header**)&t, &after, &after_alloc);
+    Status = muwine_open_object(&us, (object_header**)&t, &after, &after_alloc, false);
     if (!NT_SUCCESS(Status))
         goto end;
 

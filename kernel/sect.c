@@ -386,7 +386,8 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
         if (us_alloc)
             kfree(us.Buffer);
 
-        Status = muwine_add_entry_in_hierarchy(&obj->header.path, &obj->header, false);
+        Status = muwine_add_entry_in_hierarchy(&obj->header.path, &obj->header, false,
+                                               ObjectAttributes->Attributes & OBJ_PERMANENT);
         if (!NT_SUCCESS(Status)) {
             dec_obj_refcount(&obj->header);
             return Status;
@@ -819,7 +820,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
     }
 
-    Status = muwine_open_object(&us, (object_header**)&sect, &after, &after_alloc);
+    Status = muwine_open_object(&us, (object_header**)&sect, &after, &after_alloc, false);
     if (!NT_SUCCESS(Status))
         goto end;
 

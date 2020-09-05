@@ -153,10 +153,8 @@ static void reap_process(process_object* obj) {
 
         list_del(&hand->list);
 
-        if (__sync_sub_and_fetch(&hand->object->handle_count, 1) == 0) {
-            if (hand->object->type->cleanup)
-                hand->object->type->cleanup(hand->object);
-        }
+        if (__sync_sub_and_fetch(&hand->object->handle_count, 1) == 0)
+            object_cleanup(hand->object);
 
         dec_obj_refcount(hand->object);
 

@@ -223,8 +223,6 @@ typedef NTSTATUS (*muwine_func12arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t a
                                      uintptr_t arg7, uintptr_t arg8, uintptr_t arg9,
                                      uintptr_t arg10, uintptr_t arg11, uintptr_t arg12);
 
-struct _object_header;
-
 typedef struct _type_object type_object;
 
 typedef struct _object_header {
@@ -233,6 +231,7 @@ typedef struct _object_header {
     type_object* type;
     UNICODE_STRING path;
     spinlock_t path_lock;
+    bool permanent;
 } object_header;
 
 typedef struct {
@@ -776,7 +775,7 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_obj
                                     uint32_t generic_all, uint32_t valid);
 void muwine_free_objs(void);
 NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,
-                            bool* after_alloc);
+                            bool* after_alloc, bool open_parent);
 NTSTATUS muwine_init_objdir(void);
 NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
@@ -785,8 +784,10 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
                                     PUNICODE_STRING DestinationName);
 NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                                          PUNICODE_STRING DestinationName);
-NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj, bool resolve_symlinks);
+NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj, bool resolve_symlinks,
+                                       bool permanent);
 NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc);
+void object_cleanup(object_header* obj);
 
 // sect.c
 typedef enum {

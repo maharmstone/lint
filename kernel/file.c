@@ -52,7 +52,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
     }
 
-    Status = muwine_open_object(&us, (object_header**)&dev, &after, &after_alloc);
+    Status = muwine_open_object(&us, (object_header**)&dev, &after, &after_alloc, false);
     if (!NT_SUCCESS(Status))
         goto end;
 

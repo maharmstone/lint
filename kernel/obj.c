@@ -172,7 +172,7 @@ NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc) {
 }
 
 NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICODE_STRING* after,
-                            bool* after_alloc) {
+                            bool* after_alloc, bool open_parent) {
     NTSTATUS Status;
     UNICODE_STRING us2, left, part;
     dir_object* parent;
@@ -204,71 +204,94 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
     do {
         dir_object* new_parent = NULL;
 
+        spin_lock(&parent->header.path_lock);
         spin_lock(&parent->children_lock);
 
-        le = parent->children.next;
-        while (le != &parent->children) {
-            dir_item* item = list_entry(le, dir_item, list);
+        if (parent->header.handle_count > 0 || parent->header.permanent) {
+            le = parent->children.next;
+            while (le != &parent->children) {
+                dir_item* item = list_entry(le, dir_item, list);
 
-            if (item->name_len == part.Length && !wcsnicmp(item->name, part.Buffer, part.Length / sizeof(WCHAR))) {
-                if (left.Length == 0) {
-                    *obj = item->object;
+                if (item->name_len == part.Length && !wcsnicmp(item->name, part.Buffer, part.Length / sizeof(WCHAR))) {
+                    if (left.Length == 0) {
+                        if (open_parent) {
+                            spin_unlock(&parent->children_lock);
+                            spin_unlock(&parent->header.path_lock);
 
-                    inc_obj_refcount(item->object);
+                            *obj = &parent->header;
 
-                    spin_unlock(&parent->children_lock);
+                            if (us_alloc)
+                                kfree(us2.Buffer);
 
-                    dec_obj_refcount(&parent->header);
+                            *after_alloc = false;
 
-                    after->Buffer = NULL;
-                    after->Length = 0;
+                            after->Buffer = part.Buffer;
+                            after->Length = part.Length;
 
-                    *after_alloc = false;
-
-                    return STATUS_SUCCESS;
-                }
-
-                if (item->object->type != dir_type) {
-                    *obj = item->object;
-
-                    inc_obj_refcount(item->object);
-
-                    spin_unlock(&parent->children_lock);
-
-                    dec_obj_refcount(&parent->header);
-
-                    *after_alloc = us_alloc;
-                    after->Length = left.Length;
-
-                    if (us_alloc) {
-                        after->Buffer = kmalloc(after->Length, GFP_KERNEL);
-                        if (!after->Buffer) {
-                            kfree(us2.Buffer);
-                            return STATUS_INSUFFICIENT_RESOURCES;
+                            return STATUS_SUCCESS;
                         }
 
-                        memcpy(after->Buffer, left.Buffer, left.Length);
+                        *obj = item->object;
 
-                        kfree(us2.Buffer);
-                    } else
-                        after->Buffer = left.Buffer;
+                        inc_obj_refcount(item->object);
 
-                    return STATUS_SUCCESS;
+                        spin_unlock(&parent->children_lock);
+                        spin_unlock(&parent->header.path_lock);
+
+                        dec_obj_refcount(&parent->header);
+
+                        after->Buffer = NULL;
+                        after->Length = 0;
+
+                        *after_alloc = false;
+
+                        return STATUS_SUCCESS;
+                    }
+
+                    if (item->object->type != dir_type) {
+                        *obj = item->object;
+
+                        inc_obj_refcount(item->object);
+
+                        spin_unlock(&parent->children_lock);
+                        spin_unlock(&parent->header.path_lock);
+
+                        dec_obj_refcount(&parent->header);
+
+                        *after_alloc = us_alloc;
+                        after->Length = left.Length;
+
+                        if (us_alloc) {
+                            after->Buffer = kmalloc(after->Length, GFP_KERNEL);
+                            if (!after->Buffer) {
+                                kfree(us2.Buffer);
+                                return STATUS_INSUFFICIENT_RESOURCES;
+                            }
+
+                            memcpy(after->Buffer, left.Buffer, left.Length);
+
+                            kfree(us2.Buffer);
+                        } else
+                            after->Buffer = left.Buffer;
+
+                        return STATUS_SUCCESS;
+                    }
+
+                    inc_obj_refcount(item->object);
+                    new_parent = (dir_object*)item->object;
+
+                    break;
                 }
 
-                inc_obj_refcount(item->object);
-                new_parent = (dir_object*)item->object;
-
-                break;
+                le = le->next;
             }
-
-            le = le->next;
         }
 
         if (!new_parent) {
             *obj = &parent->header;
 
             spin_unlock(&parent->children_lock);
+            spin_unlock(&parent->header.path_lock);
 
             after->Buffer = left.Buffer;
             after->Length = left.Length;
@@ -293,6 +316,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
         }
 
         spin_unlock(&parent->children_lock);
+        spin_unlock(&parent->header.path_lock);
 
         dec_obj_refcount(&parent->header);
 
@@ -368,7 +392,8 @@ static void next_part(UNICODE_STRING* left, UNICODE_STRING* part) {
     left->Length = 0;
 }
 
-NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj, bool do_resolve_symlinks) {
+NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj,
+                                       bool do_resolve_symlinks, bool permanent) {
     NTSTATUS Status;
     UNICODE_STRING us2, left, part;
     dir_object* parent;
@@ -461,6 +486,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
             memcpy(item->name, part.Buffer, part.Length);
 
             inc_obj_refcount(obj);
+            obj->permanent = permanent;
 
             list_add_tail(&item->list, &parent->children);
 
@@ -521,7 +547,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
 
     memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
 
-    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, true);
+    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, true, ObjectAttributes->Attributes & OBJ_PERMANENT);
 
     if (!NT_SUCCESS(Status)) {
         obj->header.type->close(&obj->header);
@@ -748,7 +774,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 
     obj->cache = cache;
 
-    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, false);
+    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, false, ObjectAttributes->Attributes & OBJ_PERMANENT);
 
     if (!NT_SUCCESS(Status)) {
         obj->header.type->close(&obj->header);
@@ -825,6 +851,54 @@ NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAcc
     return Status;
 }
 
+void object_cleanup(object_header* obj) {
+    NTSTATUS Status;
+    dir_object* dir;
+    UNICODE_STRING after;
+    bool after_alloc;
+    struct list_head* le;
+
+    if (obj->type->cleanup)
+        obj->type->cleanup(obj);
+
+    if (obj->permanent || obj->path.Length == 0)
+        return;
+
+    // remove temporary object from hierarchy
+
+    Status = muwine_open_object(&obj->path, (object_header**)&dir, &after,
+                                &after_alloc, true);
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_INFO "object_cleanup: muwine_open_object returned %08x\n", Status);
+        return;
+    }
+
+    if (dir->header.type != dir_type) {
+        printk(KERN_INFO "object_cleanup: parent type was not Directory\n");
+        dec_obj_refcount(&dir->header);
+        return;
+    }
+
+    spin_lock(&dir->children_lock);
+
+    le = dir->children.next;
+    while (le != &dir->children) {
+        dir_item* di = list_entry(le, dir_item, list);
+
+        if (di->object == obj) {
+            list_del(&di->list);
+            break;
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock(&dir->children_lock);
+
+    dec_obj_refcount(&dir->header);
+    dec_obj_refcount(obj);
+}
+
 NTSTATUS muwine_init_objdir(void) {
     NTSTATUS Status;
     HANDLE dir, symlink;
@@ -889,6 +963,7 @@ NTSTATUS muwine_init_objdir(void) {
         return STATUS_INSUFFICIENT_RESOURCES;
 
     dir_root->header.path.Buffer[0] = '\\';
+    dir_root->header.permanent = true;
 
     // create \\Device dir
 
