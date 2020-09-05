@@ -72,7 +72,7 @@ static struct muwine_func funcs[] = {
     { user_NtSetTimer, 7 },
     { user_NtCancelTimer, 2 },
     { user_NtCreateEvent, 5 },
-    { NtOpenEvent, 3 },
+    { user_NtOpenEvent, 3 },
     { NtSetEvent, 2 },
     { NtResetEvent, 2 },
     { NtClearEvent, 1 },

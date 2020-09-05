@@ -1001,8 +1001,8 @@ typedef enum {
 NTSTATUS user_NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
                             POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
                             BOOLEAN InitialState);
-NTSTATUS NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
-                     POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS user_NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                          POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState);
 NTSTATUS NtResetEvent(HANDLE EventHandle, PLONG PreviousState);
 NTSTATUS NtClearEvent(HANDLE EventHandle);
