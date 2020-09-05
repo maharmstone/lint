@@ -23,7 +23,7 @@ static_assert(sizeof(wchar_t) == 2, "wchar_t is not 2 bytes. Make sure you pass 
 typedef int32_t NTSTATUS;
 typedef void* HANDLE, *PHANDLE;
 typedef uint32_t ULONG, *PULONG;
-typedef int32_t LONG;
+typedef int32_t LONG, *PLONG;
 typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef ULONG DWORD;
@@ -535,6 +535,15 @@ typedef enum {
     SynchronizationTimer
 } TIMER_TYPE;
 
+typedef enum {
+    EventBasicInformation
+} EVENT_INFORMATION_CLASS;
+
+typedef enum {
+    NotificationEvent,
+    SynchronizationEvent
+} EVENT_TYPE;
+
 #endif
 
 void close_muwine();
@@ -662,6 +671,18 @@ NTSTATUS __stdcall NtSetTimer(HANDLE TimerHandle, const LARGE_INTEGER* DueTime,
                               PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
                               BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
 NTSTATUS __stdcall NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);
+NTSTATUS __stdcall NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                                 const OBJECT_ATTRIBUTES* ObjectAttributes, EVENT_TYPE EventType,
+                                 BOOLEAN InitialState);
+NTSTATUS __stdcall NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                               const OBJECT_ATTRIBUTES* ObjectAttributes);
+NTSTATUS __stdcall NtSetEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS __stdcall NtResetEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS __stdcall NtClearEvent(HANDLE EventHandle);
+NTSTATUS __stdcall NtPulseEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS __stdcall NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformationClass,
+                                PVOID EventInformation, ULONG EventInformationLength,
+                                PULONG ReturnLength);
 
 #ifdef __cplusplus
 }

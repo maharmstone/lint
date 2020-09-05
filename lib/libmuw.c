@@ -1187,3 +1187,126 @@ NTSTATUS __stdcall NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState) {
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                                 const OBJECT_ATTRIBUTES* ObjectAttributes, EVENT_TYPE EventType,
+                                 BOOLEAN InitialState) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)EventHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)EventType,
+        (uintptr_t)InitialState
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCREATEEVENT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                               const OBJECT_ATTRIBUTES* ObjectAttributes) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)EventHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENEVENT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)EventHandle,
+        (uintptr_t)PreviousState
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETEVENT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtResetEvent(HANDLE EventHandle, PLONG PreviousState) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)EventHandle,
+        (uintptr_t)PreviousState
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTRESETEVENT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtClearEvent(HANDLE EventHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)EventHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCLEAREVENT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtPulseEvent(HANDLE EventHandle, PLONG PreviousState) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)EventHandle,
+        (uintptr_t)PreviousState
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTPULSEEVENT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformationClass,
+                                PVOID EventInformation, ULONG EventInformationLength,
+                                PULONG ReturnLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)EventHandle,
+        (uintptr_t)EventInformationClass,
+        (uintptr_t)EventInformation,
+        (uintptr_t)EventInformationLength,
+        (uintptr_t)ReturnLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYEVENT, args, ret);
+
+    return (NTSTATUS)ret;
+}
