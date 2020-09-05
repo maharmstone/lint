@@ -1,4 +1,7 @@
 #include "muwine.h"
+#include "event.h"
+
+static type_object* event_type = NULL;
 
 NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
                        POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
@@ -66,4 +69,30 @@ NTSTATUS NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformati
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static void event_object_close(object_header* obj) {
+    event_object* ev = (event_object*)obj;
+
+    free_object(&ev->header.h);
+}
+
+NTSTATUS muwine_init_events(void) {
+    UNICODE_STRING us;
+
+    static const WCHAR event_name[] = L"Event";
+
+    us.Length = us.MaximumLength = sizeof(event_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)event_name;
+
+    event_type = muwine_add_object_type(&us, event_object_close, NULL,
+                                        EVENT_GENERIC_READ, EVENT_GENERIC_WRITE,
+                                        EVENT_GENERIC_EXECUTE, EVENT_ALL_ACCESS,
+                                        EVENT_ALL_ACCESS);
+    if (IS_ERR(event_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)event_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)event_type);
+    }
+
+    return STATUS_SUCCESS;
 }

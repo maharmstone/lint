@@ -1010,3 +1010,4 @@ NTSTATUS NtPulseEvent(HANDLE EventHandle, PLONG PreviousState);
 NTSTATUS NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformationClass,
                       PVOID EventInformation, ULONG EventInformationLength,
                       PULONG ReturnLength);
+NTSTATUS muwine_init_events(void);
