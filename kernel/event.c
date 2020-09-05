@@ -328,11 +328,7 @@ NTSTATUS user_NtResetEvent(HANDLE EventHandle, PLONG PreviousState) {
 }
 
 static NTSTATUS NtClearEvent(HANDLE EventHandle) {
-    printk(KERN_INFO "NtClearEvent(%lx): stub\n", (uintptr_t)EventHandle);
-
-    // FIXME
-
-    return STATUS_NOT_IMPLEMENTED;
+    return NtResetEvent(EventHandle, NULL);
 }
 
 NTSTATUS user_NtClearEvent(HANDLE EventHandle) {
