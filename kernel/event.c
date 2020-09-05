@@ -251,7 +251,7 @@ NTSTATUS user_NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
     return Status;
 }
 
-NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
+static NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
     printk(KERN_INFO "NtSetEvent(%lx, %px): stub\n", (uintptr_t)EventHandle,
            PreviousState);
 
@@ -260,7 +260,22 @@ NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtResetEvent(HANDLE EventHandle, PLONG PreviousState) {
+NTSTATUS user_NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
+    NTSTATUS Status;
+    LONG state;
+
+    if ((uintptr_t)EventHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    Status = NtSetEvent(EventHandle, PreviousState ? &state : NULL);
+
+    if (PreviousState && put_user(state, PreviousState) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
+}
+
+static NTSTATUS NtResetEvent(HANDLE EventHandle, PLONG PreviousState) {
     printk(KERN_INFO "NtResetEvent(%lx, %px): stub\n", (uintptr_t)EventHandle,
            PreviousState);
 
@@ -269,7 +284,22 @@ NTSTATUS NtResetEvent(HANDLE EventHandle, PLONG PreviousState) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtClearEvent(HANDLE EventHandle) {
+NTSTATUS user_NtResetEvent(HANDLE EventHandle, PLONG PreviousState) {
+    NTSTATUS Status;
+    LONG state;
+
+    if ((uintptr_t)EventHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    Status = NtResetEvent(EventHandle, PreviousState ? &state : NULL);
+
+    if (PreviousState && put_user(state, PreviousState) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
+}
+
+static NTSTATUS NtClearEvent(HANDLE EventHandle) {
     printk(KERN_INFO "NtClearEvent(%lx): stub\n", (uintptr_t)EventHandle);
 
     // FIXME
@@ -277,13 +307,35 @@ NTSTATUS NtClearEvent(HANDLE EventHandle) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtPulseEvent(HANDLE EventHandle, PLONG PreviousState) {
+NTSTATUS user_NtClearEvent(HANDLE EventHandle) {
+    if ((uintptr_t)EventHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    return NtClearEvent(EventHandle);
+}
+
+static NTSTATUS NtPulseEvent(HANDLE EventHandle, PLONG PreviousState) {
     printk(KERN_INFO "NtPulseEvent(%lx, %px): stub\n", (uintptr_t)EventHandle,
            PreviousState);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtPulseEvent(HANDLE EventHandle, PLONG PreviousState) {
+    NTSTATUS Status;
+    LONG state;
+
+    if ((uintptr_t)EventHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    Status = NtPulseEvent(EventHandle, PreviousState ? &state : NULL);
+
+    if (PreviousState && put_user(state, PreviousState) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformationClass,

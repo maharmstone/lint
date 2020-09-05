@@ -1005,10 +1005,10 @@ NTSTATUS user_NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
                             BOOLEAN InitialState);
 NTSTATUS user_NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
                           POBJECT_ATTRIBUTES ObjectAttributes);
-NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState);
-NTSTATUS NtResetEvent(HANDLE EventHandle, PLONG PreviousState);
-NTSTATUS NtClearEvent(HANDLE EventHandle);
-NTSTATUS NtPulseEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS user_NtSetEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS user_NtResetEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS user_NtClearEvent(HANDLE EventHandle);
+NTSTATUS user_NtPulseEvent(HANDLE EventHandle, PLONG PreviousState);
 NTSTATUS NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformationClass,
                       PVOID EventInformation, ULONG EventInformationLength,
                       PULONG ReturnLength);
