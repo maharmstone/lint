@@ -71,7 +71,7 @@ static struct muwine_func funcs[] = {
     { NtQueryTimer, 5 },
     { user_NtSetTimer, 7 },
     { user_NtCancelTimer, 2 },
-    { NtCreateEvent, 5 },
+    { user_NtCreateEvent, 5 },
     { NtOpenEvent, 3 },
     { NtSetEvent, 2 },
     { NtResetEvent, 2 },

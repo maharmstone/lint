@@ -998,9 +998,9 @@ typedef enum {
     SynchronizationEvent
 } EVENT_TYPE;
 
-NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
-                       POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
-                       BOOLEAN InitialState);
+NTSTATUS user_NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                            POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
+                            BOOLEAN InitialState);
 NTSTATUS NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
                      POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState);

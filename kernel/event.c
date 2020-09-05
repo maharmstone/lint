@@ -3,15 +3,55 @@
 
 static type_object* event_type = NULL;
 
-NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
-                       POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
-                       BOOLEAN InitialState) {
+static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                              POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
+                              BOOLEAN InitialState) {
     printk(KERN_INFO "NtCreateEvent(%px, %x, %px, %x, %x): stub\n", EventHandle,
            DesiredAccess, ObjectAttributes, EventType, InitialState);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
+                            POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
+                            BOOLEAN InitialState) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+
+    if (!EventHandle)
+        return STATUS_INVALID_PARAMETER;
+
+    if (ObjectAttributes && !get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (ObjectAttributes && oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtCreateEvent(&h, DesiredAccess, ObjectAttributes ? &oa : NULL,
+                           EventType, InitialState);
+
+    if (ObjectAttributes && oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, EventHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
