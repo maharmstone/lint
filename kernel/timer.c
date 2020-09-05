@@ -4,8 +4,6 @@
 
 static type_object* timer_type = NULL;
 
-extern type_object* dir_type;
-
 static void timer_fire(struct timer_list* timer) {
     timer_object* t = list_entry(timer, timer_object, timer);
 
@@ -214,10 +212,8 @@ static NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 
     Status = muwine_add_handle(&t->header.h, TimerHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
 
-    if (!NT_SUCCESS(Status)) {
+    if (!NT_SUCCESS(Status))
         dec_obj_refcount(&t->header.h);
-        goto end;
-    }
 
 end:
     if (oa_us_alloc)

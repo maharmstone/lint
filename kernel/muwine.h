@@ -732,6 +732,8 @@ typedef NTSTATUS (*muwine_query_volume_information)(file_object* obj, PIO_STATUS
                                                       ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
 typedef struct file* (*muwine_get_filp)(file_object* obj);
 
+extern type_object* dir_type;
+
 typedef struct _device {
     object_header header;
     muwine_create create;

@@ -135,12 +135,82 @@ NTSTATUS user_NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
 
 static NTSTATUS NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
                             POBJECT_ATTRIBUTES ObjectAttributes) {
-    printk(KERN_INFO "NtOpenEvent(%px, %x, %px): stub\n", EventHandle,
-           DesiredAccess, ObjectAttributes);
+    NTSTATUS Status;
+    UNICODE_STRING us, after;
+    WCHAR* oa_us_alloc = NULL;
+    event_object* ev;
+    ACCESS_MASK access;
+    bool after_alloc = false;
 
-    // FIXME
+    if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES) || !ObjectAttributes->ObjectName)
+        return STATUS_INVALID_PARAMETER;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (ObjectAttributes->RootDirectory) {
+        ACCESS_MASK access;
+        object_header* obj = get_object_from_handle(ObjectAttributes->RootDirectory, &access);
+
+        if (!obj)
+            return STATUS_INVALID_HANDLE;
+
+        if (obj->type != dir_type) {
+            dec_obj_refcount(obj);
+            return STATUS_INVALID_HANDLE;
+        }
+
+        spin_lock(&obj->path_lock);
+
+        us.Length = obj->path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
+        us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
+
+        if (!us.Buffer) {
+            spin_unlock(&obj->path_lock);
+            dec_obj_refcount(obj);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memcpy(us.Buffer, obj->path.Buffer, obj->path.Length);
+        us.Buffer[obj->path.Length / sizeof(WCHAR)] = '\\';
+        memcpy(&us.Buffer[(obj->path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
+               ObjectAttributes->ObjectName->Length);
+
+        spin_unlock(&obj->path_lock);
+
+        dec_obj_refcount(obj);
+    } else {
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+    }
+
+    Status = muwine_open_object(&us, (object_header**)&ev, &after, &after_alloc, false);
+    if (!NT_SUCCESS(Status))
+        goto end;
+
+    if (ev->header.h.type != event_type || after.Length != 0) {
+        dec_obj_refcount(&ev->header.h);
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    access = sanitize_access_mask(DesiredAccess, event_type);
+
+    // FIXME - check against SD
+
+    if (access == MAXIMUM_ALLOWED)
+        access = EVENT_ALL_ACCESS; // FIXME - should only be what SD allows
+
+    Status = muwine_add_handle(&ev->header.h, EventHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
+
+    if (!NT_SUCCESS(Status))
+        dec_obj_refcount(&ev->header.h);
+
+end:
+    if (oa_us_alloc)
+        kfree(oa_us_alloc);
+
+    if (after_alloc)
+        kfree(after.Buffer);
+
+    return Status;
 }
 
 NTSTATUS user_NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
