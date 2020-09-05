@@ -1092,7 +1092,7 @@ NTSTATUS __stdcall NtWaitForMultipleObjects(ULONG ObjectCount, const HANDLE* Obj
 }
 
 NTSTATUS __stdcall NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
-                                 POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType) {
+                                 const OBJECT_ATTRIBUTES* ObjectAttributes, TIMER_TYPE TimerType) {
     long ret;
 
     uintptr_t args[] = {
@@ -1111,7 +1111,7 @@ NTSTATUS __stdcall NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 }
 
 NTSTATUS __stdcall NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
-                               POBJECT_ATTRIBUTES ObjectAttributes) {
+                               const OBJECT_ATTRIBUTES* ObjectAttributes) {
     long ret;
 
     uintptr_t args[] = {
@@ -1149,7 +1149,7 @@ NTSTATUS __stdcall NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS Time
     return (NTSTATUS)ret;
 }
 
-NTSTATUS __stdcall NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
+NTSTATUS __stdcall NtSetTimer(HANDLE TimerHandle, const LARGE_INTEGER* DueTime,
                               PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
                               BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState) {
     long ret;

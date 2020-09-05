@@ -652,13 +652,13 @@ NTSTATUS __stdcall NtWaitForMultipleObjects(ULONG ObjectCount, const HANDLE* Obj
                                             OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
                                             const LARGE_INTEGER* TimeOut);
 NTSTATUS __stdcall NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
-                                 POBJECT_ATTRIBUTES ObjectAttributes, TIMER_TYPE TimerType);
+                                 const OBJECT_ATTRIBUTES* ObjectAttributes, TIMER_TYPE TimerType);
 NTSTATUS __stdcall NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
-                               POBJECT_ATTRIBUTES ObjectAttributes);
+                               const OBJECT_ATTRIBUTES* ObjectAttributes);
 NTSTATUS __stdcall NtQueryTimer(HANDLE TimerHandle, TIMER_INFORMATION_CLASS TimerInformationClass,
                                 PVOID TimerInformation, ULONG TimerInformationLength,
                                 PULONG ReturnLength);
-NTSTATUS __stdcall NtSetTimer(HANDLE TimerHandle, PLARGE_INTEGER DueTime,
+NTSTATUS __stdcall NtSetTimer(HANDLE TimerHandle, const LARGE_INTEGER* DueTime,
                               PTIMER_APC_ROUTINE TimerApcRoutine, PVOID TimerContext,
                               BOOLEAN ResumeTimer, LONG Period, PBOOLEAN PreviousState);
 NTSTATUS __stdcall NtCancelTimer(HANDLE TimerHandle, PBOOLEAN CurrentState);
