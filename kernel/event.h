@@ -12,4 +12,5 @@
 
 typedef struct {
     sync_object header;
+    EVENT_TYPE type;
 } event_object;

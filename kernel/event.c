@@ -6,12 +6,91 @@ static type_object* event_type = NULL;
 static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
                               POBJECT_ATTRIBUTES ObjectAttributes, EVENT_TYPE EventType,
                               BOOLEAN InitialState) {
-    printk(KERN_INFO "NtCreateEvent(%px, %x, %px, %x, %x): stub\n", EventHandle,
-           DesiredAccess, ObjectAttributes, EventType, InitialState);
+    NTSTATUS Status;
+    event_object* obj;
+    ACCESS_MASK access;
 
-    // FIXME
+    access = sanitize_access_mask(DesiredAccess, event_type);
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (access == MAXIMUM_ALLOWED)
+        access = EVENT_ALL_ACCESS;
+
+    if (EventType != SynchronizationEvent && EventType != NotificationEvent)
+        return STATUS_INVALID_PARAMETER;
+
+    // create object
+
+    obj = kzalloc(sizeof(event_object), GFP_KERNEL);
+    if (!obj)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    obj->header.h.refcount = 1;
+
+    obj->header.h.type = event_type;
+    inc_obj_refcount(&event_type->header);
+
+    spin_lock_init(&obj->header.h.path_lock);
+
+    spin_lock_init(&obj->header.sync_lock);
+    INIT_LIST_HEAD(&obj->header.waiters);
+    obj->header.signalled = InitialState;
+
+    obj->type = EventType;
+
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        UNICODE_STRING us;
+        bool us_alloc = false;
+
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+        Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
+        if (!NT_SUCCESS(Status)) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            goto end;
+        }
+
+        if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+
+        obj->header.h.path.Length = us.Length;
+        obj->header.h.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+        if (!obj->header.h.path.Buffer) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        memcpy(obj->header.h.path.Buffer, us.Buffer, us.Length);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false,
+                                               ObjectAttributes->Attributes & OBJ_PERMANENT);
+        if (!NT_SUCCESS(Status))
+            goto end;
+    }
+
+    Status = muwine_add_handle(&obj->header.h, EventHandle,
+                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
+
+end:
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&obj->header.h);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
