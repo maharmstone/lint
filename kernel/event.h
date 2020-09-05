@@ -13,4 +13,5 @@
 typedef struct {
     sync_object header;
     EVENT_TYPE type;
+    spinlock_t lock;
 } event_object;

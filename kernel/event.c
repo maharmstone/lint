@@ -36,6 +36,7 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
     obj->header.signalled = InitialState;
 
     obj->type = EventType;
+    spin_lock_init(&obj->lock);
 
     if (ObjectAttributes && ObjectAttributes->ObjectName) {
         UNICODE_STRING us;
@@ -276,12 +277,39 @@ NTSTATUS user_NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
 }
 
 static NTSTATUS NtResetEvent(HANDLE EventHandle, PLONG PreviousState) {
-    printk(KERN_INFO "NtResetEvent(%lx, %px): stub\n", (uintptr_t)EventHandle,
-           PreviousState);
+    NTSTATUS Status;
+    ACCESS_MASK access;
+    event_object* obj;
 
-    // FIXME
+    obj = (event_object*)get_object_from_handle(EventHandle, &access);
+    if (!obj)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.h.type != event_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    if (!(access & EVENT_MODIFY_STATE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    spin_lock(&obj->lock);
+
+    if (PreviousState)
+        *PreviousState = obj->header.signalled;
+
+    obj->header.signalled = false;
+
+    spin_unlock(&obj->lock);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    dec_obj_refcount(&obj->header.h);
+
+    return Status;
 }
 
 NTSTATUS user_NtResetEvent(HANDLE EventHandle, PLONG PreviousState) {
