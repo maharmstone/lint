@@ -363,7 +363,7 @@ void signal_object(sync_object* obj, bool auto_reset) {
 
             list_del(&w->list);
 
-            w->thread->wait_count--;
+            __sync_sub_and_fetch(&w->thread->wait_count, 1);
             wake_up_process(w->thread->ts);
 
             obj->signalled = false;
@@ -375,7 +375,7 @@ void signal_object(sync_object* obj, bool auto_reset) {
 
             list_del(&w->list);
 
-            w->thread->wait_count--;
+            __sync_sub_and_fetch(&w->thread->wait_count, 1);
             wake_up_process(w->thread->ts);
 
             le = le->next;
