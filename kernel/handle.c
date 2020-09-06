@@ -275,13 +275,15 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
         spin_lock_irqsave(&obj->sync_lock, flags);
         locked = true;
 
-        sem->count--;
-        sem->header.signalled = sem->count > 0;
+        if (sem->count > 0) {
+            sem->count--;
+            sem->header.signalled = sem->count > 0;
 
-        spin_unlock_irqrestore(&obj->sync_lock, flags);
+            spin_unlock_irqrestore(&obj->sync_lock, flags);
 
-        Status = STATUS_WAIT_0;
-        goto end2;
+            Status = STATUS_WAIT_0;
+            goto end2;
+        }
     } else {
         if (obj->signalled) {
             Status = STATUS_WAIT_0;
@@ -345,11 +347,6 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
                 inc_obj_refcount(&thread->header.h);
 
                 __sync_add_and_fetch(&thread->mutant_count, 1);
-            } else if (obj->h.type == sem_type) {
-                sem_object* sem = (sem_object*)obj;
-
-                sem->count--;
-                sem->header.signalled = sem->count > 0;
             }
 
             spin_unlock_irqrestore(&obj->sync_lock, flags);
@@ -426,6 +423,12 @@ void signal_object(sync_object* obj, bool single_thread, bool no_lock) {
             waiter* w = list_entry(obj->waiters.next, waiter, list);
 
             list_del(&w->list);
+
+            if (obj->h.type == sem_type) {
+                sem_object* sem = (sem_object*)obj;
+
+                sem->count--;
+            }
 
             __sync_sub_and_fetch(&w->thread->wait_count, 1);
             wake_up_process(w->thread->ts);

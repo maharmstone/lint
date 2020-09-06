@@ -283,12 +283,62 @@ NTSTATUS NtQuerySemaphore(HANDLE SemaphoreHandle,
 }
 
 static NTSTATUS NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount) {
-    printk(KERN_INFO "NtReleaseSemaphore(%lx, %x, %px): stub\n",
-           (uintptr_t)SemaphoreHandle, ReleaseCount, PreviousCount);
+    NTSTATUS Status;
+    ACCESS_MASK access;
+    sem_object* obj;
+    unsigned long flags;
 
-    // FIXME
+    obj = (sem_object*)get_object_from_handle(SemaphoreHandle, &access);
+    if (!obj)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.h.type != sem_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    if (!(access & SEMAPHORE_MODIFY_STATE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    spin_lock_irqsave(&obj->header.sync_lock, flags);
+
+    if (PreviousCount)
+        *PreviousCount = obj->count;
+
+    if (obj->count + ReleaseCount > obj->max_count) {
+        spin_unlock_irqrestore(&obj->header.sync_lock, flags);
+        Status = STATUS_SEMAPHORE_LIMIT_EXCEEDED;
+        goto end;
+    }
+
+    if (obj->count == 0) {
+        unsigned int i;
+
+        obj->count = ReleaseCount;
+
+        for (i = 0; i < ReleaseCount; i++) {
+            obj->header.signalled = true;
+
+            signal_object(&obj->header, true, true);
+
+            if (obj->header.signalled) // nothing woken up
+                break;
+        }
+
+        obj->header.signalled = obj->count > 0;
+    } else
+        obj->count += ReleaseCount;
+
+    spin_unlock_irqrestore(&obj->header.sync_lock, flags);
+
+    Status = STATUS_SUCCESS;
+
+end:
+    dec_obj_refcount(&obj->header.h);
+
+    return Status;
 }
 
 NTSTATUS user_NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount) {
