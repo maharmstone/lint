@@ -319,7 +319,7 @@ static NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
     }
 
     if (PreviousCount)
-        *PreviousCount = obj->hold_count;
+        *PreviousCount = 1 - obj->hold_count;
 
     obj->hold_count--;
 
