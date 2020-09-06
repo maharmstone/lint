@@ -1,5 +1,6 @@
 obj-m += muw.o
-muw-objs += muwine.o reg.o sec.o file.o handle.o unixfs.o obj.o sect.o thread.o proc.o timer.o event.o
+muw-objs += muwine.o reg.o sec.o file.o handle.o unixfs.o obj.o sect.o thread.o proc.o timer.o \
+            event.o mutant.o
 
 ccflags-y += -fshort-wchar
 

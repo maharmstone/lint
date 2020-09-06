@@ -69,5 +69,9 @@
 #define MUWINE_IOCTL_NTCLEAREVENT                   MUWINE_IOCTL(62)
 #define MUWINE_IOCTL_NTPULSEEVENT                   MUWINE_IOCTL(63)
 #define MUWINE_IOCTL_NTQUERYEVENT                   MUWINE_IOCTL(64)
+#define MUWINE_IOCTL_NTCREATEMUTANT                 MUWINE_IOCTL(65)
+#define MUWINE_IOCTL_NTOPENMUTANT                   MUWINE_IOCTL(66)
+#define MUWINE_IOCTL_NTQUERYMUTANT                  MUWINE_IOCTL(67)
+#define MUWINE_IOCTL_NTRELEASEMUTANT                MUWINE_IOCTL(68)
 
-#define MUWINE_IOCTL_MAX                  64
+#define MUWINE_IOCTL_MAX                  68

@@ -1013,3 +1013,17 @@ NTSTATUS NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformati
                       PVOID EventInformation, ULONG EventInformationLength,
                       PULONG ReturnLength);
 NTSTATUS muwine_init_events(void);
+
+// mutant.c
+typedef enum {
+    MutantBasicInformation
+} MUTANT_INFORMATION_CLASS;
+
+NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                        POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner);
+NTSTATUS NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                      POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInformationClass,
+                       PVOID MutantInformation, ULONG MutantInformationLength,
+                       PULONG ResultLength);
+NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
