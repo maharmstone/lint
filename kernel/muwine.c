@@ -79,7 +79,7 @@ static struct muwine_func funcs[] = {
     { user_NtPulseEvent, 2 },
     { NtQueryEvent, 5 },
     { user_NtCreateMutant, 4 },
-    { NtOpenMutant, 3 },
+    { user_NtOpenMutant, 3 },
     { NtQueryMutant, 5 },
     { NtReleaseMutant, 2 },
 };

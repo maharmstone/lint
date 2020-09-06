@@ -142,6 +142,44 @@ NTSTATUS NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS user_NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                           POBJECT_ATTRIBUTES ObjectAttributes) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+
+    if (!MutantHandle || !ObjectAttributes)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtOpenMutant(&h, DesiredAccess, &oa);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, MutantHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
+}
+
 NTSTATUS NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInformationClass,
                        PVOID MutantInformation, ULONG MutantInformationLength,
                        PULONG ResultLength) {
