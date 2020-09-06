@@ -15,6 +15,9 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
     if (access == MAXIMUM_ALLOWED)
         access = SEMAPHORE_ALL_ACCESS;
 
+    if (MaximumCount <= 0 || InitialCount > MaximumCount)
+        return STATUS_INVALID_PARAMETER;
+
     // create object
 
     obj = kzalloc(sizeof(sem_object), GFP_KERNEL);
