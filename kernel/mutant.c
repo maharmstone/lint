@@ -1,4 +1,7 @@
 #include "muwine.h"
+#include "mutant.h"
+
+static type_object* mutant_type = NULL;
 
 static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
                                POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner) {
@@ -78,4 +81,30 @@ NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static void mutant_object_close(object_header* obj) {
+    mutant_object* mut = (mutant_object*)obj;
+
+    free_object(&mut->header.h);
+}
+
+NTSTATUS muwine_init_mutants(void) {
+    UNICODE_STRING us;
+
+    static const WCHAR mutant_name[] = L"Mutant";
+
+    us.Length = us.MaximumLength = sizeof(mutant_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)mutant_name;
+
+    mutant_type = muwine_add_object_type(&us, mutant_object_close, NULL,
+                                         MUTANT_GENERIC_READ, MUTANT_GENERIC_WRITE,
+                                         MUTANT_GENERIC_EXECUTE, MUTANT_ALL_ACCESS,
+                                         MUTANT_ALL_ACCESS);
+    if (IS_ERR(mutant_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)mutant_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)mutant_type);
+    }
+
+    return STATUS_SUCCESS;
 }

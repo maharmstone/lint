@@ -1027,3 +1027,4 @@ NTSTATUS NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInfor
                        PVOID MutantInformation, ULONG MutantInformationLength,
                        PULONG ResultLength);
 NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
+NTSTATUS muwine_init_mutants(void);
