@@ -16,6 +16,7 @@ typedef struct _thread_object {
     uintptr_t teb;
     process_object* process;
     int wait_count;
+    unsigned int mutant_count;
 } thread_object;
 
 #define THREAD_TERMINATE 0x0001

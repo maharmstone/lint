@@ -254,6 +254,8 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
             mut->thread = thread;
             inc_obj_refcount(&thread->header.h);
 
+            __sync_add_and_fetch(&thread->mutant_count, 1);
+
             mut->header.signalled = false;
             spin_unlock_irqrestore(&obj->sync_lock, flags);
 
@@ -327,6 +329,8 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
                 mut->hold_count = 1;
                 mut->thread = thread;
                 inc_obj_refcount(&thread->header.h);
+
+                __sync_add_and_fetch(&thread->mutant_count, 1);
             }
 
             spin_unlock_irqrestore(&obj->sync_lock, flags);

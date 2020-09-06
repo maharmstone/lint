@@ -370,6 +370,9 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
         dec_obj_refcount(&t->header.h);
     }
 
+    if (t->mutant_count != 0)
+        release_abandoned_mutants(t);
+
     dec_obj_refcount(&t->process->header.h);
 
     dec_obj_refcount(&t->header.h);

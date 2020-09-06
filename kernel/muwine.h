@@ -1030,3 +1030,4 @@ NTSTATUS NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInfor
                        PULONG ResultLength);
 NTSTATUS user_NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
 NTSTATUS muwine_init_mutants(void);
+void release_abandoned_mutants(thread_object* t);

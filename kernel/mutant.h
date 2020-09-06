@@ -13,6 +13,7 @@ typedef struct {
     sync_object header;
     thread_object* thread;
     unsigned int hold_count;
+    struct list_head list;
 } mutant_object;
 
 extern type_object* mutant_type;

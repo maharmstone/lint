@@ -4,6 +4,9 @@
 
 type_object* mutant_type = NULL;
 
+static LIST_HEAD(mutant_list);
+static DEFINE_SPINLOCK(mutant_list_lock);
+
 static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
                                POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner) {
     NTSTATUS Status;
@@ -36,6 +39,10 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
         obj->thread = muwine_current_thread_object();
         obj->hold_count = 1;
     }
+
+    spin_lock(&mutant_list_lock);
+    list_add(&obj->list, &mutant_list);
+    spin_unlock(&mutant_list_lock);
 
     if (ObjectAttributes && ObjectAttributes->ObjectName) {
         UNICODE_STRING us;
@@ -92,6 +99,8 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
                 goto end;
             }
 
+            InitialOwner = false;
+
             Status = STATUS_SUCCESS;
         }
 
@@ -101,6 +110,9 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
 
     Status = muwine_add_handle(&obj->header.h, MutantHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
+
+    if (NT_SUCCESS(Status) && InitialOwner)
+        __sync_add_and_fetch(&obj->thread->mutant_count, 1);
 
 end:
     if (!NT_SUCCESS(Status)) {
@@ -314,6 +326,8 @@ static NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
     if (obj->hold_count == 0) {
         old_thread = &obj->thread->header.h;
 
+        __sync_sub_and_fetch(&obj->thread->mutant_count, 1);
+
         obj->thread = NULL;
         obj->header.signalled = true;
         signal_object(&obj->header, true, true);
@@ -347,11 +361,45 @@ NTSTATUS user_NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
     return Status;
 }
 
+void release_abandoned_mutants(thread_object* t) {
+    struct list_head* le;
+
+    spin_lock(&mutant_list_lock);
+
+    le = mutant_list.next;
+    while (le != &mutant_list) {
+        mutant_object* mut = list_entry(le, mutant_object, list);
+
+        if (mut->thread == t) {
+            unsigned long flags;
+
+            spin_lock_irqsave(&mut->header.sync_lock, flags);
+
+            dec_obj_refcount(&t->header.h);
+
+            mut->thread = NULL;
+            mut->hold_count = 0;
+            mut->header.signalled = true;
+            signal_object(&mut->header, true, true);
+
+            spin_unlock_irqrestore(&mut->header.sync_lock, flags);
+        }
+
+        le = le->next;
+    }
+
+    spin_unlock(&mutant_list_lock);
+}
+
 static void mutant_object_close(object_header* obj) {
     mutant_object* mut = (mutant_object*)obj;
 
     if (mut->thread)
         dec_obj_refcount(&mut->thread->header.h);
+
+    spin_lock(&mutant_list_lock);
+    list_del(&mut->list);
+    spin_unlock(&mutant_list_lock);
 
     free_object(&mut->header.h);
 }
