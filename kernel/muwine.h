@@ -1031,3 +1031,19 @@ NTSTATUS NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInfor
 NTSTATUS user_NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
 NTSTATUS muwine_init_mutants(void);
 void release_abandoned_mutants(thread_object* t);
+
+// semaphore.c
+typedef enum {
+    SemaphoreBasicInformation
+} SEMAPHORE_INFORMATION_CLASS;
+
+NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                           POBJECT_ATTRIBUTES ObjectAttributes, ULONG InitialCount,
+                           ULONG MaximumCount);
+NTSTATUS NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                         POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS NtQuerySemaphore(HANDLE SemaphoreHandle,
+                          SEMAPHORE_INFORMATION_CLASS SemaphoreInformationClass,
+                          PVOID SemaphoreInformation, ULONG SemaphoreInformationLength,
+                          PULONG ReturnLength);
+NTSTATUS NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount);

@@ -82,6 +82,10 @@ static struct muwine_func funcs[] = {
     { user_NtOpenMutant, 3 },
     { NtQueryMutant, 5 },
     { user_NtReleaseMutant, 2 },
+    { NtCreateSemaphore, 5 },
+    { NtOpenSemaphore, 3 },
+    { NtQuerySemaphore, 5 },
+    { NtReleaseSemaphore, 3 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)
