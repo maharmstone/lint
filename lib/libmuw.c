@@ -1310,3 +1310,77 @@ NTSTATUS __stdcall NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS Even
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                                  const OBJECT_ATTRIBUTES* ObjectAttributes, BOOLEAN InitialOwner) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)MutantHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)InitialOwner
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCREATEMUTANT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                                const OBJECT_ATTRIBUTES* ObjectAttributes) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)MutantHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENMUTANT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInformationClass,
+                                 PVOID MutantInformation, ULONG MutantInformationLength,
+                                 PULONG ResultLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)MutantHandle,
+        (uintptr_t)MutantInformationClass,
+        (uintptr_t)MutantInformation,
+        (uintptr_t)MutantInformationLength,
+        (uintptr_t)ResultLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYMUTANT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)MutantHandle,
+        (uintptr_t)PreviousCount
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTRELEASEMUTANT, args, ret);
+
+    return (NTSTATUS)ret;
+}

@@ -544,6 +544,10 @@ typedef enum {
     SynchronizationEvent
 } EVENT_TYPE;
 
+typedef enum {
+    MutantBasicInformation
+} MUTANT_INFORMATION_CLASS;
+
 #endif
 
 void close_muwine();
@@ -683,6 +687,14 @@ NTSTATUS __stdcall NtPulseEvent(HANDLE EventHandle, PLONG PreviousState);
 NTSTATUS __stdcall NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformationClass,
                                 PVOID EventInformation, ULONG EventInformationLength,
                                 PULONG ReturnLength);
+NTSTATUS __stdcall NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                                  const OBJECT_ATTRIBUTES* ObjectAttributes, BOOLEAN InitialOwner);
+NTSTATUS __stdcall NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                                const OBJECT_ATTRIBUTES* ObjectAttributes);
+NTSTATUS __stdcall NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInformationClass,
+                                 PVOID MutantInformation, ULONG MutantInformationLength,
+                                 PULONG ResultLength);
+NTSTATUS __stdcall NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
 
 #ifdef __cplusplus
 }
