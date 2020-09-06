@@ -36,7 +36,7 @@ int main() {
     oa.Length = sizeof(oa);
     oa.RootDirectory = NULL;
     oa.ObjectName = &us;
-    oa.Attributes = OBJ_OPENIF;
+    oa.Attributes = OBJ_OPENIF | OBJ_PERMANENT;
     oa.SecurityDescriptor = NULL;
     oa.SecurityQualityOfService = NULL;
 
