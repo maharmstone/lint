@@ -1,6 +1,7 @@
 #include "muwine.h"
 #include "thread.h"
 #include "mutant.h"
+#include "semaphore.h"
 
 static uintptr_t next_kernel_handle_no = KERNEL_HANDLE_MASK;
 
@@ -268,6 +269,19 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
             Status = STATUS_WAIT_0;
             goto end2;
         }
+    } else if (obj->h.type == sem_type) {
+        sem_object* sem = (sem_object*)obj;
+
+        spin_lock_irqsave(&obj->sync_lock, flags);
+        locked = true;
+
+        sem->count--;
+        sem->header.signalled = sem->count > 0;
+
+        spin_unlock_irqrestore(&obj->sync_lock, flags);
+
+        Status = STATUS_WAIT_0;
+        goto end2;
     } else {
         if (obj->signalled) {
             Status = STATUS_WAIT_0;
@@ -331,6 +345,11 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
                 inc_obj_refcount(&thread->header.h);
 
                 __sync_add_and_fetch(&thread->mutant_count, 1);
+            } else if (obj->h.type == sem_type) {
+                sem_object* sem = (sem_object*)obj;
+
+                sem->count--;
+                sem->header.signalled = sem->count > 0;
             }
 
             spin_unlock_irqrestore(&obj->sync_lock, flags);

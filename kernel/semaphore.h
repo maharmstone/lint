@@ -16,3 +16,5 @@ typedef struct {
     LONG count;
     LONG max_count;
 } sem_object;
+
+extern type_object* sem_type;

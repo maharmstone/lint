@@ -1,7 +1,7 @@
 #include "muwine.h"
 #include "semaphore.h"
 
-static type_object* sem_type = NULL;
+type_object* sem_type = NULL;
 
 static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
                                   POBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount,
