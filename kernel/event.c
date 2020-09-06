@@ -77,7 +77,7 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
             kfree(us.Buffer);
 
         Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false,
-                                               ObjectAttributes->Attributes & OBJ_PERMANENT);
+                                               ObjectAttributes->Attributes & OBJ_PERMANENT, NULL);
         if (!NT_SUCCESS(Status))
             goto end;
     }

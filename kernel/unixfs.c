@@ -1745,7 +1745,7 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->query_volume_information = unixfs_query_volume_info;
     dev->get_filp = unixfs_get_filp;
 
-    Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header, true, true);
+    Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header, true, true, NULL);
     if (!NT_SUCCESS(Status)) {
         dev->header.type->close(&dev->header);
         return Status;

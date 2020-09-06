@@ -40,6 +40,7 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
     if (ObjectAttributes && ObjectAttributes->ObjectName) {
         UNICODE_STRING us;
         bool us_alloc = false;
+        object_header* old;
 
         us.Length = ObjectAttributes->ObjectName->Length;
         us.Buffer = ObjectAttributes->ObjectName->Buffer;
@@ -76,7 +77,24 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
             kfree(us.Buffer);
 
         Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false,
-                                               ObjectAttributes->Attributes & OBJ_PERMANENT);
+                                               ObjectAttributes->Attributes & OBJ_PERMANENT,
+                                               ObjectAttributes->Attributes & OBJ_OPENIF ? &old : NULL);
+
+        if (Status == STATUS_OBJECT_NAME_COLLISION && ObjectAttributes->Attributes & OBJ_OPENIF && old) {
+            // FIXME - check access against object SD
+
+            dec_obj_refcount(&obj->header.h);
+
+            obj = (mutant_object*)old;
+
+            if (obj->header.h.type != mutant_type) {
+                Status = STATUS_OBJECT_TYPE_MISMATCH;
+                goto end;
+            }
+
+            Status = STATUS_SUCCESS;
+        }
+
         if (!NT_SUCCESS(Status))
             goto end;
     }

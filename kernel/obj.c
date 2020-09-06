@@ -393,7 +393,8 @@ static void next_part(UNICODE_STRING* left, UNICODE_STRING* part) {
 }
 
 NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj,
-                                       bool do_resolve_symlinks, bool permanent) {
+                                       bool do_resolve_symlinks, bool permanent,
+                                       object_header** old) {
     NTSTATUS Status;
     UNICODE_STRING us2, left, part;
     dir_object* parent;
@@ -437,6 +438,11 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
             if (item->name_len == part.Length && !wcsnicmp(item->name, part.Buffer, part.Length / sizeof(WCHAR))) {
                 if (left.Length == 0) {
                     spin_unlock(&parent->children_lock);
+
+                    if (old) {
+                        *old = item->object;
+                        inc_obj_refcount(item->object);
+                    }
 
                     dec_obj_refcount(&parent->header);
 
@@ -547,7 +553,8 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
 
     memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
 
-    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, true, ObjectAttributes->Attributes & OBJ_PERMANENT);
+    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, true,
+                                           ObjectAttributes->Attributes & OBJ_PERMANENT, NULL);
 
     if (!NT_SUCCESS(Status)) {
         obj->header.type->close(&obj->header);
@@ -774,7 +781,8 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 
     obj->cache = cache;
 
-    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, false, ObjectAttributes->Attributes & OBJ_PERMANENT);
+    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, false,
+                                           ObjectAttributes->Attributes & OBJ_PERMANENT, NULL);
 
     if (!NT_SUCCESS(Status)) {
         obj->header.type->close(&obj->header);

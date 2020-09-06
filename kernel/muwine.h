@@ -36,6 +36,7 @@ struct muwine_func {
 #define STATUS_CONFLICTING_ADDRESSES        0xc0000018
 #define STATUS_ACCESS_DENIED                0xc0000022
 #define STATUS_BUFFER_TOO_SMALL             0xc0000023
+#define STATUS_OBJECT_TYPE_MISMATCH         0xc0000024
 #define STATUS_OBJECT_NAME_INVALID          0xc0000033
 #define STATUS_OBJECT_NAME_NOT_FOUND        0xc0000034
 #define STATUS_OBJECT_NAME_COLLISION        0xc0000035
@@ -788,7 +789,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
 NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                                          PUNICODE_STRING DestinationName);
 NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* obj, bool resolve_symlinks,
-                                       bool permanent);
+                                       bool permanent, object_header** old);
 NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc);
 void object_cleanup(object_header* obj);
 

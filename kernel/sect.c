@@ -387,7 +387,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
             kfree(us.Buffer);
 
         Status = muwine_add_entry_in_hierarchy(&obj->header.path, &obj->header, false,
-                                               ObjectAttributes->Attributes & OBJ_PERMANENT);
+                                               ObjectAttributes->Attributes & OBJ_PERMANENT, NULL);
         if (!NT_SUCCESS(Status)) {
             dec_obj_refcount(&obj->header);
             return Status;
