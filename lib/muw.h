@@ -548,6 +548,10 @@ typedef enum {
     MutantBasicInformation
 } MUTANT_INFORMATION_CLASS;
 
+typedef enum {
+    SemaphoreBasicInformation
+} SEMAPHORE_INFORMATION_CLASS;
+
 #endif
 
 void close_muwine();
@@ -695,6 +699,16 @@ NTSTATUS __stdcall NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS M
                                  PVOID MutantInformation, ULONG MutantInformationLength,
                                  PULONG ResultLength);
 NTSTATUS __stdcall NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
+NTSTATUS __stdcall NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                     const OBJECT_ATTRIBUTES* ObjectAttributes, LONG InitialCount,
+                                     LONG MaximumCount);
+NTSTATUS __stdcall NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                   const OBJECT_ATTRIBUTES* ObjectAttributes);
+NTSTATUS __stdcall NtQuerySemaphore(HANDLE SemaphoreHandle,
+                                    SEMAPHORE_INFORMATION_CLASS SemaphoreInformationClass,
+                                    PVOID SemaphoreInformation, ULONG SemaphoreInformationLength,
+                                    PULONG ReturnLength);
+NTSTATUS __stdcall NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount);
 
 #ifdef __cplusplus
 }

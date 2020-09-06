@@ -1384,3 +1384,81 @@ NTSTATUS __stdcall NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                     const OBJECT_ATTRIBUTES* ObjectAttributes, LONG InitialCount,
+                                     LONG MaximumCount) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)SemaphoreHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)InitialCount,
+        (uintptr_t)MaximumCount
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCREATESEMAPHORE, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                   const OBJECT_ATTRIBUTES* ObjectAttributes) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)SemaphoreHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENSEMAPHORE, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQuerySemaphore(HANDLE SemaphoreHandle,
+                                    SEMAPHORE_INFORMATION_CLASS SemaphoreInformationClass,
+                                    PVOID SemaphoreInformation, ULONG SemaphoreInformationLength,
+                                    PULONG ReturnLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)SemaphoreHandle,
+        (uintptr_t)SemaphoreInformationClass,
+        (uintptr_t)SemaphoreInformation,
+        (uintptr_t)SemaphoreInformationLength,
+        (uintptr_t)ReturnLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYSEMAPHORE, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)SemaphoreHandle,
+        (uintptr_t)ReleaseCount,
+        (uintptr_t)PreviousCount
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTRELEASESEMAPHORE, args, ret);
+
+    return (NTSTATUS)ret;
+}
