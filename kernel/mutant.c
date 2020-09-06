@@ -314,6 +314,7 @@ static NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
     if (obj->hold_count == 0) {
         old_thread = &obj->thread->header.h;
 
+        obj->thread = NULL;
         obj->header.signalled = true;
         signal_object(&obj->header, true, true);
     }
