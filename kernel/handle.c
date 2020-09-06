@@ -348,7 +348,7 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
     return Status;
 }
 
-void signal_object(sync_object* obj, bool auto_reset) {
+void signal_object(sync_object* obj, bool single_thread) {
     unsigned long flags;
 
     obj->signalled = true;
@@ -357,7 +357,7 @@ void signal_object(sync_object* obj, bool auto_reset) {
 
     // wake up waiting threads
 
-    if (auto_reset) {
+    if (single_thread) {
         if (!list_empty(&obj->waiters)) {
             waiter* w = list_entry(obj->waiters.next, waiter, list);
 

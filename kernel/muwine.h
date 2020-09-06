@@ -41,6 +41,7 @@ struct muwine_func {
 #define STATUS_OBJECT_NAME_COLLISION        0xc0000035
 #define STATUS_OBJECT_PATH_INVALID          0xc0000039
 #define STATUS_OBJECT_PATH_NOT_FOUND        0xc000003a
+#define STATUS_MUTANT_NOT_OWNED             0xc0000046
 #define STATUS_DELETE_PENDING               0xc0000056
 #define STATUS_INSUFFICIENT_RESOURCES       0xc000009a
 #define STATUS_MEDIA_WRITE_PROTECTED        0xc00000a2
@@ -693,7 +694,7 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
 NTSTATUS NtWaitForMultipleObjects(ULONG ObjectCount, PHANDLE ObjectsArray,
                                   OBJECT_WAIT_TYPE WaitType, BOOLEAN Alertable,
                                   PLARGE_INTEGER TimeOut);
-void signal_object(sync_object* obj, bool auto_reset);
+void signal_object(sync_object* obj, bool single_thread);
 
 // unixfs.c
 typedef struct {
