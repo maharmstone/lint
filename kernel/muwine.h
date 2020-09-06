@@ -1019,8 +1019,8 @@ typedef enum {
     MutantBasicInformation
 } MUTANT_INFORMATION_CLASS;
 
-NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
-                        POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner);
+NTSTATUS user_NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                             POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner);
 NTSTATUS NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
                       POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInformationClass,

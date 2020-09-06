@@ -1,13 +1,52 @@
 #include "muwine.h"
 
-NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
-                        POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner) {
+static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                               POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner) {
     printk(KERN_INFO "NtCreateMutant(%px, %x, %px, %x): stub\n",
            MutantHandle, DesiredAccess, ObjectAttributes, InitialOwner);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
+                             POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+
+    if (!MutantHandle)
+        return STATUS_INVALID_PARAMETER;
+
+    if (ObjectAttributes && !get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (ObjectAttributes && oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtCreateMutant(&h, DesiredAccess, ObjectAttributes ? &oa : NULL,
+                            InitialOwner);
+
+    if (ObjectAttributes && oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, MutantHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
