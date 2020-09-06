@@ -279,13 +279,28 @@ NTSTATUS NtQuerySemaphore(HANDLE SemaphoreHandle,
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount) {
+static NTSTATUS NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount) {
     printk(KERN_INFO "NtReleaseSemaphore(%lx, %x, %px): stub\n",
            (uintptr_t)SemaphoreHandle, ReleaseCount, PreviousCount);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount) {
+    NTSTATUS Status;
+    ULONG count;
+
+    if ((uintptr_t)SemaphoreHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    Status = NtReleaseSemaphore(SemaphoreHandle, ReleaseCount, PreviousCount ? &count : NULL);
+
+    if (PreviousCount && put_user(count, PreviousCount) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 static void sem_object_close(object_header* obj) {

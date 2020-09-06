@@ -1046,5 +1046,5 @@ NTSTATUS NtQuerySemaphore(HANDLE SemaphoreHandle,
                           SEMAPHORE_INFORMATION_CLASS SemaphoreInformationClass,
                           PVOID SemaphoreInformation, ULONG SemaphoreInformationLength,
                           PULONG ReturnLength);
-NTSTATUS NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount);
+NTSTATUS user_NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount);
 NTSTATUS muwine_init_semaphores(void);
