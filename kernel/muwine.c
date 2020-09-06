@@ -83,7 +83,7 @@ static struct muwine_func funcs[] = {
     { NtQueryMutant, 5 },
     { user_NtReleaseMutant, 2 },
     { user_NtCreateSemaphore, 5 },
-    { NtOpenSemaphore, 3 },
+    { user_NtOpenSemaphore, 3 },
     { NtQuerySemaphore, 5 },
     { NtReleaseSemaphore, 3 },
 };

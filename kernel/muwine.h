@@ -1040,8 +1040,8 @@ typedef enum {
 NTSTATUS user_NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
                                 POBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount,
                                 LONG MaximumCount);
-NTSTATUS NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
-                         POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS user_NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                              POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtQuerySemaphore(HANDLE SemaphoreHandle,
                           SEMAPHORE_INFORMATION_CLASS SemaphoreInformationClass,
                           PVOID SemaphoreInformation, ULONG SemaphoreInformationLength,

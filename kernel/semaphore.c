@@ -148,14 +148,52 @@ NTSTATUS user_NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAcce
     return Status;
 }
 
-NTSTATUS NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
-                         POBJECT_ATTRIBUTES ObjectAttributes) {
+static NTSTATUS NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                POBJECT_ATTRIBUTES ObjectAttributes) {
     printk(KERN_INFO "NtOpenSemaphore(%px, %x, %px): stub\n",
            SemaphoreHandle, DesiredAccess, ObjectAttributes);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                              POBJECT_ATTRIBUTES ObjectAttributes) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+
+    if (!SemaphoreHandle || !ObjectAttributes)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtOpenSemaphore(&h, DesiredAccess, &oa);
+
+    if (oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, SemaphoreHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtQuerySemaphore(HANDLE SemaphoreHandle,
