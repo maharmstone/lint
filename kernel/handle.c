@@ -348,12 +348,11 @@ NTSTATUS user_NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PLAR
     return Status;
 }
 
-void signal_object(sync_object* obj, bool single_thread) {
+void signal_object(sync_object* obj, bool single_thread, bool no_lock) {
     unsigned long flags;
 
-    obj->signalled = true;
-
-    spin_lock_irqsave(&obj->sync_lock, flags);
+    if (!no_lock)
+        spin_lock_irqsave(&obj->sync_lock, flags);
 
     // wake up waiting threads
 
@@ -369,6 +368,8 @@ void signal_object(sync_object* obj, bool single_thread) {
             obj->signalled = false;
         }
     } else {
+        obj->signalled = true;
+
         while (!list_empty(&obj->waiters)) {
             waiter* w = list_entry(obj->waiters.next, waiter, list);
 
@@ -379,5 +380,6 @@ void signal_object(sync_object* obj, bool single_thread) {
         }
     }
 
-    spin_unlock_irqrestore(&obj->sync_lock, flags);
+    if (!no_lock)
+        spin_unlock_irqrestore(&obj->sync_lock, flags);
 }

@@ -359,7 +359,7 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
     if (!t)
         return 0;
 
-    signal_object(&t->header, false);
+    signal_object(&t->header, false, false);
 
     if (t->teb) {
         void* base_address = (void*)t->teb;

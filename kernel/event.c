@@ -285,7 +285,7 @@ static NTSTATUS NtSetEvent(HANDLE EventHandle, PLONG PreviousState) {
             *PreviousState = false;
     }
 
-    signal_object(&obj->header, obj->type == SynchronizationEvent);
+    signal_object(&obj->header, obj->type == SynchronizationEvent, false);
 
     Status = STATUS_SUCCESS;
 
@@ -405,7 +405,7 @@ static NTSTATUS NtPulseEvent(HANDLE EventHandle, PLONG PreviousState) {
             *PreviousState = false;
     }
 
-    signal_object(&obj->header, obj->type == SynchronizationEvent);
+    signal_object(&obj->header, obj->type == SynchronizationEvent, false);
 
     Status = STATUS_SUCCESS;
 

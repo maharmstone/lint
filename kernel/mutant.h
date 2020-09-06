@@ -11,7 +11,6 @@
 
 typedef struct {
     sync_object header;
-    spinlock_t lock;
     thread_object* thread;
     unsigned int hold_count;
 } mutant_object;

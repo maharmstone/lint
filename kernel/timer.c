@@ -10,7 +10,7 @@ static void timer_fire(struct timer_list* timer) {
     if (t->type == NotificationTimer)
         t->header.signalled = true;
 
-    signal_object(&t->header, t->type == SynchronizationTimer);
+    signal_object(&t->header, t->type == SynchronizationTimer, false);
 
     if (t->period != 0 && t->type == SynchronizationTimer)
         mod_timer(&t->timer, jiffies + msecs_to_jiffies(t->period));

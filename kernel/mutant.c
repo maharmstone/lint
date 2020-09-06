@@ -32,8 +32,6 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
     INIT_LIST_HEAD(&obj->header.waiters);
     obj->header.signalled = !InitialOwner;
 
-    spin_lock_init(&obj->lock);
-
     if (InitialOwner) {
         obj->thread = muwine_current_thread_object();
         obj->hold_count = 1;
@@ -268,6 +266,8 @@ static NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
     NTSTATUS Status;
     ACCESS_MASK access;
     mutant_object* obj;
+    unsigned long flags;
+    object_header* old_thread = NULL;
 
     obj = (mutant_object*)get_object_from_handle(MutantHandle, &access);
     if (!obj)
@@ -280,10 +280,10 @@ static NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
 
     // FIXME - what permissions do we need for this? SYNCHRONIZE?
 
-    spin_lock(&obj->lock);
+    spin_lock_irqsave(&obj->header.sync_lock, flags);
 
     if (obj->hold_count == 0 || obj->thread->ts != current) {
-        spin_unlock(&obj->lock);
+        spin_unlock_irqrestore(&obj->header.sync_lock, flags);
         Status = STATUS_MUTANT_NOT_OWNED;
         goto end;
     }
@@ -294,13 +294,16 @@ static NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
     obj->hold_count--;
 
     if (obj->hold_count == 0) {
-        dec_obj_refcount(&obj->thread->header.h);
+        old_thread = &obj->thread->header.h;
 
         obj->header.signalled = true;
-        signal_object(&obj->header, true);
+        signal_object(&obj->header, true, true);
     }
 
-    spin_unlock(&obj->lock);
+    spin_unlock_irqrestore(&obj->header.sync_lock, flags);
+
+    if (old_thread)
+        dec_obj_refcount(old_thread);
 
     Status = STATUS_SUCCESS;
 
