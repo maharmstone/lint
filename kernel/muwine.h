@@ -1037,9 +1037,9 @@ typedef enum {
     SemaphoreBasicInformation
 } SEMAPHORE_INFORMATION_CLASS;
 
-NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
-                           POBJECT_ATTRIBUTES ObjectAttributes, ULONG InitialCount,
-                           ULONG MaximumCount);
+NTSTATUS user_NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                POBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount,
+                                LONG MaximumCount);
 NTSTATUS NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
                          POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS NtQuerySemaphore(HANDLE SemaphoreHandle,

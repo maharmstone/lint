@@ -1,8 +1,8 @@
 #include "muwine.h"
 
-NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
-                           POBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount,
-                           LONG MaximumCount) {
+static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                  POBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount,
+                                  LONG MaximumCount) {
     printk(KERN_INFO "NtCreateSemaphore(%px, %x, %px, %x, %x): stub\n",
            SemaphoreHandle, DesiredAccess, ObjectAttributes, InitialCount,
            MaximumCount);
@@ -10,6 +10,46 @@ NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                POBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount,
+                                LONG MaximumCount) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+
+    if (!SemaphoreHandle)
+        return STATUS_INVALID_PARAMETER;
+
+    if (ObjectAttributes && !get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (ObjectAttributes && oa.Attributes & OBJ_KERNEL_HANDLE) {
+        if (oa.ObjectName) {
+            if (oa.ObjectName->Buffer)
+                kfree(oa.ObjectName->Buffer);
+
+            kfree(oa.ObjectName);
+        }
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtCreateSemaphore(&h, DesiredAccess, ObjectAttributes ? &oa : NULL,
+                               InitialCount, MaximumCount);
+
+    if (ObjectAttributes && oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+    if (put_user(h, SemaphoreHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
