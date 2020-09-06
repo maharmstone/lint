@@ -1,4 +1,7 @@
 #include "muwine.h"
+#include "semaphore.h"
+
+static type_object* sem_type = NULL;
 
 static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
                                   POBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount,
@@ -82,4 +85,30 @@ NTSTATUS NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG P
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static void sem_object_close(object_header* obj) {
+    sem_object* sem = (sem_object*)obj;
+
+    free_object(&sem->header.h);
+}
+
+NTSTATUS muwine_init_semaphores(void) {
+    UNICODE_STRING us;
+
+    static const WCHAR sem_name[] = L"Semaphore";
+
+    us.Length = us.MaximumLength = sizeof(sem_name) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)sem_name;
+
+    sem_type = muwine_add_object_type(&us, sem_object_close, NULL,
+                                      SEMAPHORE_GENERIC_READ, SEMAPHORE_GENERIC_WRITE,
+                                      SEMAPHORE_GENERIC_EXECUTE, SEMAPHORE_ALL_ACCESS,
+                                      SEMAPHORE_ALL_ACCESS);
+    if (IS_ERR(sem_type)) {
+        printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)sem_type);
+        return muwine_error_to_ntstatus((int)(uintptr_t)sem_type);
+    }
+
+    return STATUS_SUCCESS;
 }
