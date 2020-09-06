@@ -7,7 +7,10 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+
+#define EVENT_MODIFY_STATE      0x0002
 
 #ifdef _WIN32
 
@@ -40,8 +43,10 @@ NTSTATUS __stdcall NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 
 #endif
 
+#define STACK_SIZE 0x20000
+
 uintptr_t answer = 0;
-uint8_t __attribute__((aligned(0x1000))) stack[0x20000];
+HANDLE event;
 
 #ifdef _X86_
 
@@ -65,6 +70,9 @@ static void __stdcall threadfunc(uintptr_t val) {
 
     answer = val;
 
+//     __asm("int $3");
+    NtPulseEvent(event, NULL);
+
     while (true) { }
 
     NtTerminateThread(NtCurrentThread(), 0);
@@ -77,6 +85,9 @@ int main() {
     CONTEXT context;
     INITIAL_TEB initial_teb;
     LARGE_INTEGER timeout;
+    uint8_t* stack;
+
+    stack = malloc(STACK_SIZE);
 
     printf("Starting main thread (func = %p, stack = %p).\n", threadfunc, stack);
 
@@ -84,7 +95,7 @@ int main() {
 
     initial_teb.PreviousStackBase = NULL;
     initial_teb.PreviousStackLimit = NULL;
-    initial_teb.StackBase = stack + sizeof(stack);
+    initial_teb.StackBase = stack + STACK_SIZE;
     initial_teb.StackLimit = stack;
     initial_teb.AllocatedStackBase = stack;
 
@@ -114,10 +125,18 @@ int main() {
 #error "Unsupported architecture."
 #endif
 
+    Status = NtCreateEvent(&event, EVENT_MODIFY_STATE | SYNCHRONIZE, NULL, NotificationEvent,
+                           false);
+    if (!NT_SUCCESS(Status)) {
+        fprintf(stderr, "NtCreateEvent returned %08x\n", (uint32_t)Status);
+        return 1;
+    }
+
     Status = NtCreateThread(&h, THREAD_ALL_ACCESS, NULL, NtCurrentProcess(),
                             &client_id, &context, &initial_teb, false);
     if (!NT_SUCCESS(Status)) {
         fprintf(stderr, "NtCreateThread returned %08x\n", (uint32_t)Status);
+        NtClose(event);
         return 1;
     }
 
@@ -132,7 +151,7 @@ int main() {
 
     timeout.QuadPart = -30000000; // 3 seconds
 
-    Status = NtWaitForSingleObject(h, false, &timeout);
+    Status = NtWaitForSingleObject(event, false, &timeout);
     if (Status != STATUS_WAIT_0) {
         fprintf(stderr, "NtWaitForSingleObject returned %08x (answer = %u)\n", (uint32_t)Status, (unsigned int)answer);
         NtClose(h);
