@@ -6,13 +6,106 @@ static type_object* sem_type = NULL;
 static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
                                   POBJECT_ATTRIBUTES ObjectAttributes, LONG InitialCount,
                                   LONG MaximumCount) {
-    printk(KERN_INFO "NtCreateSemaphore(%px, %x, %px, %x, %x): stub\n",
-           SemaphoreHandle, DesiredAccess, ObjectAttributes, InitialCount,
-           MaximumCount);
+    NTSTATUS Status;
+    sem_object* obj;
+    ACCESS_MASK access;
 
-    // FIXME
+    access = sanitize_access_mask(DesiredAccess, sem_type);
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (access == MAXIMUM_ALLOWED)
+        access = SEMAPHORE_ALL_ACCESS;
+
+    // create object
+
+    obj = kzalloc(sizeof(sem_object), GFP_KERNEL);
+    if (!obj)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    obj->header.h.refcount = 1;
+
+    obj->header.h.type = sem_type;
+    inc_obj_refcount(&sem_type->header);
+
+    spin_lock_init(&obj->header.h.path_lock);
+
+    spin_lock_init(&obj->header.sync_lock);
+    INIT_LIST_HEAD(&obj->header.waiters);
+    obj->count = InitialCount;
+    obj->max_count = MaximumCount;
+    obj->header.signalled = obj->count > 0;
+
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        UNICODE_STRING us;
+        bool us_alloc = false;
+        object_header* old;
+
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+        Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
+        if (!NT_SUCCESS(Status)) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            goto end;
+        }
+
+        if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+
+        obj->header.h.path.Length = us.Length;
+        obj->header.h.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+        if (!obj->header.h.path.Buffer) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        memcpy(obj->header.h.path.Buffer, us.Buffer, us.Length);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false,
+                                               ObjectAttributes->Attributes & OBJ_PERMANENT,
+                                               ObjectAttributes->Attributes & OBJ_OPENIF ? &old : NULL);
+
+        if (Status == STATUS_OBJECT_NAME_COLLISION && ObjectAttributes->Attributes & OBJ_OPENIF && old) {
+            // FIXME - check access against object SD
+
+            dec_obj_refcount(&obj->header.h);
+
+            obj = (sem_object*)old;
+
+            if (obj->header.h.type != sem_type) {
+                Status = STATUS_OBJECT_TYPE_MISMATCH;
+                goto end;
+            }
+
+            Status = STATUS_SUCCESS;
+        }
+
+        if (!NT_SUCCESS(Status))
+            goto end;
+    }
+
+    Status = muwine_add_handle(&obj->header.h, SemaphoreHandle,
+                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
+
+end:
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&obj->header.h);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,

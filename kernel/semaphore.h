@@ -13,4 +13,6 @@
 
 typedef struct {
     sync_object header;
+    LONG count;
+    LONG max_count;
 } sem_object;
