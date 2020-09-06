@@ -14,3 +14,5 @@ typedef struct {
     thread_object* thread;
     unsigned int hold_count;
 } mutant_object;
+
+extern type_object* mutant_type;

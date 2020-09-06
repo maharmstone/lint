@@ -2,7 +2,7 @@
 #include "mutant.h"
 #include "thread.h"
 
-static type_object* mutant_type = NULL;
+type_object* mutant_type = NULL;
 
 static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
                                POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner) {

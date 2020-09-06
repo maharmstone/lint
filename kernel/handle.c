@@ -1,5 +1,6 @@
 #include "muwine.h"
 #include "thread.h"
+#include "mutant.h"
 
 static uintptr_t next_kernel_handle_no = KERNEL_HANDLE_MASK;
 
@@ -219,6 +220,7 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
     signed long timeout;
     thread_object* thread;
     unsigned long flags;
+    bool locked = false;
 
     if (TimeOut && TimeOut->QuadPart > 0) {
         // FIXME - this would imply timeout at an absolute rather than relative time
@@ -235,29 +237,61 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
         goto end;
     }
 
-    if (obj->signalled) {
-        Status = STATUS_WAIT_0;
-        goto end;
-    }
-
-    if (TimeOut && TimeOut->QuadPart == 0) {
-        Status = STATUS_TIMEOUT;
-        goto end;
-    }
-
     thread = muwine_current_thread_object();
     if (!thread) {
         Status = STATUS_INTERNAL_ERROR;
         goto end;
     }
 
+    if (obj->h.type == mutant_type) {
+        mutant_object* mut = (mutant_object*)obj;
+
+        spin_lock_irqsave(&obj->sync_lock, flags);
+        locked = true;
+
+        if (mut->hold_count == 0) {
+            mut->hold_count = 1;
+            mut->thread = thread;
+            inc_obj_refcount(&thread->header.h);
+
+            mut->header.signalled = false;
+            spin_unlock_irqrestore(&obj->sync_lock, flags);
+
+            Status = STATUS_WAIT_0;
+            goto end2;
+        } else if (mut->hold_count > 0 && mut->thread == thread) {
+            mut->hold_count++;
+            spin_unlock_irqrestore(&obj->sync_lock, flags);
+
+            Status = STATUS_WAIT_0;
+            goto end2;
+        }
+    } else {
+        if (obj->signalled) {
+            Status = STATUS_WAIT_0;
+            goto end2;
+        }
+    }
+
+    if (TimeOut && TimeOut->QuadPart == 0) {
+        if (locked)
+            spin_unlock_irqrestore(&obj->sync_lock, flags);
+
+        Status = STATUS_TIMEOUT;
+        goto end2;
+    }
+
     w = kmalloc(sizeof(waiter), GFP_KERNEL);
     if (!w) {
+        if (locked)
+            spin_unlock_irqrestore(&obj->sync_lock, flags);
+
         Status = STATUS_INSUFFICIENT_RESOURCES;
         goto end2;
     }
 
-    spin_lock_irqsave(&obj->sync_lock, flags);
+    if (!locked)
+        spin_lock_irqsave(&obj->sync_lock, flags);
 
     // check again if signalled
     if (obj->signalled) {
@@ -287,6 +321,14 @@ static NTSTATUS NtWaitForSingleObject(HANDLE ObjectHandle, BOOLEAN Alertable, PL
         spin_lock_irqsave(&obj->sync_lock, flags);
 
         if (thread->wait_count == 0) {
+            if (obj->h.type == mutant_type) {
+                mutant_object* mut = (mutant_object*)obj;
+
+                mut->hold_count = 1;
+                mut->thread = thread;
+                inc_obj_refcount(&thread->header.h);
+            }
+
             spin_unlock_irqrestore(&obj->sync_lock, flags);
 
             kfree(w);
