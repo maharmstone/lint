@@ -1026,5 +1026,5 @@ NTSTATUS user_NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
 NTSTATUS NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInformationClass,
                        PVOID MutantInformation, ULONG MutantInformationLength,
                        PULONG ResultLength);
-NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
+NTSTATUS user_NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount);
 NTSTATUS muwine_init_mutants(void);

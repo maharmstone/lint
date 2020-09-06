@@ -262,13 +262,28 @@ NTSTATUS NtQueryMutant(HANDLE MutantHandle, MUTANT_INFORMATION_CLASS MutantInfor
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
+static NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
     printk(KERN_INFO "NtReleaseMutant(%lx, %px): stub\n",
            (uintptr_t)MutantHandle, PreviousCount);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
+    NTSTATUS Status;
+    LONG count;
+
+    if ((uintptr_t)MutantHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    Status = NtReleaseMutant(MutantHandle, PreviousCount ? &count : NULL);
+
+    if (PreviousCount && put_user(count, PreviousCount) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 static void mutant_object_close(object_header* obj) {
