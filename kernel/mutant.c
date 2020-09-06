@@ -1,16 +1,96 @@
 #include "muwine.h"
 #include "mutant.h"
+#include "thread.h"
 
 static type_object* mutant_type = NULL;
 
 static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
                                POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN InitialOwner) {
-    printk(KERN_INFO "NtCreateMutant(%px, %x, %px, %x): stub\n",
-           MutantHandle, DesiredAccess, ObjectAttributes, InitialOwner);
+    NTSTATUS Status;
+    mutant_object* obj;
+    ACCESS_MASK access;
 
-    // FIXME
+    access = sanitize_access_mask(DesiredAccess, mutant_type);
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (access == MAXIMUM_ALLOWED)
+        access = MUTANT_ALL_ACCESS;
+
+    // create object
+
+    obj = kzalloc(sizeof(mutant_object), GFP_KERNEL);
+    if (!obj)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    obj->header.h.refcount = 1;
+
+    obj->header.h.type = mutant_type;
+    inc_obj_refcount(&mutant_type->header);
+
+    spin_lock_init(&obj->header.h.path_lock);
+
+    spin_lock_init(&obj->header.sync_lock);
+    INIT_LIST_HEAD(&obj->header.waiters);
+    obj->header.signalled = !InitialOwner;
+
+    if (InitialOwner) {
+        obj->thread = muwine_current_thread_object();
+        obj->hold_count = 1;
+    }
+
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        UNICODE_STRING us;
+        bool us_alloc = false;
+
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+        Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
+        if (!NT_SUCCESS(Status)) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            goto end;
+        }
+
+        if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            Status = STATUS_INVALID_PARAMETER;
+            goto end;
+        }
+
+        obj->header.h.path.Length = us.Length;
+        obj->header.h.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+        if (!obj->header.h.path.Buffer) {
+            if (us_alloc)
+                kfree(us.Buffer);
+
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        memcpy(obj->header.h.path.Buffer, us.Buffer, us.Length);
+
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false,
+                                               ObjectAttributes->Attributes & OBJ_PERMANENT);
+        if (!NT_SUCCESS(Status))
+            goto end;
+    }
+
+    Status = muwine_add_handle(&obj->header.h, MutantHandle,
+                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
+
+end:
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&obj->header.h);
+        return Status;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
@@ -85,6 +165,9 @@ NTSTATUS NtReleaseMutant(HANDLE MutantHandle, PLONG PreviousCount) {
 
 static void mutant_object_close(object_header* obj) {
     mutant_object* mut = (mutant_object*)obj;
+
+    if (mut->thread)
+        dec_obj_refcount(&mut->thread->header.h);
 
     free_object(&mut->header.h);
 }
