@@ -28,6 +28,7 @@ typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef ULONG DWORD;
 typedef DWORD ACCESS_MASK;
+typedef char CHAR;
 typedef wchar_t WCHAR;
 typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
 typedef uint8_t UCHAR;
@@ -552,6 +553,67 @@ typedef enum {
     SemaphoreBasicInformation
 } SEMAPHORE_INFORMATION_CLASS;
 
+typedef enum {
+    TokenPrimary,
+    TokenImpersonation
+} TOKEN_TYPE;
+
+typedef struct _LUID {
+    DWORD LowPart;
+    LONG HighPart;
+} LUID, *PLUID;
+
+typedef struct {
+    PSID Sid;
+    DWORD Attributes;
+} SID_AND_ATTRIBUTES;
+
+typedef struct _TOKEN_USER {
+    SID_AND_ATTRIBUTES User;
+} TOKEN_USER, *PTOKEN_USER;
+
+typedef struct _TOKEN_GROUPS {
+    DWORD GroupCount;
+    SID_AND_ATTRIBUTES Groups[1];
+} TOKEN_GROUPS, *PTOKEN_GROUPS;
+
+typedef struct {
+    LUID Luid;
+    ULONG Attributes;
+} LUID_AND_ATTRIBUTES;
+
+typedef struct _TOKEN_PRIVILEGES {
+    DWORD PrivilegeCount;
+    LUID_AND_ATTRIBUTES Privileges[1];
+} TOKEN_PRIVILEGES, *PTOKEN_PRIVILEGES;
+
+typedef struct _TOKEN_OWNER {
+    PSID Owner;
+} TOKEN_OWNER, *PTOKEN_OWNER;
+
+typedef struct _TOKEN_PRIMARY_GROUP {
+    PSID PrimaryGroup;
+} TOKEN_PRIMARY_GROUP, *PTOKEN_PRIMARY_GROUP;
+
+typedef struct {
+    uint8_t AclRevision;
+    uint8_t Sbz1;
+    uint16_t AclSize;
+    uint16_t AceCount;
+    uint16_t Sbz2;
+} ACL, *PACL;
+
+typedef struct _TOKEN_DEFAULT_DACL {
+    PACL DefaultDacl;
+} TOKEN_DEFAULT_DACL, *PTOKEN_DEFAULT_DACL;
+
+#define TOKEN_SOURCE_LENGTH 8
+
+typedef struct _TOKEN_SOURCE {
+    CHAR SourceName[TOKEN_SOURCE_LENGTH];
+    LUID SourceIdentifier;
+} TOKEN_SOURCE, *PTOKEN_SOURCE;
+
 #endif
 
 void close_muwine();
@@ -709,6 +771,13 @@ NTSTATUS __stdcall NtQuerySemaphore(HANDLE SemaphoreHandle,
                                     PVOID SemaphoreInformation, ULONG SemaphoreInformationLength,
                                     PULONG ReturnLength);
 NTSTATUS __stdcall NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PULONG PreviousCount);
+NTSTATUS __stdcall NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
+                                 POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
+                                 PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
+                                 PTOKEN_USER TokenUser, PTOKEN_GROUPS TokenGroups,
+                                 PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
+                                 PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
+                                 PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
 
 #ifdef __cplusplus
 }

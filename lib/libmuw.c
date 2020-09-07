@@ -1462,3 +1462,36 @@ NTSTATUS __stdcall NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
+                                 POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
+                                 PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
+                                 PTOKEN_USER TokenUser, PTOKEN_GROUPS TokenGroups,
+                                 PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
+                                 PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
+                                 PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource) {
+    long ret;
+
+    uintptr_t args[] = {
+        13,
+        (uintptr_t)TokenHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)TokenType,
+        (uintptr_t)AuthenticationId,
+        (uintptr_t)ExpirationTime,
+        (uintptr_t)TokenUser,
+        (uintptr_t)TokenGroups,
+        (uintptr_t)TokenPrivileges,
+        (uintptr_t)TokenOwner,
+        (uintptr_t)TokenPrimaryGroup,
+        (uintptr_t)TokenDefaultDacl,
+        (uintptr_t)TokenSource
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCREATETOKEN, args, ret);
+
+    return (NTSTATUS)ret;
+}
