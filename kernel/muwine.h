@@ -342,6 +342,8 @@ NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                             PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
                             PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
                             PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
+NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                            PHANDLE TokenHandle);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

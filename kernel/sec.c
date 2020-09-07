@@ -657,6 +657,17 @@ end7:
     return Status;
 }
 
+
+NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                            PHANDLE TokenHandle) {
+    printk(KERN_INFO "NtOpenProcessToken(%lx, %x, %px): stub\n",
+           (uintptr_t)ProcessHandle, DesiredAccess, TokenHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS muwine_init_tokens(void) {
     UNICODE_STRING us;
 
