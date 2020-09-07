@@ -380,13 +380,13 @@ ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type) {
     return access;
 }
 
-NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
-                       POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
-                       PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
-                       PTOKEN_USER TokenUser, PTOKEN_GROUPS TokenGroups,
-                       PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
-                       PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
-                       PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource) {
+static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
+                              POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
+                              PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
+                              PTOKEN_USER TokenUser, PTOKEN_GROUPS TokenGroups,
+                              PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
+                              PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
+                              PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource) {
     printk(KERN_INFO "NtCreateToken(%px, %x, %px, %x, %px, %px, %px, %px, %px, %px, %px, %px, %px): stub\n",
            TokenHandle, DesiredAccess, ObjectAttributes, TokenType, AuthenticationId,
            ExpirationTime, TokenUser, TokenGroups, TokenPrivileges, TokenOwner,
@@ -395,6 +395,266 @@ NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static bool get_user_sid(PSID* ks, const __user PSID us) {
+    uint8_t count;
+    PSID sid;
+
+    if (get_user(count, &us->SubAuthorityCount) < 0)
+        return false;
+
+    sid = kmalloc(offsetof(SID, SubAuthority) + (sizeof(uint32_t) * count), GFP_KERNEL);
+    if (!sid)
+        return false;
+
+    if (copy_from_user(sid, us, offsetof(SID, SubAuthority) + (sizeof(uint32_t) * count)) != 0) {
+        kfree(sid);
+        return false;
+    }
+
+    *ks = sid;
+
+    return true;
+}
+
+static bool get_user_token_groups(TOKEN_GROUPS** ks, const __user TOKEN_GROUPS* us) {
+    DWORD count;
+    TOKEN_GROUPS* g;
+    unsigned int i;
+
+    if (get_user(count, &us->GroupCount) < 0)
+        return false;
+
+    g = kmalloc(offsetof(TOKEN_GROUPS, Groups) + (count * sizeof(SID_AND_ATTRIBUTES)),
+                GFP_KERNEL);
+    if (!g)
+        return false;
+
+    g->GroupCount = count;
+
+    for (i = 0; i < count; i++) {
+        unsigned int j;
+        PSID sid;
+
+        if (get_user(g->Groups[i].Attributes, &us->Groups[i].Attributes) < 0)
+            goto fail;
+
+        if (get_user(sid, &us->Groups[i].Sid) < 0)
+            goto fail;
+
+        if (!get_user_sid(&g->Groups[i].Sid, sid))
+            goto fail;
+
+        continue;
+
+fail:
+        for (j = 0; j < i; j++) {
+            kfree(g->Groups[j].Sid);
+        }
+
+        kfree(g);
+
+        return false;
+    }
+
+    *ks = g;
+
+    return true;
+}
+
+static bool get_user_token_privileges(TOKEN_PRIVILEGES** ks, const __user TOKEN_PRIVILEGES* us) {
+    DWORD count;
+    TOKEN_PRIVILEGES* priv;
+    size_t size;
+
+    if (get_user(count, &us->PrivilegeCount) < 0)
+        return false;
+
+    size = offsetof(TOKEN_PRIVILEGES, Privileges) + (count * sizeof(LUID_AND_ATTRIBUTES));
+
+    priv = kmalloc(size, GFP_KERNEL);
+    if (!priv)
+        return false;
+
+    if (copy_from_user(priv, us, size) != 0) {
+        kfree(priv);
+        return false;
+    }
+
+    *ks = priv;
+
+    return true;
+}
+
+static bool get_user_acl(PACL* ks, const __user PACL us) {
+    uint16_t size;
+    PACL acl;
+
+    if (get_user(size, &us->AclSize) < 0)
+        return false;
+
+    if (size == 0)
+        return false;
+
+    acl = kmalloc(size, GFP_KERNEL);
+    if (!acl)
+        return false;
+
+    if (copy_from_user(acl, us, size) != 0) {
+        kfree(acl);
+        return false;
+    }
+
+    *ks = acl;
+
+    return true;
+}
+
+NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
+                            POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
+                            PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
+                            PTOKEN_USER TokenUser, PTOKEN_GROUPS TokenGroups,
+                            PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
+                            PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
+                            PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    LUID auth_id;
+    LARGE_INTEGER expiry;
+    TOKEN_SOURCE source;
+    PSID sid;
+    TOKEN_OWNER owner;
+    TOKEN_PRIMARY_GROUP primary_group;
+    TOKEN_USER user;
+    TOKEN_GROUPS* groups;
+    TOKEN_PRIVILEGES* privs;
+    TOKEN_DEFAULT_DACL default_dacl;
+    unsigned int i;
+
+    if (!TokenHandle || !AuthenticationId || !ExpirationTime || !TokenUser ||
+        !TokenGroups || !TokenPrivileges || !TokenPrimaryGroup || !TokenSource) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (copy_from_user(&auth_id, AuthenticationId, sizeof(LUID)) != 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (get_user(expiry.QuadPart, &ExpirationTime->QuadPart) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (copy_from_user(&source, TokenSource, sizeof(TOKEN_SOURCE)) != 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (TokenOwner) {
+        if (get_user(sid, &TokenOwner->Owner) < 0)
+            return STATUS_ACCESS_VIOLATION;
+
+        if (!get_user_sid(&owner.Owner, sid))
+            return STATUS_ACCESS_VIOLATION;
+    }
+
+    if (get_user(sid, &TokenPrimaryGroup->PrimaryGroup) < 0) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end7;
+    }
+
+    if (!get_user_sid(&primary_group.PrimaryGroup, sid)) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end7;
+    }
+
+    if (get_user(user.User.Attributes, &TokenUser->User.Attributes) < 0) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end6;
+    }
+
+    if (get_user(sid, &TokenUser->User.Sid) < 0) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end6;
+    }
+
+    if (!get_user_sid(&user.User.Sid, sid)) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end6;
+    }
+
+    if (!get_user_token_groups(&groups, TokenGroups)) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end5;
+    }
+
+    if (!get_user_token_privileges(&privs, TokenPrivileges)) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end4;
+    }
+
+    if (TokenDefaultDacl) {
+        PACL acl;
+
+        if (get_user(acl, &TokenDefaultDacl->DefaultDacl) < 0) {
+            Status = STATUS_ACCESS_VIOLATION;
+            goto end3;
+        }
+
+        if (!get_user_acl(&default_dacl.DefaultDacl, acl)) {
+            Status = STATUS_ACCESS_VIOLATION;
+            goto end3;
+        }
+    }
+
+    if (ObjectAttributes && !get_user_object_attributes(&oa, ObjectAttributes)) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end2;
+    }
+
+    if (ObjectAttributes && oa.Attributes & OBJ_KERNEL_HANDLE) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    Status = NtCreateToken(&h, DesiredAccess, ObjectAttributes ? &oa : NULL,
+                           TokenType, &auth_id, &expiry, &user, groups,
+                           privs, TokenOwner ? &owner : NULL, &primary_group,
+                           TokenDefaultDacl ? &default_dacl : NULL, &source);
+
+    if (put_user(h, TokenHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+end:
+    if (ObjectAttributes && oa.ObjectName) {
+        if (oa.ObjectName->Buffer)
+            kfree(oa.ObjectName->Buffer);
+
+        kfree(oa.ObjectName);
+    }
+
+end2:
+    if (TokenDefaultDacl)
+        kfree(default_dacl.DefaultDacl);
+
+end3:
+    kfree(privs);
+
+end4:
+    for (i = 0; i < groups->GroupCount; i++) {
+        kfree(groups->Groups[i].Sid);
+    }
+
+    kfree(groups);
+
+end5:
+    kfree(user.User.Sid);
+
+end6:
+    kfree(primary_group.PrimaryGroup);
+
+end7:
+    if (TokenOwner)
+        kfree(owner.Owner);
+
+    return Status;
 }
 
 NTSTATUS muwine_init_tokens(void) {

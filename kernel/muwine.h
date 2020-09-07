@@ -335,13 +335,13 @@ void muwine_make_process_token(token_object** t);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type);
 NTSTATUS muwine_init_tokens(void);
-NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
-                       POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
-                       PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
-                       PTOKEN_USER TokenUser, PTOKEN_GROUPS TokenGroups,
-                       PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
-                       PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
-                       PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
+NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
+                            POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
+                            PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
+                            PTOKEN_USER TokenUser, PTOKEN_GROUPS TokenGroups,
+                            PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
+                            PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
+                            PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000
