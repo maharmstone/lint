@@ -22,6 +22,7 @@ struct muwine_func {
 #define STATUS_SUCCESS                      0x00000000
 #define STATUS_WAIT_0                       0x00000000
 #define STATUS_TIMEOUT                      0x00000102
+#define STATUS_NOT_ALL_ASSIGNED             0x00000106
 #define STATUS_SOME_NOT_MAPPED              0x00000107
 #define STATUS_OBJECT_NAME_EXISTS           0x40000000
 #define STATUS_BUFFER_OVERFLOW              0x80000005

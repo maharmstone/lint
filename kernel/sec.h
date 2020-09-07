@@ -51,10 +51,32 @@
                          TOKEN_ADJUST_SESSIONID | DELETE | READ_CONTROL | WRITE_DAC | \
                          WRITE_OWNER
 
+#define SE_PRIVILEGE_ENABLED_BY_DEFAULT 0x00000001
+#define SE_PRIVILEGE_ENABLED            0x00000002
+#define SE_PRIVILEGE_REMOVED            0x00000004
+#define SE_PRIVILEGE_USED_FOR_ACCESS    0x80000000
+
+typedef struct _LUID {
+    DWORD LowPart;
+    LONG HighPart;
+} LUID, *PLUID;
+
+typedef struct {
+    LUID Luid;
+    ULONG Attributes;
+} LUID_AND_ATTRIBUTES;
+
+typedef struct _TOKEN_PRIVILEGES {
+    DWORD PrivilegeCount;
+    LUID_AND_ATTRIBUTES Privileges[1];
+} TOKEN_PRIVILEGES, *PTOKEN_PRIVILEGES;
+
 typedef struct _token_object {
     object_header header;
+    struct rw_semaphore sem;
     SID* owner;
     SID* group;
+    TOKEN_PRIVILEGES* privs;
 } token_object;
 
 typedef struct _SID {
@@ -93,11 +115,6 @@ typedef struct {
     uint32_t Mask;
 } ACCESS_ALLOWED_ACE;
 
-typedef struct _LUID {
-    DWORD LowPart;
-    LONG HighPart;
-} LUID, *PLUID;
-
 typedef struct {
     PSID Sid;
     DWORD Attributes;
@@ -111,16 +128,6 @@ typedef struct _TOKEN_GROUPS {
     DWORD GroupCount;
     SID_AND_ATTRIBUTES Groups[1];
 } TOKEN_GROUPS, *PTOKEN_GROUPS;
-
-typedef struct {
-    LUID Luid;
-    ULONG Attributes;
-} LUID_AND_ATTRIBUTES;
-
-typedef struct _TOKEN_PRIVILEGES {
-    DWORD PrivilegeCount;
-    LUID_AND_ATTRIBUTES Privileges[1];
-} TOKEN_PRIVILEGES, *PTOKEN_PRIVILEGES;
 
 typedef struct _TOKEN_OWNER {
     PSID Owner;

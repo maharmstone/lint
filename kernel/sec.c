@@ -18,6 +18,8 @@ static void token_object_close(object_header* obj) {
     if (tok->group)
         kfree(tok->group);
 
+    kfree(tok->privs);
+
     free_object(&tok->header);
 }
 
@@ -261,8 +263,17 @@ void muwine_make_process_token(token_object** t) {
 
     spin_lock_init(&tok->header.path_lock);
 
+    init_rwsem(&tok->sem);
+
     uid_to_sid(&tok->owner, current_euid());
     gid_to_sid(&tok->group, current_egid());
+
+    tok->privs = kmalloc(offsetof(TOKEN_PRIVILEGES, Privileges), GFP_KERNEL);
+    // FIXME - handle malloc failure
+
+    tok->privs->PrivilegeCount = 0;
+
+    // FIXME - add standard privileges
 
     *t = tok;
 }
@@ -727,19 +738,139 @@ NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess
     return Status;
 }
 
+static bool __inline luid_equal(const LUID* luid1, const LUID* luid2) {
+    return luid1->LowPart == luid2->LowPart && luid1->HighPart == luid2->HighPart;
+}
+
 static NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
                                         PTOKEN_PRIVILEGES TokenPrivileges,
                                         ULONG PreviousPrivilegesLength,
                                         PTOKEN_PRIVILEGES PreviousPrivileges,
                                         PULONG RequiredLength) {
-    printk(KERN_INFO "NtAdjustPrivilegesToken(%lx, %x, %px, %x, %px, %px): stub\n",
-           (uintptr_t)TokenHandle, DisableAllPrivileges, TokenPrivileges,
-           PreviousPrivilegesLength, PreviousPrivileges,
-           RequiredLength);
+    NTSTATUS Status;
+    token_object* tok;
+    ACCESS_MASK access;
+    unsigned int i, j;
+    bool not_all_assigned = false;
 
-    // FIXME
+    tok = (token_object*)get_object_from_handle(TokenHandle, &access);
+    if (!tok)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (tok->header.type != token_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    if (!(access & TOKEN_ADJUST_PRIVILEGES)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    if (PreviousPrivileges && !(access & TOKEN_QUERY)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    down_write(&tok->sem);
+
+    if (PreviousPrivileges) {
+        unsigned int changed = 0;
+        ULONG len;
+        LUID_AND_ATTRIBUTES* laa;
+
+        for (i = 0; i < TokenPrivileges->PrivilegeCount; i++) {
+            if (!DisableAllPrivileges && TokenPrivileges->Privileges[i].Attributes & SE_PRIVILEGE_REMOVED)
+                continue;
+
+            for (j = 0; j < tok->privs->PrivilegeCount; j++) {
+                if (luid_equal(&TokenPrivileges->Privileges[i].Luid, &tok->privs->Privileges[j].Luid)) {
+                    changed++;
+                    break;
+                }
+            }
+        }
+
+        len = offsetof(TOKEN_PRIVILEGES, Privileges) + (sizeof(LUID_AND_ATTRIBUTES) * changed);
+
+        if (RequiredLength)
+            *RequiredLength = len;
+
+        if (PreviousPrivilegesLength < len) {
+            Status = STATUS_BUFFER_TOO_SMALL;
+            goto end2;
+        }
+
+        // copy previous privileges
+
+        PreviousPrivileges->PrivilegeCount = 0;
+        laa = &PreviousPrivileges->Privileges[0];
+
+        for (i = 0; i < TokenPrivileges->PrivilegeCount; i++) {
+            if (!DisableAllPrivileges && TokenPrivileges->Privileges[i].Attributes & SE_PRIVILEGE_REMOVED)
+                continue;
+
+            for (j = 0; j < tok->privs->PrivilegeCount; j++) {
+                if (luid_equal(&TokenPrivileges->Privileges[i].Luid, &tok->privs->Privileges[j].Luid)) {
+                    laa->Luid.LowPart = tok->privs->Privileges[j].Luid.LowPart;
+                    laa->Luid.HighPart = tok->privs->Privileges[j].Luid.HighPart;
+                    laa->Attributes = tok->privs->Privileges[j].Attributes;
+
+                    laa++;
+
+                    break;
+                }
+            }
+        }
+    }
+
+    // enable or disable privileges
+
+    if (DisableAllPrivileges) {
+        for (i = 0; i < tok->privs->PrivilegeCount; i++) {
+            tok->privs->Privileges[i].Attributes &= ~SE_PRIVILEGE_ENABLED;
+        }
+
+        Status = STATUS_SUCCESS;
+
+        goto end2;
+    }
+
+    for (i = 0; i < TokenPrivileges->PrivilegeCount; i++) {
+        bool found = false;
+
+        for (j = 0; j < tok->privs->PrivilegeCount; j++) {
+            if (luid_equal(&TokenPrivileges->Privileges[i].Luid, &tok->privs->Privileges[j].Luid)) {
+                if (TokenPrivileges->Privileges[i].Attributes & SE_PRIVILEGE_REMOVED) {
+                    memcpy(&tok->privs->Privileges[j], &tok->privs->Privileges[j + 1],
+                           sizeof(LUID_AND_ATTRIBUTES) * (tok->privs->PrivilegeCount - j - 1));
+                    tok->privs->PrivilegeCount--;
+                } else {
+                    if (TokenPrivileges->Privileges[i].Attributes & SE_PRIVILEGE_ENABLED)
+                        tok->privs->Privileges[j].Attributes |= SE_PRIVILEGE_ENABLED;
+                    else
+                        tok->privs->Privileges[j].Attributes &= ~SE_PRIVILEGE_ENABLED;
+                }
+
+                found = true;
+
+                break;
+            }
+        }
+
+        if (!found)
+            not_all_assigned = true;
+    }
+
+    Status = not_all_assigned ? STATUS_NOT_ALL_ASSIGNED : STATUS_SUCCESS;
+
+end2:
+    up_write(&tok->sem);
+
+end:
+    dec_obj_refcount(&tok->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
