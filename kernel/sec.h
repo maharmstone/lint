@@ -106,20 +106,55 @@ typedef struct _TOKEN_PRIVILEGES {
     LUID_AND_ATTRIBUTES Privileges[1];
 } TOKEN_PRIVILEGES, *PTOKEN_PRIVILEGES;
 
-typedef struct _token_object {
-    object_header header;
-    struct rw_semaphore sem;
-    SID* owner;
-    SID* group;
-    TOKEN_PRIVILEGES* privs;
-} token_object;
-
 typedef struct _SID {
     uint8_t Revision;
     uint8_t SubAuthorityCount;
     uint8_t IdentifierAuthority[6];
     uint32_t SubAuthority[1];
 } SID, *PSID;
+
+typedef struct {
+    PSID Sid;
+    DWORD Attributes;
+} SID_AND_ATTRIBUTES;
+
+typedef struct _TOKEN_GROUPS {
+    DWORD GroupCount;
+    SID_AND_ATTRIBUTES Groups[1];
+} TOKEN_GROUPS, *PTOKEN_GROUPS;
+
+#define TOKEN_SOURCE_LENGTH 8
+
+typedef struct _TOKEN_SOURCE {
+    CHAR SourceName[TOKEN_SOURCE_LENGTH];
+    LUID SourceIdentifier;
+} TOKEN_SOURCE, *PTOKEN_SOURCE;
+
+typedef struct {
+    uint8_t AclRevision;
+    uint8_t Sbz1;
+    uint16_t AclSize;
+    uint16_t AceCount;
+    uint16_t Sbz2;
+} ACL, *PACL;
+
+typedef struct _TOKEN_DEFAULT_DACL {
+    PACL DefaultDacl;
+} TOKEN_DEFAULT_DACL, *PTOKEN_DEFAULT_DACL;
+
+typedef struct _token_object {
+    object_header header;
+    struct rw_semaphore sem;
+    SID* user;
+    SID* primary_group;
+    SID* owner;
+    TOKEN_PRIVILEGES* privs;
+    int64_t expiry;
+    LUID auth_id;
+    TOKEN_GROUPS* groups;
+    TOKEN_SOURCE source;
+    PACL default_dacl;
+} token_object;
 
 typedef struct _SECURITY_DESCRIPTOR {
     uint8_t Revision;
@@ -132,14 +167,6 @@ typedef struct _SECURITY_DESCRIPTOR {
 } SECURITY_DESCRIPTOR;
 
 typedef struct {
-    uint8_t AclRevision;
-    uint8_t Sbz1;
-    uint16_t AclSize;
-    uint16_t AceCount;
-    uint16_t Sbz2;
-} ACL, *PACL;
-
-typedef struct {
     uint8_t AceType;
     uint8_t AceFlags;
     uint16_t AceSize;
@@ -150,19 +177,9 @@ typedef struct {
     uint32_t Mask;
 } ACCESS_ALLOWED_ACE;
 
-typedef struct {
-    PSID Sid;
-    DWORD Attributes;
-} SID_AND_ATTRIBUTES;
-
 typedef struct _TOKEN_USER {
     SID_AND_ATTRIBUTES User;
 } TOKEN_USER, *PTOKEN_USER;
-
-typedef struct _TOKEN_GROUPS {
-    DWORD GroupCount;
-    SID_AND_ATTRIBUTES Groups[1];
-} TOKEN_GROUPS, *PTOKEN_GROUPS;
 
 typedef struct _TOKEN_OWNER {
     PSID Owner;
@@ -171,14 +188,3 @@ typedef struct _TOKEN_OWNER {
 typedef struct _TOKEN_PRIMARY_GROUP {
     PSID PrimaryGroup;
 } TOKEN_PRIMARY_GROUP, *PTOKEN_PRIMARY_GROUP;
-
-typedef struct _TOKEN_DEFAULT_DACL {
-    PACL DefaultDacl;
-} TOKEN_DEFAULT_DACL, *PTOKEN_DEFAULT_DACL;
-
-#define TOKEN_SOURCE_LENGTH 8
-
-typedef struct _TOKEN_SOURCE {
-    CHAR SourceName[TOKEN_SOURCE_LENGTH];
-    LUID SourceIdentifier;
-} TOKEN_SOURCE, *PTOKEN_SOURCE;

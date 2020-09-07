@@ -53,18 +53,32 @@ static type_object* token_type = NULL;
 static void token_object_close(object_header* obj) {
     token_object* tok = (token_object*)obj;
 
+    if (tok->user)
+        kfree(tok->user);
+
+    if (tok->groups) {
+        unsigned int i;
+
+        for (i = 0; i < tok->groups->GroupCount; i++) {
+            kfree(tok->groups->Groups[i].Sid);
+        }
+
+        kfree(tok->groups);
+    }
+
     if (tok->owner)
         kfree(tok->owner);
 
-    if (tok->group)
-        kfree(tok->group);
+    if (tok->privs)
+        kfree(tok->privs);
 
-    kfree(tok->privs);
+    if (tok->default_dacl)
+        kfree(tok->default_dacl);
 
     free_object(&tok->header);
 }
 
-static unsigned int sid_length(SID* sid) {
+static unsigned int __inline sid_length(SID* sid) {
     return offsetof(SID, SubAuthority[0]) + (sid->SubAuthorityCount * sizeof(uint32_t));
 }
 
@@ -132,8 +146,8 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
     if (tok && tok->owner)
         len += sid_length(tok->owner);
 
-    if (tok && tok->group)
-        len += sid_length(tok->group);
+    if (tok && tok->primary_group)
+        len += sid_length(tok->primary_group);
 
     if (parent_sd->OffsetSacl != 0) {
         sacl_length = inherited_acl_length((ACL*)((uint8_t*)parent_sd + parent_sd->OffsetSacl), container);
@@ -171,11 +185,11 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
     } else
         sd->OffsetOwner = 0;
 
-    if (tok && tok->group) {
-        unsigned int sidlen = sid_length(tok->group);
+    if (tok && tok->primary_group) {
+        unsigned int sidlen = sid_length(tok->primary_group);
 
         sd->OffsetGroup = (uint32_t)(ptr - (uint8_t*)sd);
-        memcpy(ptr, tok->group, sidlen);
+        memcpy(ptr, tok->primary_group, sidlen);
         ptr += sidlen;
     } else
         sd->OffsetGroup = 0;
@@ -291,6 +305,20 @@ static void gid_to_sid(SID** sid, kgid_t gid) {
     *sid = s;
 }
 
+static SID* duplicate_sid(SID* in) {
+    SID* out;
+    size_t size;
+
+    size = sid_length(in);
+
+    out = kmalloc(size, GFP_KERNEL);
+    // FIXME - handle malloc failure
+
+    memcpy(out, in, size);
+
+    return out;
+}
+
 void muwine_make_process_token(token_object** t) {
     token_object* tok;
     unsigned int priv_count, i;
@@ -308,8 +336,13 @@ void muwine_make_process_token(token_object** t) {
 
     init_rwsem(&tok->sem);
 
-    uid_to_sid(&tok->owner, current_euid());
-    gid_to_sid(&tok->group, current_egid());
+    uid_to_sid(&tok->user, current_euid());
+
+    // FIXME - get groups
+    // FIXME - get primary group
+
+    gid_to_sid(&tok->primary_group, current_egid());
+    tok->owner = duplicate_sid(tok->user);
 
     if (current_euid().val == 0) { // root
         priv_count = sizeof(def_root_privs) / sizeof(default_privilege);
@@ -335,6 +368,9 @@ void muwine_make_process_token(token_object** t) {
         } else
             tok->privs->Privileges[i].Attributes = 0;
     }
+
+    tok->auth_id.LowPart = 0x3e7; // SYSTEM_LUID
+    tok->auth_id.HighPart = 0;
 
     *t = tok;
 }
@@ -453,6 +489,16 @@ ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type) {
     return access;
 }
 
+static bool __inline sid_equal(PSID sid1, PSID sid2) {
+    size_t size1 = sid_length(sid1);
+    size_t size2 = sid_length(sid2);
+
+    if (size1 != size2)
+        return false;
+
+    return !memcmp(sid1, sid2, size1);
+}
+
 static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                               POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
                               PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
@@ -460,14 +506,94 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                               PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
                               PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
                               PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource) {
-    printk(KERN_INFO "NtCreateToken(%px, %x, %px, %x, %px, %px, %px, %px, %px, %px, %px, %px, %px): stub\n",
-           TokenHandle, DesiredAccess, ObjectAttributes, TokenType, AuthenticationId,
-           ExpirationTime, TokenUser, TokenGroups, TokenPrivileges, TokenOwner,
-           TokenPrimaryGroup, TokenDefaultDacl, TokenSource);
+    NTSTATUS Status;
+    token_object* tok;
+    ACCESS_MASK access;
+    unsigned int i;
+    size_t privsize;
 
-    // FIXME
+    // FIXME - check for SeCreateTokenPrivilege
 
-    return STATUS_NOT_IMPLEMENTED;
+    tok = kzalloc(sizeof(token_object), GFP_KERNEL);
+
+    tok->header.refcount = 1;
+
+    tok->header.type = token_type;
+    inc_obj_refcount(&token_type->header);
+
+    spin_lock_init(&tok->header.path_lock);
+
+    init_rwsem(&tok->sem);
+
+    tok->auth_id.LowPart = AuthenticationId->LowPart;
+    tok->auth_id.HighPart = AuthenticationId->HighPart;
+
+    tok->expiry = ExpirationTime->QuadPart;
+
+    tok->user = duplicate_sid(TokenUser->User.Sid);
+    tok->owner = duplicate_sid(TokenOwner ? TokenOwner->Owner : TokenUser->User.Sid);
+
+    tok->groups = kmalloc(offsetof(TOKEN_GROUPS, Groups) + (sizeof(SID_AND_ATTRIBUTES) * TokenGroups->GroupCount),
+                          GFP_KERNEL);
+    if (!tok->groups) {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    tok->groups->GroupCount = TokenGroups->GroupCount;
+    for (i = 0; i < TokenGroups->GroupCount; i++) {
+        tok->groups->Groups[i].Attributes = TokenGroups->Groups[i].Attributes;
+        tok->groups->Groups[i].Sid = duplicate_sid(TokenGroups->Groups[i].Sid);
+
+        if (sid_equal(tok->groups->Groups[i].Sid, TokenPrimaryGroup->PrimaryGroup))
+            tok->primary_group = tok->groups->Groups[i].Sid;
+    }
+
+    if (!tok->primary_group) {
+        Status = STATUS_INVALID_PARAMETER;
+        goto end;
+    }
+
+    privsize = offsetof(TOKEN_PRIVILEGES, Privileges) +
+               (sizeof(LUID_AND_ATTRIBUTES) * TokenPrivileges->PrivilegeCount);
+
+    tok->privs = kmalloc(privsize, GFP_KERNEL);
+    if (!tok->privs) {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    memcpy(tok->privs, TokenPrivileges, privsize);
+
+    memcpy(&tok->source, TokenSource, sizeof(TOKEN_SOURCE));
+
+    if (TokenDefaultDacl) {
+        tok->default_dacl = kmalloc(TokenDefaultDacl->DefaultDacl->AclSize, GFP_KERNEL);
+        if (!tok->default_dacl) {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        memcpy(tok->default_dacl, TokenDefaultDacl->DefaultDacl,
+               TokenDefaultDacl->DefaultDacl->AclSize);
+    }
+
+    // add handle
+
+    access = sanitize_access_mask(DesiredAccess, token_type);
+
+    if (access == MAXIMUM_ALLOWED)
+        access = TOKEN_ALL_ACCESS;
+
+    Status = muwine_add_handle(&tok->header, TokenHandle,
+                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false,
+                               access);
+
+end:
+    if (!NT_SUCCESS(Status))
+        dec_obj_refcount(&tok->header);
+
+    return Status;
 }
 
 static bool get_user_sid(PSID* ks, const __user PSID us) {
