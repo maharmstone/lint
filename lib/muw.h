@@ -780,6 +780,11 @@ NTSTATUS __stdcall NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                                  PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
 NTSTATUS __stdcall NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
                                       PHANDLE TokenHandle);
+NTSTATUS __stdcall NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
+                                           PTOKEN_PRIVILEGES TokenPrivileges,
+                                           ULONG PreviousPrivilegesLength,
+                                           PTOKEN_PRIVILEGES PreviousPrivileges,
+                                           PULONG RequiredLength);
 
 #ifdef __cplusplus
 }

@@ -1513,3 +1513,27 @@ NTSTATUS __stdcall NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredA
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
+                                           PTOKEN_PRIVILEGES TokenPrivileges,
+                                           ULONG PreviousPrivilegesLength,
+                                           PTOKEN_PRIVILEGES PreviousPrivileges,
+                                           PULONG RequiredLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)TokenHandle,
+        (uintptr_t)DisableAllPrivileges,
+        (uintptr_t)TokenPrivileges,
+        (uintptr_t)PreviousPrivilegesLength,
+        (uintptr_t)PreviousPrivileges,
+        (uintptr_t)RequiredLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTADJUSTPRIVILEGESTOKEN, args, ret);
+
+    return (NTSTATUS)ret;
+}
