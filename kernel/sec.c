@@ -66,9 +66,6 @@ static void token_object_close(object_header* obj) {
         kfree(tok->groups);
     }
 
-    if (tok->owner)
-        kfree(tok->owner);
-
     if (tok->privs)
         kfree(tok->privs);
 
@@ -398,7 +395,7 @@ void muwine_make_process_token(token_object** t) {
 
     get_current_process_groups(tok); // FIXME - handle errors
 
-    tok->owner = duplicate_sid(tok->user);
+    tok->owner = tok->user;
 
     if (current_euid().val == 0) { // root
         priv_count = sizeof(def_root_privs) / sizeof(default_privilege);
@@ -589,7 +586,9 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     tok->expiry = ExpirationTime->QuadPart;
 
     tok->user = duplicate_sid(TokenUser->User.Sid);
-    tok->owner = duplicate_sid(TokenOwner ? TokenOwner->Owner : TokenUser->User.Sid);
+
+    if (!TokenOwner || sid_equal(tok->user, TokenOwner->Owner))
+        tok->owner = tok->user;
 
     tok->groups = kmalloc(offsetof(TOKEN_GROUPS, Groups) + (sizeof(SID_AND_ATTRIBUTES) * TokenGroups->GroupCount),
                           GFP_KERNEL);
@@ -605,9 +604,12 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
 
         if (sid_equal(tok->groups->Groups[i].Sid, TokenPrimaryGroup->PrimaryGroup))
             tok->primary_group = tok->groups->Groups[i].Sid;
+
+        if (!tok->owner && sid_equal(tok->groups->Groups[i].Sid, TokenOwner->Owner))
+            tok->owner = tok->groups->Groups[i].Sid;
     }
 
-    if (!tok->primary_group) {
+    if (!tok->primary_group || !tok->owner) {
         Status = STATUS_INVALID_PARAMETER;
         goto end;
     }
