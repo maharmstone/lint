@@ -554,6 +554,42 @@ static bool __inline sid_equal(PSID sid1, PSID sid2) {
     return !memcmp(sid1, sid2, size1);
 }
 
+static bool check_privilege(DWORD priv) {
+    process_object* proc;
+    token_object* tok;
+    unsigned int i;
+    bool found = false;
+
+    proc = muwine_current_process_object();
+
+    if (!proc)
+        return false;
+
+    // FIXME - should be thread token if impersonating
+
+    tok = proc->token;
+    inc_obj_refcount(&tok->header);
+
+    dec_obj_refcount(&proc->header.h);
+
+    down_read(&tok->sem);
+
+    for (i = 0; i < tok->privs->PrivilegeCount; i++) {
+        if (tok->privs->Privileges[i].Attributes & SE_PRIVILEGE_ENABLED &&
+            tok->privs->Privileges[i].Luid.HighPart == 0 &&
+            tok->privs->Privileges[i].Luid.LowPart == priv) {
+            found = true;
+            break;
+        }
+    }
+
+    up_read(&tok->sem);
+
+    dec_obj_refcount(&tok->header);
+
+    return found;
+}
+
 static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                               POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
                               PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
@@ -567,7 +603,8 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     unsigned int i;
     size_t privsize;
 
-    // FIXME - check for SeCreateTokenPrivilege
+    if (!check_privilege(SE_CREATE_TOKEN_PRIVILEGE))
+        return STATUS_PRIVILEGE_NOT_HELD;
 
     tok = kzalloc(sizeof(token_object), GFP_KERNEL);
 
