@@ -225,6 +225,11 @@ typedef NTSTATUS (*muwine_func12arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t a
                                      uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
                                      uintptr_t arg7, uintptr_t arg8, uintptr_t arg9,
                                      uintptr_t arg10, uintptr_t arg11, uintptr_t arg12);
+typedef NTSTATUS (*muwine_func13arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+                                     uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
+                                     uintptr_t arg7, uintptr_t arg8, uintptr_t arg9,
+                                     uintptr_t arg10, uintptr_t arg11, uintptr_t arg12,
+                                     uintptr_t arg13);
 
 typedef struct _type_object type_object;
 

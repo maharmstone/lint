@@ -907,6 +907,74 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 
         return ((muwine_func12arg)funcs[cmd].func)(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
                                                    arg9, arg10, arg11, arg12);
+    } else if (num_args == 13) {
+        uintptr_t arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13;
+
+        if (get_user(arg1, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg2, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg3, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg4, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg5, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg6, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg7, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg8, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg9, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg10, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg11, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg12, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        temp++;
+
+        if (get_user(arg13, temp) < 0)
+            return STATUS_INVALID_PARAMETER;
+
+        return ((muwine_func13arg)funcs[cmd].func)(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8,
+                                                   arg9, arg10, arg11, arg12, arg13);
     } else {
         printk(KERN_ALERT "muwine_ioctl: unexpected number of arguments %u\n", (unsigned int)num_args);
         return STATUS_INVALID_PARAMETER;
