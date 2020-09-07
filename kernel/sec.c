@@ -319,6 +319,64 @@ static SID* duplicate_sid(SID* in) {
     return out;
 }
 
+static NTSTATUS get_current_process_groups(token_object* tok) {
+    NTSTATUS Status;
+    struct group_info* groups;
+    kgid_t primary_group;
+    bool primary_group_in_list;
+    unsigned int num_groups, i;
+
+    primary_group = current_egid();
+
+    groups = get_current_groups();
+    primary_group_in_list = false;
+
+    for (i = 0; i < groups->ngroups; i++) {
+        kgid_t gid = groups->gid[i];
+
+        if (gid.val == primary_group.val) {
+            primary_group_in_list = true;
+            break;
+        }
+    }
+
+    num_groups = groups->ngroups;
+
+    if (!primary_group_in_list)
+        num_groups++;
+
+    tok->groups = kmalloc(offsetof(TOKEN_GROUPS, Groups) + (num_groups * sizeof(SID_AND_ATTRIBUTES)),
+                          GFP_KERNEL);
+    if (!tok->groups) {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    tok->groups->GroupCount = num_groups;
+
+    for (i = 0; i < groups->ngroups; i++) {
+        gid_to_sid(&tok->groups->Groups[i].Sid, groups->gid[i]);
+        tok->groups->Groups[i].Attributes = SE_GROUP_ENABLED;
+
+        if (groups->gid[i].val == primary_group.val)
+            tok->primary_group = tok->groups->Groups[i].Sid;
+    }
+
+    if (!primary_group_in_list) {
+        gid_to_sid(&tok->groups->Groups[groups->ngroups].Sid, primary_group);
+        tok->groups->Groups[groups->ngroups].Attributes = SE_GROUP_ENABLED;
+
+        tok->primary_group = tok->groups->Groups[groups->ngroups].Sid;
+    }
+
+    Status = STATUS_SUCCESS;
+
+end:
+    put_group_info(groups);
+
+    return Status;
+}
+
 void muwine_make_process_token(token_object** t) {
     token_object* tok;
     unsigned int priv_count, i;
@@ -338,10 +396,8 @@ void muwine_make_process_token(token_object** t) {
 
     uid_to_sid(&tok->user, current_euid());
 
-    // FIXME - get groups
-    // FIXME - get primary group
+    get_current_process_groups(tok); // FIXME - handle errors
 
-    gid_to_sid(&tok->primary_group, current_egid());
     tok->owner = duplicate_sid(tok->user);
 
     if (current_euid().val == 0) { // root
