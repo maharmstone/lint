@@ -1,5 +1,6 @@
-#include "muwine.h"
 #include <linux/kthread.h>
+#include "muwine.h"
+#include "sec.h"
 
 #define PROCESS_TERMINATE                   0x0001
 #define PROCESS_CREATE_THREAD               0x0002

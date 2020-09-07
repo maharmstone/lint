@@ -58,6 +58,7 @@ struct muwine_func {
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
 typedef int32_t NTSTATUS;
+typedef char CHAR;
 typedef uint16_t WCHAR, *PWSTR;
 typedef void* HANDLE;
 typedef HANDLE* PHANDLE;
@@ -311,14 +312,22 @@ NTSTATUS NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJECT_ATTRIB
                                     BOOLEAN Asynchronous);
 
 // sec.c
+typedef enum {
+    TokenPrimary,
+    TokenImpersonation
+} TOKEN_TYPE;
+
 typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;
 typedef struct _SID SID;
-
-typedef struct _token_object {
-    object_header header;
-    SID* owner;
-    SID* group;
-} token_object;
+typedef struct _token_object token_object;
+typedef struct _LUID LUID, *PLUID;
+typedef struct _TOKEN_USER TOKEN_USER, *PTOKEN_USER;
+typedef struct _TOKEN_GROUPS TOKEN_GROUPS, *PTOKEN_GROUPS;
+typedef struct _TOKEN_PRIVILEGES TOKEN_PRIVILEGES, *PTOKEN_PRIVILEGES;
+typedef struct _TOKEN_OWNER TOKEN_OWNER, *PTOKEN_OWNER;
+typedef struct _TOKEN_PRIMARY_GROUP TOKEN_PRIMARY_GROUP, *PTOKEN_PRIMARY_GROUP;
+typedef struct _TOKEN_DEFAULT_DACL TOKEN_DEFAULT_DACL, *PTOKEN_DEFAULT_DACL;
+typedef struct _TOKEN_SOURCE TOKEN_SOURCE, *PTOKEN_SOURCE;
 
 NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len, bool container,
                                     token_object* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
@@ -326,6 +335,13 @@ void muwine_make_process_token(token_object** t);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
 ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type);
 NTSTATUS muwine_init_tokens(void);
+NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
+                       POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
+                       PLUID AuthenticationId, PLARGE_INTEGER ExpirationTime,
+                       PTOKEN_USER TokenUser, PTOKEN_GROUPS TokenGroups,
+                       PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
+                       PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
+                       PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

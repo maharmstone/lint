@@ -51,12 +51,18 @@
                          TOKEN_ADJUST_SESSIONID | DELETE | READ_CONTROL | WRITE_DAC | \
                          WRITE_OWNER
 
+typedef struct _token_object {
+    object_header header;
+    SID* owner;
+    SID* group;
+} token_object;
+
 typedef struct _SID {
     uint8_t Revision;
     uint8_t SubAuthorityCount;
     uint8_t IdentifierAuthority[6];
     uint32_t SubAuthority[1];
-} SID;
+} SID, *PSID;
 
 typedef struct _SECURITY_DESCRIPTOR {
     uint8_t Revision;
@@ -74,7 +80,7 @@ typedef struct {
     uint16_t AclSize;
     uint16_t AceCount;
     uint16_t Sbz2;
-} ACL;
+} ACL, *PACL;
 
 typedef struct {
     uint8_t AceType;
@@ -87,3 +93,50 @@ typedef struct {
     uint32_t Mask;
 } ACCESS_ALLOWED_ACE;
 
+typedef struct _LUID {
+    DWORD LowPart;
+    LONG HighPart;
+} LUID, *PLUID;
+
+typedef struct {
+    PSID Sid;
+    DWORD Attributes;
+} SID_AND_ATTRIBUTES;
+
+typedef struct _TOKEN_USER {
+    SID_AND_ATTRIBUTES User;
+} TOKEN_USER, *PTOKEN_USER;
+
+typedef struct _TOKEN_GROUPS {
+    DWORD GroupCount;
+    SID_AND_ATTRIBUTES Groups[1];
+} TOKEN_GROUPS, *PTOKEN_GROUPS;
+
+typedef struct {
+    LUID Luid;
+    ULONG Attributes;
+} LUID_AND_ATTRIBUTES;
+
+typedef struct _TOKEN_PRIVILEGES {
+    DWORD PrivilegeCount;
+    LUID_AND_ATTRIBUTES Privileges[1];
+} TOKEN_PRIVILEGES, *PTOKEN_PRIVILEGES;
+
+typedef struct _TOKEN_OWNER {
+    PSID Owner;
+} TOKEN_OWNER, *PTOKEN_OWNER;
+
+typedef struct _TOKEN_PRIMARY_GROUP {
+    PSID PrimaryGroup;
+} TOKEN_PRIMARY_GROUP, *PTOKEN_PRIMARY_GROUP;
+
+typedef struct _TOKEN_DEFAULT_DACL {
+    PACL DefaultDacl;
+} TOKEN_DEFAULT_DACL, *PTOKEN_DEFAULT_DACL;
+
+#define TOKEN_SOURCE_LENGTH 8
+
+typedef struct _TOKEN_SOURCE {
+    CHAR SourceName[TOKEN_SOURCE_LENGTH];
+    LUID SourceIdentifier;
+} TOKEN_SOURCE, *PTOKEN_SOURCE;

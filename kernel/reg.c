@@ -5,6 +5,7 @@
 #include <linux/namei.h>
 #include "muwine.h"
 #include "reg.h"
+#include "sec.h"
 
 #define REG_FLUSH_INTERVAL 30 // seconds
 

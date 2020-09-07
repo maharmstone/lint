@@ -77,5 +77,6 @@
 #define MUWINE_IOCTL_NTOPENSEMAPHORE                MUWINE_IOCTL(70)
 #define MUWINE_IOCTL_NTQUERYSEMAPHORE               MUWINE_IOCTL(71)
 #define MUWINE_IOCTL_NTRELEASESEMAPHORE             MUWINE_IOCTL(72)
+#define MUWINE_IOCTL_NTCREATETOKEN                  MUWINE_IOCTL(73)
 
-#define MUWINE_IOCTL_MAX                  72
+#define MUWINE_IOCTL_MAX                  73
