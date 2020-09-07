@@ -1,6 +1,7 @@
 #include "muwine.h"
 #include "thread.h"
 #include "sect.h"
+#include "proc.h"
 #include <linux/kthread.h>
 #include <linux/sched/task_stack.h>
 #include <linux/sched/mm.h>

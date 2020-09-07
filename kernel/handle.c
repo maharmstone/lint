@@ -2,6 +2,7 @@
 #include "thread.h"
 #include "mutant.h"
 #include "semaphore.h"
+#include "proc.h"
 
 static uintptr_t next_kernel_handle_no = KERNEL_HANDLE_MASK;
 

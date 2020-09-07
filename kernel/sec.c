@@ -1,5 +1,6 @@
 #include "muwine.h"
 #include "sec.h"
+#include "proc.h"
 
 static const uint8_t sid_users[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0, 0, 0x21, 0x2, 0, 0 }; // S-1-5-32-545
 static const uint8_t sid_administrators[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0, 0, 0x20, 0x2, 0, 0 }; // S-1-5-32-544
@@ -659,12 +660,52 @@ end7:
 
 static NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
                                    PHANDLE TokenHandle) {
-    printk(KERN_INFO "NtOpenProcessToken(%lx, %x, %px): stub\n",
-           (uintptr_t)ProcessHandle, DesiredAccess, TokenHandle);
+    NTSTATUS Status;
+    process_object* proc;
+    token_object* tok;
+    ACCESS_MASK access;
 
-    // FIXME
+    if (ProcessHandle == NtCurrentProcess()) {
+        proc = muwine_current_process_object();
 
-    return STATUS_NOT_IMPLEMENTED;
+        tok = proc->token;
+        inc_obj_refcount(&tok->header);
+
+        dec_obj_refcount(&proc->header.h);
+    } else {
+        proc = (process_object*)get_object_from_handle(ProcessHandle, &access);
+        if (!proc)
+            return STATUS_INVALID_HANDLE;
+
+        if (proc->header.h.type != process_type) {
+            dec_obj_refcount(&proc->header.h);
+            return STATUS_INVALID_HANDLE;
+        }
+
+        if (!(access & PROCESS_QUERY_INFORMATION)) {
+            dec_obj_refcount(&proc->header.h);
+            return STATUS_ACCESS_DENIED;
+        }
+
+        tok = proc->token;
+        inc_obj_refcount(&tok->header);
+
+        dec_obj_refcount(&proc->header.h);
+    }
+
+    // FIXME - check DesiredAccess against token SD
+
+    access = sanitize_access_mask(DesiredAccess, token_type);
+
+    if (access == MAXIMUM_ALLOWED)
+        access = TOKEN_ALL_ACCESS;
+
+    Status = muwine_add_handle(&tok->header, TokenHandle, false, access);
+
+    if (!NT_SUCCESS(Status))
+        dec_obj_refcount(&tok->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,

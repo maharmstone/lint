@@ -6,6 +6,7 @@
 #include "muwine.h"
 #include "reg.h"
 #include "sec.h"
+#include "proc.h"
 
 #define REG_FLUSH_INTERVAL 30 // seconds
 

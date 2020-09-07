@@ -251,19 +251,7 @@ typedef struct {
 } sync_object;
 
 typedef struct _token_object token_object;
-
-typedef struct {
-    sync_object header;
-    struct list_head list;
-    struct list_head dead_list;
-    pid_t pid;
-    struct list_head handle_list;
-    spinlock_t handle_list_lock;
-    uintptr_t next_handle_no;
-    token_object* token;
-    struct rw_semaphore mapping_list_sem;
-    struct list_head mapping_list;
-} process_object;
+typedef struct _process_object process_object;
 
 typedef struct _device device;
 

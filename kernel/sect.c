@@ -4,6 +4,7 @@
 #include <linux/kprobes.h>
 #include "muwine.h"
 #include "sect.h"
+#include "proc.h"
 
 static type_object* section_type = NULL;
 
