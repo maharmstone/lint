@@ -7,6 +7,47 @@ static const uint8_t sid_administrators[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0
 static const uint8_t sid_local_system[] = { 1, 1, 0, 0, 0, 0, 0, 5, 0x12, 0, 0, 0 }; // S-1-5-18
 static const uint8_t sid_creator_owner[] = { 1, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0 }; // S-1-3-0
 
+typedef struct {
+    unsigned int num;
+    bool enabled;
+} default_privilege;
+
+static const default_privilege def_user_privs[] = {
+    { SE_SHUTDOWN_PRIVILEGE, false },
+    { SE_CHANGE_NOTIFY_PRIVILEGE, true },
+    { SE_UNDOCK_PRIVILEGE, false },
+    { SE_INC_WORKING_SET_PRIVILEGE, false },
+    { SE_TIME_ZONE_PRIVILEGE, false }
+};
+
+// these are what Windows gives LocalSystem
+static const default_privilege def_root_privs[] = {
+    { SE_ASSIGNPRIMARYTOKEN_PRIVILEGE, false },
+    { SE_AUDIT_PRIVILEGE, true },
+    { SE_BACKUP_PRIVILEGE, false },
+    { SE_CHANGE_NOTIFY_PRIVILEGE, true },
+    { SE_CREATE_GLOBAL_PRIVILEGE, true },
+    { SE_CREATE_PAGEFILE_PRIVILEGE, true },
+    { SE_CREATE_PERMANENT_PRIVILEGE, true },
+    { SE_CREATE_TOKEN_PRIVILEGE, false },
+    { SE_DEBUG_PRIVILEGE, true },
+    { SE_IMPERSONATE_PRIVILEGE, true },
+    { SE_INC_BASE_PRIORITY_PRIVILEGE, true },
+    { SE_INCREASE_QUOTA_PRIVILEGE, false },
+    { SE_LOAD_DRIVER_PRIVILEGE, false },
+    { SE_LOCK_MEMORY_PRIVILEGE, true },
+    { SE_MANAGE_VOLUME_PRIVILEGE, false },
+    { SE_PROF_SINGLE_PROCESS_PRIVILEGE, true },
+    { SE_RESTORE_PRIVILEGE, false },
+    { SE_SECURITY_PRIVILEGE, false },
+    { SE_SHUTDOWN_PRIVILEGE, false },
+    { SE_SYSTEM_ENVIRONMENT_PRIVILEGE, false },
+    { SE_SYSTEMTIME_PRIVILEGE, false },
+    { SE_TAKE_OWNERSHIP_PRIVILEGE, false },
+    { SE_TCB_PRIVILEGE, true },
+    { SE_UNDOCK_PRIVILEGE, false }
+};
+
 static type_object* token_type = NULL;
 
 static void token_object_close(object_header* obj) {
@@ -252,7 +293,8 @@ static void gid_to_sid(SID** sid, kgid_t gid) {
 
 void muwine_make_process_token(token_object** t) {
     token_object* tok;
-    unsigned int priv_count;
+    unsigned int priv_count, i;
+    const default_privilege* def_privs;
 
     tok = kzalloc(sizeof(token_object), GFP_KERNEL);
     // FIXME - handle malloc failure
@@ -269,7 +311,13 @@ void muwine_make_process_token(token_object** t) {
     uid_to_sid(&tok->owner, current_euid());
     gid_to_sid(&tok->group, current_egid());
 
-    priv_count = 5;
+    if (current_euid().val == 0) { // root
+        priv_count = sizeof(def_root_privs) / sizeof(default_privilege);
+        def_privs = def_root_privs;
+    } else {
+        priv_count = sizeof(def_user_privs) / sizeof(default_privilege);
+        def_privs = def_user_privs;
+    }
 
     tok->privs = kmalloc(offsetof(TOKEN_PRIVILEGES, Privileges) +
                          (sizeof(LUID_AND_ATTRIBUTES) * priv_count), GFP_KERNEL);
@@ -277,26 +325,16 @@ void muwine_make_process_token(token_object** t) {
 
     tok->privs->PrivilegeCount = priv_count;
 
-    tok->privs->Privileges[0].Luid.LowPart = SE_SHUTDOWN_PRIVILEGE;
-    tok->privs->Privileges[0].Luid.HighPart = 0;
-    tok->privs->Privileges[0].Attributes = 0;
+    for (i = 0; i < priv_count; i++) {
+        tok->privs->Privileges[i].Luid.LowPart = def_privs[i].num;
+        tok->privs->Privileges[i].Luid.HighPart = 0;
 
-    tok->privs->Privileges[1].Luid.LowPart = SE_CHANGE_NOTIFY_PRIVILEGE;
-    tok->privs->Privileges[1].Luid.HighPart = 0;
-    tok->privs->Privileges[1].Attributes =
-        SE_PRIVILEGE_ENABLED | SE_PRIVILEGE_ENABLED_BY_DEFAULT;
-
-    tok->privs->Privileges[2].Luid.LowPart = SE_UNDOCK_PRIVILEGE;
-    tok->privs->Privileges[2].Luid.HighPart = 0;
-    tok->privs->Privileges[2].Attributes = 0;
-
-    tok->privs->Privileges[3].Luid.LowPart = SE_INC_WORKING_SET_PRIVILEGE;
-    tok->privs->Privileges[3].Luid.HighPart = 0;
-    tok->privs->Privileges[3].Attributes = 0;
-
-    tok->privs->Privileges[4].Luid.LowPart = SE_TIME_ZONE_PRIVILEGE;
-    tok->privs->Privileges[4].Luid.HighPart = 0;
-    tok->privs->Privileges[4].Attributes = 0;
+        if (def_privs[i].enabled) {
+            tok->privs->Privileges[i].Attributes =
+                SE_PRIVILEGE_ENABLED | SE_PRIVILEGE_ENABLED_BY_DEFAULT;
+        } else
+            tok->privs->Privileges[i].Attributes = 0;
+    }
 
     *t = tok;
 }
