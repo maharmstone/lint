@@ -657,15 +657,33 @@ end7:
     return Status;
 }
 
-
-NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
-                            PHANDLE TokenHandle) {
+static NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                   PHANDLE TokenHandle) {
     printk(KERN_INFO "NtOpenProcessToken(%lx, %x, %px): stub\n",
            (uintptr_t)ProcessHandle, DesiredAccess, TokenHandle);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                 PHANDLE TokenHandle) {
+    NTSTATUS Status;
+    HANDLE h;
+
+    if (!TokenHandle)
+        return STATUS_INVALID_PARAMETER;
+
+    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)ProcessHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    Status = NtOpenProcessToken(ProcessHandle, DesiredAccess, &h);
+
+    if (put_user(h, TokenHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,

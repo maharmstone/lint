@@ -342,8 +342,8 @@ NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                             PTOKEN_PRIVILEGES TokenPrivileges, PTOKEN_OWNER TokenOwner,
                             PTOKEN_PRIMARY_GROUP TokenPrimaryGroup,
                             PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
-NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
-                            PHANDLE TokenHandle);
+NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                 PHANDLE TokenHandle);
 NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
                                  PTOKEN_PRIVILEGES TokenPrivileges,
                                  ULONG PreviousPrivilegesLength,

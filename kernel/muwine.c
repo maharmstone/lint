@@ -87,7 +87,7 @@ static struct muwine_func funcs[] = {
     { NtQuerySemaphore, 5 },
     { user_NtReleaseSemaphore, 3 },
     { user_NtCreateToken, 13 },
-    { NtOpenProcessToken, 3 },
+    { user_NtOpenProcessToken, 3 },
     { NtAdjustPrivilegesToken, 6 },
 };
 
