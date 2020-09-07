@@ -30,13 +30,14 @@ NTSTATUS __stdcall NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAl
                                            PTOKEN_PRIVILEGES PreviousPrivileges,
                                            PULONG RequiredLength);
 
-#define STATUS_NOT_ALL_ASSIGNED (NTSTATUS)0x00000106
-
 #else
 
 #define SYSTEM_LUID { 0x3e7, 0x0 }
+#define SE_PRIVILEGE_ENABLED 0x00000002
 
 #endif
+
+#define STATUS_NOT_ALL_ASSIGNED (NTSTATUS)0x00000106
 
 typedef struct {
     uint8_t Revision;
