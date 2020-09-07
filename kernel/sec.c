@@ -428,6 +428,8 @@ void muwine_make_process_token(token_object** t) {
     tok->auth_id.LowPart = 0x3e7; // SYSTEM_LUID
     tok->auth_id.HighPart = 0;
 
+    strcpy(tok->source.SourceName, "SeMgr");
+
     *t = tok;
 }
 
