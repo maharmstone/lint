@@ -668,6 +668,21 @@ NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
+                                 PTOKEN_PRIVILEGES TokenPrivileges,
+                                 ULONG PreviousPrivilegesLength,
+                                 PTOKEN_PRIVILEGES PreviousPrivileges,
+                                 PULONG RequiredLength) {
+    printk(KERN_INFO "NtAdjustPrivilegesToken(%lx, %x, %px, %x, %px, %px): stub\n",
+           (uintptr_t)TokenHandle, DisableAllPrivileges, TokenPrivileges,
+           PreviousPrivilegesLength, PreviousPrivileges,
+           RequiredLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS muwine_init_tokens(void) {
     UNICODE_STRING us;
 
