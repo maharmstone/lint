@@ -252,6 +252,7 @@ static void gid_to_sid(SID** sid, kgid_t gid) {
 
 void muwine_make_process_token(token_object** t) {
     token_object* tok;
+    unsigned int priv_count;
 
     tok = kzalloc(sizeof(token_object), GFP_KERNEL);
     // FIXME - handle malloc failure
@@ -268,12 +269,34 @@ void muwine_make_process_token(token_object** t) {
     uid_to_sid(&tok->owner, current_euid());
     gid_to_sid(&tok->group, current_egid());
 
-    tok->privs = kmalloc(offsetof(TOKEN_PRIVILEGES, Privileges), GFP_KERNEL);
+    priv_count = 5;
+
+    tok->privs = kmalloc(offsetof(TOKEN_PRIVILEGES, Privileges) +
+                         (sizeof(LUID_AND_ATTRIBUTES) * priv_count), GFP_KERNEL);
     // FIXME - handle malloc failure
 
-    tok->privs->PrivilegeCount = 0;
+    tok->privs->PrivilegeCount = priv_count;
 
-    // FIXME - add standard privileges
+    tok->privs->Privileges[0].Luid.LowPart = SE_SHUTDOWN_PRIVILEGE;
+    tok->privs->Privileges[0].Luid.HighPart = 0;
+    tok->privs->Privileges[0].Attributes = 0;
+
+    tok->privs->Privileges[1].Luid.LowPart = SE_CHANGE_NOTIFY_PRIVILEGE;
+    tok->privs->Privileges[1].Luid.HighPart = 0;
+    tok->privs->Privileges[1].Attributes =
+        SE_PRIVILEGE_ENABLED | SE_PRIVILEGE_ENABLED_BY_DEFAULT;
+
+    tok->privs->Privileges[2].Luid.LowPart = SE_UNDOCK_PRIVILEGE;
+    tok->privs->Privileges[2].Luid.HighPart = 0;
+    tok->privs->Privileges[2].Attributes = 0;
+
+    tok->privs->Privileges[3].Luid.LowPart = SE_INC_WORKING_SET_PRIVILEGE;
+    tok->privs->Privileges[3].Luid.HighPart = 0;
+    tok->privs->Privileges[3].Attributes = 0;
+
+    tok->privs->Privileges[4].Luid.LowPart = SE_TIME_ZONE_PRIVILEGE;
+    tok->privs->Privileges[4].Luid.HighPart = 0;
+    tok->privs->Privileges[4].Attributes = 0;
 
     *t = tok;
 }
