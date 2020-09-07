@@ -332,11 +332,11 @@ NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                             PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
 NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
                                  PHANDLE TokenHandle);
-NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
-                                 PTOKEN_PRIVILEGES TokenPrivileges,
-                                 ULONG PreviousPrivilegesLength,
-                                 PTOKEN_PRIVILEGES PreviousPrivileges,
-                                 PULONG RequiredLength);
+NTSTATUS user_NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
+                                      PTOKEN_PRIVILEGES TokenPrivileges,
+                                      ULONG PreviousPrivilegesLength,
+                                      PTOKEN_PRIVILEGES PreviousPrivileges,
+                                      PULONG RequiredLength);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

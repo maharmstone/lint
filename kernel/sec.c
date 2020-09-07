@@ -727,11 +727,11 @@ NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess
     return Status;
 }
 
-NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
-                                 PTOKEN_PRIVILEGES TokenPrivileges,
-                                 ULONG PreviousPrivilegesLength,
-                                 PTOKEN_PRIVILEGES PreviousPrivileges,
-                                 PULONG RequiredLength) {
+static NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
+                                        PTOKEN_PRIVILEGES TokenPrivileges,
+                                        ULONG PreviousPrivilegesLength,
+                                        PTOKEN_PRIVILEGES PreviousPrivileges,
+                                        PULONG RequiredLength) {
     printk(KERN_INFO "NtAdjustPrivilegesToken(%lx, %x, %px, %x, %px, %px): stub\n",
            (uintptr_t)TokenHandle, DisableAllPrivileges, TokenPrivileges,
            PreviousPrivilegesLength, PreviousPrivileges,
@@ -740,6 +740,51 @@ NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivilege
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
+                                      PTOKEN_PRIVILEGES TokenPrivileges,
+                                      ULONG PreviousPrivilegesLength,
+                                      PTOKEN_PRIVILEGES PreviousPrivileges,
+                                      PULONG RequiredLength) {
+    NTSTATUS Status;
+    TOKEN_PRIVILEGES* privs;
+    ULONG reqlen;
+    TOKEN_PRIVILEGES* prev;
+
+    if (!TokenPrivileges)
+        return STATUS_INVALID_PARAMETER;
+
+    if ((uintptr_t)TokenHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (!get_user_token_privileges(&privs, TokenPrivileges))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (PreviousPrivilegesLength > 0) {
+        prev = kmalloc(PreviousPrivilegesLength, GFP_KERNEL);
+        if (!prev)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Status = NtAdjustPrivilegesToken(TokenHandle, DisableAllPrivileges, privs,
+                                     PreviousPrivilegesLength,
+                                     PreviousPrivilegesLength > 0 ? prev : NULL,
+                                     RequiredLength ? &reqlen : NULL);
+
+    if (PreviousPrivilegesLength > 0) {
+        if (copy_to_user(PreviousPrivileges, prev, PreviousPrivilegesLength) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(prev);
+    }
+
+    if (RequiredLength && put_user(reqlen, RequiredLength) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    kfree(privs);
+
+    return Status;
 }
 
 NTSTATUS muwine_init_tokens(void) {
