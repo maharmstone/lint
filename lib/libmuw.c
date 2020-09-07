@@ -1495,3 +1495,21 @@ NTSTATUS __stdcall NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                      PHANDLE TokenHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)TokenHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENPROCESSTOKEN, args, ret);
+
+    return (NTSTATUS)ret;
+}
