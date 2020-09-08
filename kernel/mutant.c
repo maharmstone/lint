@@ -44,69 +44,9 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
     list_add(&obj->list, &mutant_list);
     spin_unlock(&mutant_list_lock);
 
-    if (ObjectAttributes && ObjectAttributes->ObjectName) {
-        UNICODE_STRING us;
-        bool us_alloc = false;
-        object_header* old;
-
-        us.Length = ObjectAttributes->ObjectName->Length;
-        us.Buffer = ObjectAttributes->ObjectName->Buffer;
-
-        Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
-        if (!NT_SUCCESS(Status)) {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            goto end;
-        }
-
-        if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            Status = STATUS_INVALID_PARAMETER;
-            goto end;
-        }
-
-        obj->header.h.path.Length = us.Length;
-        obj->header.h.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
-        if (!obj->header.h.path.Buffer) {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-
-        memcpy(obj->header.h.path.Buffer, us.Buffer, us.Length);
-
-        if (us_alloc)
-            kfree(us.Buffer);
-
-        Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false,
-                                               ObjectAttributes->Attributes & OBJ_PERMANENT,
-                                               ObjectAttributes->Attributes & OBJ_OPENIF ? &old : NULL);
-
-        if (Status == STATUS_OBJECT_NAME_COLLISION && ObjectAttributes->Attributes & OBJ_OPENIF && old) {
-            // FIXME - check access against object SD
-
-            dec_obj_refcount(&obj->header.h);
-
-            obj = (mutant_object*)old;
-
-            if (obj->header.h.type != mutant_type) {
-                Status = STATUS_OBJECT_TYPE_MISMATCH;
-                goto end;
-            }
-
-            InitialOwner = false;
-
-            Status = STATUS_SUCCESS;
-        }
-
-        if (!NT_SUCCESS(Status))
-            goto end;
-    }
+    Status = muwine_add_entry_in_hierarchy2((object_header**)&obj, ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
     Status = muwine_add_handle(&obj->header.h, MutantHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
@@ -115,12 +55,10 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
         __sync_add_and_fetch(&obj->thread->mutant_count, 1);
 
 end:
-    if (!NT_SUCCESS(Status)) {
+    if (!NT_SUCCESS(Status))
         dec_obj_refcount(&obj->header.h);
-        return Status;
-    }
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 NTSTATUS user_NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,

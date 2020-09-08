@@ -345,65 +345,18 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     obj->file = file;
     obj->anon_file = anon_file;
 
-    if (ObjectAttributes && ObjectAttributes->ObjectName) {
-        UNICODE_STRING us;
-        bool us_alloc = false;
-
-        us.Length = ObjectAttributes->ObjectName->Length;
-        us.Buffer = ObjectAttributes->ObjectName->Buffer;
-
-        Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
-        if (!NT_SUCCESS(Status)) {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            dec_obj_refcount(&obj->header);
-
-            return Status;
-        }
-
-        if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            dec_obj_refcount(&obj->header);
-
-            return STATUS_INVALID_PARAMETER;
-        }
-
-        obj->header.path.Length = us.Length;
-        obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
-        if (!obj->header.path.Buffer) {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            dec_obj_refcount(&obj->header);
-
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-
-        memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
-
-        if (us_alloc)
-            kfree(us.Buffer);
-
-        Status = muwine_add_entry_in_hierarchy(&obj->header.path, &obj->header, false,
-                                               ObjectAttributes->Attributes & OBJ_PERMANENT, NULL);
-        if (!NT_SUCCESS(Status)) {
-            dec_obj_refcount(&obj->header);
-            return Status;
-        }
-    }
+    Status = muwine_add_entry_in_hierarchy2((object_header**)&obj, ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
     Status = muwine_add_handle(&obj->header, SectionHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, 0);
 
-    if (!NT_SUCCESS(Status)) {
+end:
+    if (!NT_SUCCESS(Status))
         dec_obj_refcount(&obj->header);
-        return Status;
-    }
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 NTSTATUS user_NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,

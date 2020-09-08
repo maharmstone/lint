@@ -38,49 +38,9 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
     obj->type = EventType;
     spin_lock_init(&obj->lock);
 
-    if (ObjectAttributes && ObjectAttributes->ObjectName) {
-        UNICODE_STRING us;
-        bool us_alloc = false;
-
-        us.Length = ObjectAttributes->ObjectName->Length;
-        us.Buffer = ObjectAttributes->ObjectName->Buffer;
-
-        Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
-        if (!NT_SUCCESS(Status)) {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            goto end;
-        }
-
-        if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            Status = STATUS_INVALID_PARAMETER;
-            goto end;
-        }
-
-        obj->header.h.path.Length = us.Length;
-        obj->header.h.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
-        if (!obj->header.h.path.Buffer) {
-            if (us_alloc)
-                kfree(us.Buffer);
-
-            Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto end;
-        }
-
-        memcpy(obj->header.h.path.Buffer, us.Buffer, us.Length);
-
-        if (us_alloc)
-            kfree(us.Buffer);
-
-        Status = muwine_add_entry_in_hierarchy(&obj->header.h.path, &obj->header.h, false,
-                                               ObjectAttributes->Attributes & OBJ_PERMANENT, NULL);
-        if (!NT_SUCCESS(Status))
-            goto end;
-    }
+    Status = muwine_add_entry_in_hierarchy2((object_header**)&obj, ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
     Status = muwine_add_handle(&obj->header.h, EventHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);

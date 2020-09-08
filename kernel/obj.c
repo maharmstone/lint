@@ -525,18 +525,75 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
     return STATUS_OBJECT_PATH_INVALID;
 }
 
-NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+NTSTATUS muwine_add_entry_in_hierarchy2(object_header** obj, POBJECT_ATTRIBUTES ObjectAttributes) {
     NTSTATUS Status;
     UNICODE_STRING us;
+    bool us_alloc = false;
+    object_header* old;
+
+    if (!ObjectAttributes || !ObjectAttributes->ObjectName)
+        return STATUS_SUCCESS;
+
+    us.Length = ObjectAttributes->ObjectName->Length;
+    us.Buffer = ObjectAttributes->ObjectName->Buffer;
+
+    Status = muwine_resolve_obj_symlinks(&us, &us_alloc);
+    if (!NT_SUCCESS(Status)) {
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        return Status;
+    }
+
+    if (us.Length < sizeof(WCHAR) || us.Buffer[0] != '\\') {
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    (*obj)->path.Length = us.Length;
+    (*obj)->path.Buffer = kmalloc(us.Length, GFP_KERNEL);
+    if (!(*obj)->path.Buffer) {
+        if (us_alloc)
+            kfree(us.Buffer);
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy((*obj)->path.Buffer, us.Buffer, us.Length);
+
+    if (us_alloc)
+        kfree(us.Buffer);
+
+    Status = muwine_add_entry_in_hierarchy(&(*obj)->path, *obj, false,
+                                           ObjectAttributes->Attributes & OBJ_PERMANENT,
+                                           ObjectAttributes->Attributes & OBJ_OPENIF ? &old : NULL);
+
+    if (Status == STATUS_OBJECT_NAME_COLLISION && ObjectAttributes->Attributes & OBJ_OPENIF && old) {
+        // FIXME - check access against object SD
+
+        if ((*obj)->type != old->type) {
+            dec_obj_refcount(old);
+            return STATUS_OBJECT_TYPE_MISMATCH;
+        }
+
+        dec_obj_refcount(*obj);
+
+        *obj = old;
+
+        Status = STATUS_SUCCESS;
+    }
+
+    return Status;
+}
+
+NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
+    NTSTATUS Status;
     dir_object* obj;
 
     if (!ObjectAttributes || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
-
-    // FIXME - RootDirectory
-
-    us.Length = ObjectAttributes->ObjectName->Length;
-    us.Buffer = ObjectAttributes->ObjectName->Buffer;
 
     obj = kzalloc(sizeof(dir_object), GFP_KERNEL);
     if (!obj)
@@ -544,29 +601,15 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
 
     init_dir(obj);
 
-    obj->header.path.Length = us.Length;
-    obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
-    if (!obj->header.path.Buffer) {
-        obj->header.type->close(&obj->header);
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    memcpy(obj->header.path.Buffer, us.Buffer, us.Length);
-
-    Status = muwine_add_entry_in_hierarchy(&us, &obj->header, true,
-                                           ObjectAttributes->Attributes & OBJ_PERMANENT, NULL);
-
-    if (!NT_SUCCESS(Status)) {
-        obj->header.type->close(&obj->header);
-        return Status;
-    }
+    Status = muwine_add_entry_in_hierarchy2((object_header**)&obj, ObjectAttributes);
+    if (!NT_SUCCESS(Status))
+        goto end;
 
     Status = muwine_add_handle(&obj->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
-    if (!NT_SUCCESS(Status)) {
+end:
+    if (!NT_SUCCESS(Status))
         dec_obj_refcount(&obj->header);
-        return Status;
-    }
 
     return STATUS_SUCCESS;
 }
