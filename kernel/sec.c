@@ -387,11 +387,9 @@ static void alloc_luid(LUID* luid) {
 }
 
 static NTSTATUS NtAllocateLocallyUniqueId(PLUID Luid) {
-    printk(KERN_INFO "NtAllocateLocallyUniqueId(%px): stub\n", Luid);
+    alloc_luid(Luid);
 
-    // FIXME
-
-    return STATUS_NOT_IMPLEMENTED;
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS user_NtAllocateLocallyUniqueId(PLUID Luid) {
