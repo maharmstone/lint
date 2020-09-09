@@ -179,7 +179,8 @@ typedef struct {
 
 typedef struct {
     ACE_HEADER Header;
-    uint32_t Mask;
+    ACCESS_MASK Mask;
+    DWORD SidStart;
 } ACCESS_ALLOWED_ACE;
 
 typedef struct _TOKEN_USER {
