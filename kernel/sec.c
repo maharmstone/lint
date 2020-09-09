@@ -49,6 +49,7 @@ static const default_privilege def_root_privs[] = {
 };
 
 static type_object* token_type = NULL;
+static uint64_t last_luid = 1000;
 
 static void token_object_close(object_header* obj) {
     token_object* tok = (token_object*)obj;
@@ -376,6 +377,15 @@ end:
     return Status;
 }
 
+static void alloc_luid(LUID* luid) {
+    uint64_t val;
+
+    val = __sync_add_and_fetch(&last_luid, 1);
+
+    luid->LowPart = val & 0xffffffff;
+    luid->HighPart = val >> 32;
+}
+
 void muwine_make_process_token(token_object** t) {
     token_object* tok;
     unsigned int priv_count, i;
@@ -463,6 +473,9 @@ void muwine_make_process_token(token_object** t) {
     aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_local_system);
     aaa->Mask = GENERIC_ALL;
     memcpy(&aaa->SidStart, sid_local_system, sizeof(sid_local_system));
+
+    alloc_luid(&tok->token_id);
+    alloc_luid(&tok->modified_id);
 
     *t = tok;
 }
@@ -716,6 +729,9 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     }
 
     tok->type = TokenType;
+
+    alloc_luid(&tok->token_id);
+    alloc_luid(&tok->modified_id);
 
     // add handle
 
