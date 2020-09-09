@@ -336,6 +336,19 @@ typedef enum {
     TokenUIAccess,
     TokenMandatoryPolicy,
     TokenLogonSid,
+    TokenIsAppContainer,
+    TokenCapabilities,
+    TokenAppContainerSid,
+    TokenAppContainerNumber,
+    TokenUserClaimAttributes,
+    TokenDeviceClaimAttributes,
+    TokenRestrictedUserClaimAttributes,
+    TokenRestrictedDeviceClaimAttributes,
+    TokenDeviceGroups,
+    TokenRestrictedDeviceGroups,
+    TokenSecurityAttributes,
+    TokenIsRestricted,
+    TokenProcessTrustLevel,
     MaxTokenInfoClass
 } TOKEN_INFORMATION_CLASS;
 

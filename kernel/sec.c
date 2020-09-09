@@ -1248,12 +1248,92 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             break;
         }
 
+        case TokenGroups: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenGroups\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenPrimaryGroup: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenPrimaryGroup\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenPrivileges: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenPrivileges\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenOwner: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenOwner\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenImpersonationLevel: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenImpersonationLevel\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenStatistics: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenStatistics\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenType: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenType\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenDefaultDacl: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenDefaultDacl\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenElevationType: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenElevationType\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenElevation: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenElevation\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenSessionId: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenSessionId\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenVirtualizationEnabled: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenVirtualizationEnabled\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenIntegrityLevel: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenIntegrityLevel\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenAppContainerSid: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenAppContainerSid\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenIsAppContainer: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenIsAppContainer\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
+        case TokenLogonSid: // FIXME
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenLogonSid\n");
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+
         default:
             printk(KERN_INFO "NtQueryInformationToken: unhandled info class %u\n",
                    TokenInformationClass);
 
             Status = STATUS_INVALID_INFO_CLASS;
-            goto end;
+            break;
     }
 
 end:
