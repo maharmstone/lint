@@ -1,5 +1,6 @@
 #include "muwine.h"
 #include "obj.h"
+#include "reg.h"
 
 static LIST_HEAD(symlink_list);
 static DEFINE_SPINLOCK(symlink_list_lock);
@@ -912,7 +913,7 @@ void object_cleanup(object_header* obj) {
     if (obj->type->cleanup)
         obj->type->cleanup(obj);
 
-    if (obj->permanent || obj->path.Length == 0)
+    if (obj->permanent || obj->path.Length == 0 || obj->type == key_type)
         return;
 
     // remove temporary object from hierarchy

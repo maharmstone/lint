@@ -37,6 +37,8 @@
                        KEY_ENUMERATE_SUB_KEYS | KEY_NOTIFY | KEY_CREATE_LINK | \
                        DELETE | READ_CONTROL | WRITE_DAC | WRITE_OWNER
 
+extern type_object* key_type;
+
 #pragma pack(push,1)
 
 typedef struct {

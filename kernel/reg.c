@@ -25,7 +25,8 @@ static DEFINE_TIMER(reg_flush_timer, reg_flush_timer_handler);
 
 static struct task_struct* reg_flush_thread = NULL;
 static bool reg_thread_running = true;
-static type_object* key_type = NULL;
+
+type_object* key_type = NULL;
 
 static struct notifier_block reboot_notifier = {
     .notifier_call = reboot_callback,
