@@ -1318,10 +1318,28 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             break;
         }
 
-        case TokenPrivileges: // FIXME
-            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenPrivileges\n");
-            Status = STATUS_INVALID_INFO_CLASS;
+        case TokenPrivileges: {
+            TOKEN_PRIVILEGES* tp = (TOKEN_PRIVILEGES*)TokenInformation;
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            *ReturnLength = offsetof(TOKEN_PRIVILEGES, Privileges);
+            *ReturnLength += sizeof(LUID_AND_ATTRIBUTES) * tok->privs->PrivilegeCount;
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            memcpy(tp, tok->privs, *ReturnLength);
+
+            Status = STATUS_SUCCESS;
+
             break;
+        }
 
         case TokenOwner: {
             TOKEN_OWNER* to = (TOKEN_OWNER*)TokenInformation;
