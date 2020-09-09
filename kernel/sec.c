@@ -429,6 +429,8 @@ void muwine_make_process_token(token_object** t) {
 
     strcpy(tok->source.SourceName, "SeMgr");
 
+    tok->type = TokenPrimary;
+
     *t = tok;
 }
 
@@ -608,6 +610,9 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     if (!check_privilege(SE_CREATE_TOKEN_PRIVILEGE))
         return STATUS_PRIVILEGE_NOT_HELD;
 
+    if (TokenType != TokenPrimary && TokenType != TokenImpersonation)
+        return STATUS_INVALID_PARAMETER;
+
     tok = kzalloc(sizeof(token_object), GFP_KERNEL);
 
     tok->header.refcount = 1;
@@ -676,6 +681,8 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
         memcpy(tok->default_dacl, TokenDefaultDacl->DefaultDacl,
                TokenDefaultDacl->DefaultDacl->AclSize);
     }
+
+    tok->type = TokenType;
 
     // add handle
 
@@ -1380,10 +1387,27 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             Status = STATUS_INVALID_INFO_CLASS;
             break;
 
-        case TokenType: // FIXME
-            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenType\n");
-            Status = STATUS_INVALID_INFO_CLASS;
+        case TokenType: {
+            TOKEN_TYPE* type = (TOKEN_TYPE*)TokenInformation;
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            *ReturnLength = sizeof(TOKEN_TYPE);
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            *type = tok->type;
+
+            Status = STATUS_SUCCESS;
+
             break;
+        }
 
         case TokenDefaultDacl: // FIXME
             printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenDefaultDacl\n");

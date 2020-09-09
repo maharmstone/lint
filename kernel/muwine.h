@@ -303,7 +303,7 @@ NTSTATUS NtNotifyChangeMultipleKeys(HANDLE KeyHandle, ULONG Count, OBJECT_ATTRIB
 
 // sec.c
 typedef enum {
-    TokenPrimary,
+    TokenPrimary = 1,
     TokenImpersonation
 } TOKEN_TYPE;
 

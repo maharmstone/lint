@@ -158,6 +158,7 @@ typedef struct _token_object {
     TOKEN_GROUPS* groups;
     TOKEN_SOURCE source;
     PACL default_dacl;
+    TOKEN_TYPE type;
 } token_object;
 
 typedef struct _SECURITY_DESCRIPTOR {
