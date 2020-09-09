@@ -1206,13 +1206,60 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
                                         TOKEN_INFORMATION_CLASS TokenInformationClass,
                                         PVOID TokenInformation, ULONG TokenInformationLength,
                                         PULONG ReturnLength) {
-    printk(KERN_INFO "NtQueryInformationToken(%lx, %x, %px, %x, %px): stub\n",
-           (uintptr_t)TokenHandle, TokenInformationClass, TokenInformation,
-           TokenInformationLength, ReturnLength);
+    NTSTATUS Status;
+    token_object* tok;
+    ACCESS_MASK access;
 
-    // FIXME
+    tok = (token_object*)get_object_from_handle(TokenHandle, &access);
+    if (!tok)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (tok->header.type != token_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    switch (TokenInformationClass) {
+        case TokenUser: {
+            TOKEN_USER* tu = (TOKEN_USER*)TokenInformation;
+            size_t size;
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            size = sid_length(tok->user);
+
+            *ReturnLength = sizeof(TOKEN_USER) + size;
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            tu->User.Attributes = 0;
+            tu->User.Sid = (PSID)&tu[1];
+
+            memcpy(tu->User.Sid, tok->user, size);
+
+            Status = STATUS_SUCCESS;
+
+            break;
+        }
+
+        default:
+            printk(KERN_INFO "NtQueryInformationToken: unhandled info class %u\n",
+                   TokenInformationClass);
+
+            Status = STATUS_INVALID_INFO_CLASS;
+            goto end;
+    }
+
+end:
+    dec_obj_refcount(&tok->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
@@ -1245,6 +1292,21 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
 
         if (size > TokenInformationLength)
             size = TokenInformationLength;
+
+        if (NT_SUCCESS(Status)) { // fix pointers
+            switch (TokenInformationClass) {
+                case TokenUser: {
+                    TOKEN_USER* tu = (TOKEN_USER*)buf;
+
+                    tu->User.Sid = (PSID)((uint8_t*)TokenInformation + ((uint8_t*)tu->User.Sid - buf));
+
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        }
 
         if (copy_to_user(TokenInformation, buf, size) != 0)
             Status = STATUS_ACCESS_VIOLATION;
