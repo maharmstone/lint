@@ -153,6 +153,7 @@ bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us
 
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us) {
     UNICODE_STRING* usus;
+    void* qos;
 
     if (get_user(ks->Length, &us->Length) < 0)
         return false;
@@ -166,7 +167,7 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
     if (get_user(ks->SecurityDescriptor, &us->SecurityDescriptor) < 0) // FIXME - copy buffer to user space
         return false;
 
-    if (get_user(ks->SecurityQualityOfService, &us->SecurityQualityOfService) < 0) // FIXME - copy buffer to user space
+    if (get_user(qos, &us->SecurityQualityOfService) < 0)
         return false;
 
     if (get_user(usus, &us->ObjectName) < 0)
@@ -184,6 +185,49 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
     } else
         ks->ObjectName = NULL;
 
+    if (qos) {
+        DWORD size;
+
+        if (get_user(size, (DWORD*)qos) < 0) {
+            if (ks->ObjectName) {
+                if (ks->ObjectName->Buffer)
+                    kfree(ks->ObjectName->Buffer);
+
+                kfree(ks->ObjectName);
+            }
+
+            return false;
+        }
+
+        if (size == 0)
+            ks->SecurityQualityOfService = NULL;
+        else {
+            ks->SecurityQualityOfService = kmalloc(size, GFP_KERNEL);
+            if (!ks->SecurityQualityOfService) {
+                if (ks->ObjectName) {
+                    if (ks->ObjectName->Buffer)
+                        kfree(ks->ObjectName->Buffer);
+
+                    kfree(ks->ObjectName);
+                }
+
+                return false;
+            }
+
+            if (copy_from_user(ks->SecurityQualityOfService, qos, size) != 0) {
+                if (ks->ObjectName) {
+                    if (ks->ObjectName->Buffer)
+                        kfree(ks->ObjectName->Buffer);
+
+                    kfree(ks->ObjectName);
+                }
+
+                return false;
+            }
+        }
+    } else
+        ks->SecurityQualityOfService = NULL;
+
     return true;
 }
 
@@ -194,6 +238,9 @@ void free_object_attributes(OBJECT_ATTRIBUTES* oa) {
 
         kfree(oa->ObjectName);
     }
+
+    if (oa->SecurityQualityOfService)
+        kfree(oa->SecurityQualityOfService);
 }
 
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count) {
