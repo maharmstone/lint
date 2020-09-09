@@ -90,6 +90,7 @@ static struct muwine_func funcs[] = {
     { user_NtOpenProcessToken, 3 },
     { user_NtAdjustPrivilegesToken, 6 },
     { user_NtQueryInformationToken, 5 },
+    { NtAllocateLocallyUniqueId, 1 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)

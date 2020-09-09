@@ -386,6 +386,14 @@ static void alloc_luid(LUID* luid) {
     luid->HighPart = val >> 32;
 }
 
+NTSTATUS NtAllocateLocallyUniqueId(PLUID Luid) {
+    printk(KERN_INFO "NtAllocateLocallyUniqueId(%px): stub\n", Luid);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 void muwine_make_process_token(token_object** t) {
     token_object* tok;
     unsigned int priv_count, i;
