@@ -821,6 +821,7 @@ NTSTATUS __stdcall NtQueryInformationToken(HANDLE TokenHandle,
                                            TOKEN_INFORMATION_CLASS TokenInformationClass,
                                            PVOID TokenInformation, ULONG TokenInformationLength,
                                            PULONG ReturnLength);
+NTSTATUS __stdcall NtAllocateLocallyUniqueId(PLUID Luid);
 
 #ifdef __cplusplus
 }

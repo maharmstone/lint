@@ -1559,3 +1559,18 @@ NTSTATUS __stdcall NtQueryInformationToken(HANDLE TokenHandle,
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtAllocateLocallyUniqueId(PLUID Luid) {
+    long ret;
+
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)Luid
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTALLOCATELOCALLYUNIQUEID, args, ret);
+
+    return (NTSTATUS)ret;
+}
