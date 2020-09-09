@@ -614,6 +614,38 @@ typedef struct _TOKEN_SOURCE {
     LUID SourceIdentifier;
 } TOKEN_SOURCE, *PTOKEN_SOURCE;
 
+typedef enum {
+    TokenUser = 1,
+    TokenGroups,
+    TokenPrivileges,
+    TokenOwner,
+    TokenPrimaryGroup,
+    TokenDefaultDacl,
+    TokenSource,
+    TokenType,
+    TokenImpersonationLevel,
+    TokenStatistics,
+    TokenRestrictedSids,
+    TokenSessionId,
+    TokenGroupsAndPrivileges,
+    TokenSessionReference,
+    TokenSandBoxInert,
+    TokenAuditPolicy,
+    TokenOrigin,
+    TokenElevationType,
+    TokenLinkedToken,
+    TokenElevation,
+    TokenHasRestrictions,
+    TokenAccessInformation,
+    TokenVirtualizationAllowed,
+    TokenVirtualizationEnabled,
+    TokenIntegrityLevel,
+    TokenUIAccess,
+    TokenMandatoryPolicy,
+    TokenLogonSid,
+    MaxTokenInfoClass
+} TOKEN_INFORMATION_CLASS;
+
 #endif
 
 void close_muwine();
@@ -785,6 +817,10 @@ NTSTATUS __stdcall NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAl
                                            ULONG PreviousPrivilegesLength,
                                            PTOKEN_PRIVILEGES PreviousPrivileges,
                                            PULONG RequiredLength);
+NTSTATUS __stdcall NtQueryInformationToken(HANDLE TokenHandle,
+                                           TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                           PVOID TokenInformation, ULONG TokenInformationLength,
+                                           PULONG ReturnLength);
 
 #ifdef __cplusplus
 }

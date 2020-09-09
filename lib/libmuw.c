@@ -1537,3 +1537,25 @@ NTSTATUS __stdcall NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAl
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtQueryInformationToken(HANDLE TokenHandle,
+                                           TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                           PVOID TokenInformation, ULONG TokenInformationLength,
+                                           PULONG ReturnLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)TokenHandle,
+        (uintptr_t)TokenInformationClass,
+        (uintptr_t)TokenInformation,
+        (uintptr_t)TokenInformationLength,
+        (uintptr_t)ReturnLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYINFORMATIONTOKEN, args, ret);
+
+    return (NTSTATUS)ret;
+}
