@@ -1263,10 +1263,32 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             Status = STATUS_INVALID_INFO_CLASS;
             break;
 
-        case TokenOwner: // FIXME
-            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenOwner\n");
-            Status = STATUS_INVALID_INFO_CLASS;
+        case TokenOwner: {
+            TOKEN_OWNER* to = (TOKEN_OWNER*)TokenInformation;
+            size_t size;
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            size = sid_length(tok->owner);
+
+            *ReturnLength = sizeof(TOKEN_OWNER) + size;
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            to->Owner = (PSID)&to[1];
+
+            memcpy(to->Owner, tok->owner, size);
+
+            Status = STATUS_SUCCESS;
+
             break;
+        }
 
         case TokenImpersonationLevel: // FIXME
             printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenImpersonationLevel\n");
@@ -1379,6 +1401,14 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
                     TOKEN_USER* tu = (TOKEN_USER*)buf;
 
                     tu->User.Sid = (PSID)((uint8_t*)TokenInformation + ((uint8_t*)tu->User.Sid - buf));
+
+                    break;
+                }
+
+                case TokenOwner: {
+                    TOKEN_OWNER* to = (TOKEN_OWNER*)buf;
+
+                    to->Owner = (PSID)((uint8_t*)TokenInformation + ((uint8_t*)to->Owner - buf));
 
                     break;
                 }
