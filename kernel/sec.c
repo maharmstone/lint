@@ -353,7 +353,8 @@ static NTSTATUS get_current_process_groups(token_object* tok) {
 
     for (i = 0; i < groups->ngroups; i++) {
         gid_to_sid(&tok->groups->Groups[i].Sid, groups->gid[i]);
-        tok->groups->Groups[i].Attributes = SE_GROUP_ENABLED;
+        tok->groups->Groups[i].Attributes =
+            SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
 
         if (groups->gid[i].val == primary_group.val)
             tok->primary_group = tok->groups->Groups[i].Sid;
@@ -361,7 +362,8 @@ static NTSTATUS get_current_process_groups(token_object* tok) {
 
     if (!primary_group_in_list) {
         gid_to_sid(&tok->groups->Groups[groups->ngroups].Sid, primary_group);
-        tok->groups->Groups[groups->ngroups].Attributes = SE_GROUP_ENABLED;
+        tok->groups->Groups[groups->ngroups].Attributes =
+            SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
 
         tok->primary_group = tok->groups->Groups[groups->ngroups].Sid;
     }

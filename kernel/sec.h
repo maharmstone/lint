@@ -91,6 +91,8 @@
 #define SE_TIME_ZONE_PRIVILEGE              34
 #define SE_CREATE_SYMBOLIC_LINK_PRIVILEGE   35
 
+#define SE_GROUP_MANDATORY          0x00000001
+#define SE_GROUP_ENABLED_BY_DEFAULT 0x00000002
 #define SE_GROUP_ENABLED            0x00000004
 
 typedef struct _LUID {
