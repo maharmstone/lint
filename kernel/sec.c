@@ -437,6 +437,7 @@ void muwine_make_process_token(token_object** t) {
     dacl_size += 2 * offsetof(ACCESS_ALLOWED_ACE, SidStart);
     dacl_size += sid_length(tok->owner);
     dacl_size += sizeof(sid_local_system);
+    // FIXME - don't duplicate ACE if owner is same as sid_local_system
 
     tok->default_dacl = kmalloc(dacl_size, GFP_KERNEL);
     // FIXME - handle malloc failure
@@ -1441,10 +1442,43 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             break;
         }
 
-        case TokenDefaultDacl: // FIXME
-            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenDefaultDacl\n");
-            Status = STATUS_INVALID_INFO_CLASS;
+        case TokenDefaultDacl: {
+            TOKEN_DEFAULT_DACL* tdd = (TOKEN_DEFAULT_DACL*)TokenInformation;
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            if (!tok->default_dacl) {
+                *ReturnLength = sizeof(TOKEN_DEFAULT_DACL);
+
+                if (TokenInformationLength < *ReturnLength) {
+                    Status = STATUS_BUFFER_TOO_SMALL;
+                    break;
+                }
+
+                tdd->DefaultDacl = NULL;
+                Status = STATUS_SUCCESS;
+
+                break;
+            }
+
+            *ReturnLength = sizeof(TOKEN_DEFAULT_DACL) + tok->default_dacl->AclSize;
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            tdd->DefaultDacl = (PACL)&tdd[1];
+
+            memcpy(tdd->DefaultDacl, tok->default_dacl, tok->default_dacl->AclSize);
+
+            Status = STATUS_SUCCESS;
+
             break;
+        }
 
         case TokenElevationType: // FIXME
             printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenElevationType\n");
@@ -1567,6 +1601,17 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
                     TOKEN_OWNER* to = (TOKEN_OWNER*)buf;
 
                     to->Owner = (PSID)((uint8_t*)TokenInformation + ((uint8_t*)to->Owner - buf));
+
+                    break;
+                }
+
+                case TokenDefaultDacl: {
+                    TOKEN_DEFAULT_DACL* tdd = (TOKEN_DEFAULT_DACL*)buf;
+
+                    if (!tdd->DefaultDacl)
+                        break;
+
+                    tdd->DefaultDacl = (PACL)((uint8_t*)TokenInformation + ((uint8_t*)tdd->DefaultDacl - buf));
 
                     break;
                 }
