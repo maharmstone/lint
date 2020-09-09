@@ -1253,10 +1253,32 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             Status = STATUS_INVALID_INFO_CLASS;
             break;
 
-        case TokenPrimaryGroup: // FIXME
-            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenPrimaryGroup\n");
-            Status = STATUS_INVALID_INFO_CLASS;
+        case TokenPrimaryGroup: {
+            TOKEN_PRIMARY_GROUP* tpg = (TOKEN_PRIMARY_GROUP*)TokenInformation;
+            size_t size;
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            size = sid_length(tok->primary_group);
+
+            *ReturnLength = sizeof(TOKEN_PRIMARY_GROUP) + size;
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            tpg->PrimaryGroup = (PSID)&tpg[1];
+
+            memcpy(tpg->PrimaryGroup, tok->primary_group, size);
+
+            Status = STATUS_SUCCESS;
+
             break;
+        }
 
         case TokenPrivileges: // FIXME
             printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenPrivileges\n");
@@ -1401,6 +1423,14 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
                     TOKEN_USER* tu = (TOKEN_USER*)buf;
 
                     tu->User.Sid = (PSID)((uint8_t*)TokenInformation + ((uint8_t*)tu->User.Sid - buf));
+
+                    break;
+                }
+
+                case TokenPrimaryGroup: {
+                    TOKEN_PRIMARY_GROUP* tpg = (TOKEN_PRIMARY_GROUP*)buf;
+
+                    tpg->PrimaryGroup = (PSID)((uint8_t*)TokenInformation + ((uint8_t*)tpg->PrimaryGroup - buf));
 
                     break;
                 }
