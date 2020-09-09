@@ -388,7 +388,7 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
                                       TOKEN_INFORMATION_CLASS TokenInformationClass,
                                       PVOID TokenInformation, ULONG TokenInformationLength,
                                       PULONG ReturnLength);
-NTSTATUS NtAllocateLocallyUniqueId(PLUID Luid);
+NTSTATUS user_NtAllocateLocallyUniqueId(PLUID Luid);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

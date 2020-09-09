@@ -386,12 +386,27 @@ static void alloc_luid(LUID* luid) {
     luid->HighPart = val >> 32;
 }
 
-NTSTATUS NtAllocateLocallyUniqueId(PLUID Luid) {
+static NTSTATUS NtAllocateLocallyUniqueId(PLUID Luid) {
     printk(KERN_INFO "NtAllocateLocallyUniqueId(%px): stub\n", Luid);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtAllocateLocallyUniqueId(PLUID Luid) {
+    NTSTATUS Status;
+    LUID l;
+
+    if (!Luid)
+        return STATUS_INVALID_PARAMETER;
+
+    Status = NtAllocateLocallyUniqueId(&l);
+
+    if (put_user(l, Luid) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 void muwine_make_process_token(token_object** t) {
