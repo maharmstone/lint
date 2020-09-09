@@ -1415,10 +1415,39 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             Status = STATUS_INVALID_INFO_CLASS;
             break;
 
-        case TokenStatistics: // FIXME
-            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenStatistics\n");
-            Status = STATUS_INVALID_INFO_CLASS;
+        case TokenStatistics: {
+            TOKEN_STATISTICS* ts = (TOKEN_STATISTICS*)TokenInformation;
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            *ReturnLength = sizeof(TOKEN_STATISTICS);
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            ts->TokenId.LowPart = tok->token_id.LowPart;
+            ts->TokenId.HighPart = tok->token_id.HighPart;
+            ts->AuthenticationId.LowPart = tok->auth_id.LowPart;
+            ts->AuthenticationId.HighPart = tok->auth_id.HighPart;
+            ts->ExpirationTime.QuadPart = tok->expiry;
+            ts->TokenType = tok->type;
+            ts->ImpersonationLevel = tok->impersonation_level;
+            ts->DynamicCharged = 0;
+            ts->DynamicAvailable = 0;
+            ts->GroupCount = tok->groups->GroupCount;
+            ts->PrivilegeCount = tok->privs->PrivilegeCount;
+            ts->ModifiedId.LowPart = tok->modified_id.LowPart;
+            ts->ModifiedId.HighPart = tok->modified_id.HighPart;
+
+            Status = STATUS_SUCCESS;
+
             break;
+        }
 
         case TokenType: {
             TOKEN_TYPE* type = (TOKEN_TYPE*)TokenInformation;

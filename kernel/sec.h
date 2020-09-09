@@ -146,6 +146,13 @@ typedef struct _TOKEN_DEFAULT_DACL {
     PACL DefaultDacl;
 } TOKEN_DEFAULT_DACL, *PTOKEN_DEFAULT_DACL;
 
+typedef enum {
+    SecurityAnonymous,
+    SecurityIdentification,
+    SecurityImpersonation,
+    SecurityDelegation
+} SECURITY_IMPERSONATION_LEVEL;
+
 typedef struct _token_object {
     object_header header;
     struct rw_semaphore sem;
@@ -159,6 +166,9 @@ typedef struct _token_object {
     TOKEN_SOURCE source;
     PACL default_dacl;
     TOKEN_TYPE type;
+    SECURITY_IMPERSONATION_LEVEL impersonation_level;
+    LUID token_id;
+    LUID modified_id;
 } token_object;
 
 typedef struct _SECURITY_DESCRIPTOR {
@@ -194,3 +204,16 @@ typedef struct _TOKEN_OWNER {
 typedef struct _TOKEN_PRIMARY_GROUP {
     PSID PrimaryGroup;
 } TOKEN_PRIMARY_GROUP, *PTOKEN_PRIMARY_GROUP;
+
+typedef struct {
+    LUID TokenId;
+    LUID AuthenticationId;
+    LARGE_INTEGER ExpirationTime;
+    TOKEN_TYPE TokenType;
+    SECURITY_IMPERSONATION_LEVEL ImpersonationLevel;
+    DWORD DynamicCharged;
+    DWORD DynamicAvailable;
+    DWORD GroupCount;
+    DWORD PrivilegeCount;
+    LUID ModifiedId;
+} TOKEN_STATISTICS;
