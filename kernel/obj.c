@@ -926,7 +926,6 @@ void object_cleanup(object_header* obj) {
     }
 
     if (dir->header.type != dir_type) {
-        printk(KERN_INFO "object_cleanup: parent type was not Directory\n");
         dec_obj_refcount(&dir->header);
         return;
     }
