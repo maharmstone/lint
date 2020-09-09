@@ -87,7 +87,8 @@ void muwine_add_current_process(void) {
 
         if (obj2->pid == obj->pid) {
             spin_unlock(&process_list_lock);
-            dec_obj_refcount(&obj->header.h);
+            dec_obj_refcount(&obj->token->header);
+            free_object(&obj->header.h);
             return;
         }
 
