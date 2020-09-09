@@ -1447,10 +1447,32 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             break;
         }
 
-        case TokenImpersonationLevel: // FIXME
-            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenImpersonationLevel\n");
-            Status = STATUS_INVALID_INFO_CLASS;
+        case TokenImpersonationLevel: {
+            SECURITY_IMPERSONATION_LEVEL* sil = (SECURITY_IMPERSONATION_LEVEL*)TokenInformation;
+
+            if (tok->type != TokenImpersonation) {
+                Status = STATUS_INVALID_INFO_CLASS;
+                break;
+            }
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            *ReturnLength = sizeof(SECURITY_IMPERSONATION_LEVEL);
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            *sil = tok->impersonation_level;
+
+            Status = STATUS_SUCCESS;
+
             break;
+        }
 
         case TokenStatistics: {
             TOKEN_STATISTICS* ts = (TOKEN_STATISTICS*)TokenInformation;
