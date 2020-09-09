@@ -1202,6 +1202,19 @@ NTSTATUS user_NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPriv
     return Status;
 }
 
+NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
+                                 TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                 PVOID TokenInformation, ULONG TokenInformationLength,
+                                 PULONG ReturnLength) {
+    printk(KERN_INFO "NtQueryInformationToken(%lx, %x, %px, %x, %px): stub\n",
+           (uintptr_t)TokenHandle, TokenInformationClass, TokenInformation,
+           TokenInformationLength, ReturnLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 NTSTATUS muwine_init_tokens(void) {
     UNICODE_STRING us;
 

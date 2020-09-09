@@ -307,6 +307,38 @@ typedef enum {
     TokenImpersonation
 } TOKEN_TYPE;
 
+typedef enum {
+    TokenUser = 1,
+    TokenGroups,
+    TokenPrivileges,
+    TokenOwner,
+    TokenPrimaryGroup,
+    TokenDefaultDacl,
+    TokenSource,
+    TokenType,
+    TokenImpersonationLevel,
+    TokenStatistics,
+    TokenRestrictedSids,
+    TokenSessionId,
+    TokenGroupsAndPrivileges,
+    TokenSessionReference,
+    TokenSandBoxInert,
+    TokenAuditPolicy,
+    TokenOrigin,
+    TokenElevationType,
+    TokenLinkedToken,
+    TokenElevation,
+    TokenHasRestrictions,
+    TokenAccessInformation,
+    TokenVirtualizationAllowed,
+    TokenVirtualizationEnabled,
+    TokenIntegrityLevel,
+    TokenUIAccess,
+    TokenMandatoryPolicy,
+    TokenLogonSid,
+    MaxTokenInfoClass
+} TOKEN_INFORMATION_CLASS;
+
 typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;
 typedef struct _SID SID;
 typedef struct _token_object token_object;
@@ -339,6 +371,10 @@ NTSTATUS user_NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPriv
                                       ULONG PreviousPrivilegesLength,
                                       PTOKEN_PRIVILEGES PreviousPrivileges,
                                       PULONG RequiredLength);
+NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
+                                 TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                 PVOID TokenInformation, ULONG TokenInformationLength,
+                                 PULONG ReturnLength);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000
