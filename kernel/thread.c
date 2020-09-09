@@ -274,25 +274,15 @@ NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
         return STATUS_ACCESS_VIOLATION;
 
     if (ObjectAttributes && oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtCreateThread(&h, DesiredAccess, ObjectAttributes ? &oa : NULL, ProcessHandle,
                             &client_id, &context, &initial_teb, CreateSuspended);
 
-    if (ObjectAttributes && oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    if (ObjectAttributes)
+        free_object_attributes(&oa);
 
     if (copy_to_user(ClientId, &client_id, sizeof(CLIENT_ID)) != 0)
         Status = STATUS_ACCESS_VIOLATION;

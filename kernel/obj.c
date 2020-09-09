@@ -628,24 +628,13 @@ NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK Desir
         return STATUS_ACCESS_VIOLATION;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtCreateDirectoryObject(&h, DesiredAccess, &oa);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (put_user(h, DirectoryHandle) < 0)
         Status = STATUS_ACCESS_VIOLATION;
@@ -864,24 +853,12 @@ NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAcc
         return STATUS_ACCESS_VIOLATION;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     if (!get_user_unicode_string(&dest, DestinationName)) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_ACCESS_VIOLATION;
     }
 
@@ -890,12 +867,7 @@ NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAcc
     if (DestinationName && dest.Buffer)
         kfree(dest.Buffer);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (put_user(h, pHandle) < 0)
         Status = STATUS_ACCESS_VIOLATION;

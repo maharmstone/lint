@@ -78,24 +78,14 @@ NTSTATUS user_NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
         return STATUS_ACCESS_VIOLATION;
 
     if (ObjectAttributes && oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtCreateTimer(&h, DesiredAccess, ObjectAttributes ? &oa : NULL, TimerType);
 
-    if (ObjectAttributes && oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    if (ObjectAttributes)
+        free_object_attributes(&oa);
 
     if (put_user(h, TimerHandle) < 0)
         Status = STATUS_ACCESS_VIOLATION;
@@ -196,24 +186,13 @@ NTSTATUS user_NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
         return STATUS_ACCESS_VIOLATION;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtOpenTimer(&h, DesiredAccess, &oa);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (put_user(h, TimerHandle) < 0)
         Status = STATUS_ACCESS_VIOLATION;

@@ -125,12 +125,7 @@ NTSTATUS user_NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJEC
         if (ea)
             kfree(ea);
 
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
+        free_object_attributes(&oa);
 
         return STATUS_INVALID_PARAMETER;
     }
@@ -141,12 +136,7 @@ NTSTATUS user_NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJEC
     if (ea)
         kfree(ea);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
         Status = STATUS_ACCESS_VIOLATION;
@@ -177,24 +167,13 @@ NTSTATUS user_NtOpenFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_
         return STATUS_ACCESS_VIOLATION;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtOpenFile(&h, DesiredAccess, &oa, &iosb, ShareAccess, OpenOptions);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (put_user(h, FileHandle) < 0)
         Status = STATUS_ACCESS_VIOLATION;
@@ -862,24 +841,13 @@ NTSTATUS user_NtQueryAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
         return STATUS_ACCESS_VIOLATION;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtQueryAttributesFile(&oa, &fbi);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (copy_to_user(FileInformation, &fbi, sizeof(FILE_BASIC_INFORMATION)) != 0)
         Status = STATUS_ACCESS_VIOLATION;
@@ -929,24 +897,13 @@ NTSTATUS user_NtQueryFullAttributesFile(POBJECT_ATTRIBUTES ObjectAttributes,
         return STATUS_ACCESS_VIOLATION;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtQueryFullAttributesFile(&oa, &fnoi);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (copy_to_user(FileInformation, &fnoi, sizeof(FILE_NETWORK_OPEN_INFORMATION)) != 0)
         Status = STATUS_ACCESS_VIOLATION;

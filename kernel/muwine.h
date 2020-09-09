@@ -262,6 +262,7 @@ NTSTATUS muwine_error_to_ntstatus(int err);
 bool read_user_string(const char* str_us, char* str_ks, unsigned int maxlen);
 bool get_user_unicode_string(UNICODE_STRING* ks, const __user UNICODE_STRING* us);
 bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRIBUTES* us);
+void free_object_attributes(OBJECT_ATTRIBUTES* oa);
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count);
 int strnicmp(const char* string1, const char* string2, size_t count);
 NTSTATUS utf8_to_utf16(WCHAR* dest, ULONG dest_max, ULONG* dest_len, const char* src, ULONG src_len);

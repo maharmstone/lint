@@ -867,24 +867,13 @@ NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_AT
         return STATUS_INVALID_PARAMETER;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtOpenKeyEx(&h, DesiredAccess, &oa, 0);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (put_user(h, KeyHandle) < 0) {
         if (NT_SUCCESS(Status))
@@ -909,24 +898,13 @@ NTSTATUS user_NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
         return STATUS_INVALID_PARAMETER;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtOpenKeyEx(&h, DesiredAccess, &oa, OpenOptions);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (put_user(h, KeyHandle) < 0) {
         if (NT_SUCCESS(Status))
@@ -3871,12 +3849,7 @@ NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
         if (us.Buffer)
             kfree(us.Buffer);
 
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
+        free_object_attributes(&oa);
 
         return STATUS_INVALID_PARAMETER;
     }
@@ -3886,12 +3859,7 @@ NTSTATUS user_NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
     if (us.Buffer)
         kfree(us.Buffer);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (NT_SUCCESS(Status)) {
         if (put_user(h, KeyHandle) != 0)
@@ -4571,12 +4539,7 @@ NTSTATUS user_NtUnloadKey(POBJECT_ATTRIBUTES DestinationKeyName) {
 
     Status = NtUnloadKey(&oa);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     return Status;
 }

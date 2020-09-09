@@ -65,25 +65,15 @@ NTSTATUS user_NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAcce
         return STATUS_ACCESS_VIOLATION;
 
     if (ObjectAttributes && oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtCreateSemaphore(&h, DesiredAccess, ObjectAttributes ? &oa : NULL,
                                InitialCount, MaximumCount);
 
-    if (ObjectAttributes && oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    if (ObjectAttributes)
+        free_object_attributes(&oa);
 
     if (put_user(h, SemaphoreHandle) < 0)
         Status = STATUS_ACCESS_VIOLATION;
@@ -184,24 +174,13 @@ NTSTATUS user_NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess
         return STATUS_ACCESS_VIOLATION;
 
     if (oa.Attributes & OBJ_KERNEL_HANDLE) {
-        if (oa.ObjectName) {
-            if (oa.ObjectName->Buffer)
-                kfree(oa.ObjectName->Buffer);
-
-            kfree(oa.ObjectName);
-        }
-
+        free_object_attributes(&oa);
         return STATUS_INVALID_PARAMETER;
     }
 
     Status = NtOpenSemaphore(&h, DesiredAccess, &oa);
 
-    if (oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    free_object_attributes(&oa);
 
     if (put_user(h, SemaphoreHandle) < 0)
         Status = STATUS_ACCESS_VIOLATION;

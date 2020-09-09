@@ -187,6 +187,15 @@ bool get_user_object_attributes(OBJECT_ATTRIBUTES* ks, const __user OBJECT_ATTRI
     return true;
 }
 
+void free_object_attributes(OBJECT_ATTRIBUTES* oa) {
+    if (oa->ObjectName) {
+        if (oa->ObjectName->Buffer)
+            kfree(oa->ObjectName->Buffer);
+
+        kfree(oa->ObjectName);
+    }
+}
+
 int wcsnicmp(const WCHAR* string1, const WCHAR* string2, size_t count) {
     size_t i;
 

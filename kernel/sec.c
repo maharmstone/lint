@@ -998,12 +998,8 @@ NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
         Status = STATUS_ACCESS_VIOLATION;
 
 end:
-    if (ObjectAttributes && oa.ObjectName) {
-        if (oa.ObjectName->Buffer)
-            kfree(oa.ObjectName->Buffer);
-
-        kfree(oa.ObjectName);
-    }
+    if (ObjectAttributes)
+        free_object_attributes(&oa);
 
 end2:
     if (TokenDefaultDacl)
