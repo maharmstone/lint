@@ -554,7 +554,7 @@ typedef enum {
 } SEMAPHORE_INFORMATION_CLASS;
 
 typedef enum {
-    TokenPrimary,
+    TokenPrimary = 1,
     TokenImpersonation
 } TOKEN_TYPE;
 
