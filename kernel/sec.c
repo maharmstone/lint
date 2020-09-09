@@ -1202,10 +1202,10 @@ NTSTATUS user_NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPriv
     return Status;
 }
 
-NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
-                                 TOKEN_INFORMATION_CLASS TokenInformationClass,
-                                 PVOID TokenInformation, ULONG TokenInformationLength,
-                                 PULONG ReturnLength) {
+static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
+                                        TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                        PVOID TokenInformation, ULONG TokenInformationLength,
+                                        PULONG ReturnLength) {
     printk(KERN_INFO "NtQueryInformationToken(%lx, %x, %px, %x, %px): stub\n",
            (uintptr_t)TokenHandle, TokenInformationClass, TokenInformation,
            TokenInformationLength, ReturnLength);
@@ -1213,6 +1213,49 @@ NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
+                                      TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                      PVOID TokenInformation, ULONG TokenInformationLength,
+                                      PULONG ReturnLength) {
+    NTSTATUS Status;
+    ULONG retlen;
+    uint8_t* buf;
+
+    if (!ReturnLength)
+        return STATUS_INVALID_PARAMETER;
+
+    if ((uintptr_t)TokenHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (TokenInformationLength > 0) {
+        buf = kmalloc(TokenInformationLength, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        buf = NULL;
+
+    Status = NtQueryInformationToken(TokenHandle, TokenInformationClass,
+                                     buf, TokenInformationLength,
+                                     &retlen);
+
+    if (buf) {
+        ULONG size = retlen;
+
+        if (size > TokenInformationLength)
+            size = TokenInformationLength;
+
+        if (copy_to_user(TokenInformation, buf, size) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(buf);
+    }
+
+    if (put_user(retlen, ReturnLength) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS muwine_init_tokens(void) {
