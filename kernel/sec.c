@@ -1219,6 +1219,8 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
         goto end;
     }
 
+    down_read(&tok->sem);
+
     switch (TokenInformationClass) {
         case TokenUser: {
             TOKEN_USER* tu = (TOKEN_USER*)TokenInformation;
@@ -1248,10 +1250,46 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             break;
         }
 
-        case TokenGroups: // FIXME
-            printk(KERN_INFO "NtQueryInformationToken: unhandled info class TokenGroups\n");
-            Status = STATUS_INVALID_INFO_CLASS;
+        case TokenGroups: {
+            TOKEN_GROUPS* tg = (TOKEN_GROUPS*)TokenInformation;
+            unsigned int i;
+            uint8_t* buf;
+
+            if (!(access & TOKEN_QUERY)) {
+                Status = STATUS_ACCESS_DENIED;
+                break;
+            }
+
+            *ReturnLength = offsetof(TOKEN_GROUPS, Groups);
+            *ReturnLength += sizeof(SID_AND_ATTRIBUTES) * tok->groups->GroupCount;
+
+            buf = (uint8_t*)TokenInformation + *ReturnLength;
+
+            for (i = 0; i < tok->groups->GroupCount; i++) {
+                *ReturnLength += sid_length(tok->groups->Groups[i].Sid);
+            }
+
+            if (TokenInformationLength < *ReturnLength) {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            tg->GroupCount = tok->groups->GroupCount;
+
+            for (i = 0; i < tok->groups->GroupCount; i++) {
+                size_t size = sid_length(tok->groups->Groups[i].Sid);
+
+                tg->Groups[i].Attributes = tok->groups->Groups[i].Attributes;
+                tg->Groups[i].Sid = (PSID)buf;
+
+                memcpy(buf, tok->groups->Groups[i].Sid, size);
+                buf += size;
+            }
+
+            Status = STATUS_SUCCESS;
+
             break;
+        }
 
         case TokenPrimaryGroup: {
             TOKEN_PRIMARY_GROUP* tpg = (TOKEN_PRIMARY_GROUP*)TokenInformation;
@@ -1380,6 +1418,8 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             break;
     }
 
+    up_read(&tok->sem);
+
 end:
     dec_obj_refcount(&tok->header);
 
@@ -1423,6 +1463,18 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
                     TOKEN_USER* tu = (TOKEN_USER*)buf;
 
                     tu->User.Sid = (PSID)((uint8_t*)TokenInformation + ((uint8_t*)tu->User.Sid - buf));
+
+                    break;
+                }
+
+                case TokenGroups: {
+                    TOKEN_GROUPS* tg = (TOKEN_GROUPS*)buf;
+                    unsigned int i;
+
+                    for (i = 0; i < tg->GroupCount; i++) {
+                        tg->Groups[i].Sid = (PSID)((uint8_t*)TokenInformation +
+                                                ((uint8_t*)tg->Groups[i].Sid - buf));
+                    }
 
                     break;
                 }
