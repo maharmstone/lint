@@ -217,3 +217,12 @@ typedef struct {
     DWORD PrivilegeCount;
     LUID ModifiedId;
 } TOKEN_STATISTICS;
+
+typedef BOOLEAN SECURITY_CONTEXT_TRACKING_MODE;
+
+typedef struct {
+    DWORD Length;
+    SECURITY_IMPERSONATION_LEVEL ImpersonationLevel;
+    SECURITY_CONTEXT_TRACKING_MODE ContextTrackingMode;
+    BOOLEAN EffectiveOnly;
+} SECURITY_QUALITY_OF_SERVICE;

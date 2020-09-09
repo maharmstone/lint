@@ -673,12 +673,32 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     ACCESS_MASK access;
     unsigned int i;
     size_t privsize;
+    SECURITY_IMPERSONATION_LEVEL impersonation_level;
 
     if (!check_privilege(SE_CREATE_TOKEN_PRIVILEGE))
         return STATUS_PRIVILEGE_NOT_HELD;
 
     if (TokenType != TokenPrimary && TokenType != TokenImpersonation)
         return STATUS_INVALID_PARAMETER;
+
+    if (TokenType == TokenImpersonation) {
+        SECURITY_QUALITY_OF_SERVICE* qos;
+
+        if (!ObjectAttributes || !ObjectAttributes->SecurityQualityOfService)
+            return STATUS_BAD_IMPERSONATION_LEVEL;
+
+        qos = ObjectAttributes->SecurityQualityOfService;
+
+        if (qos->Length < sizeof(SECURITY_QUALITY_OF_SERVICE))
+            return STATUS_INVALID_PARAMETER;
+
+        impersonation_level = qos->ImpersonationLevel;
+
+        if (impersonation_level != SecurityAnonymous && impersonation_level != SecurityIdentification &&
+            impersonation_level != SecurityImpersonation && impersonation_level != SecurityDelegation) {
+            return STATUS_BAD_IMPERSONATION_LEVEL;
+        }
+    }
 
     tok = kzalloc(sizeof(token_object), GFP_KERNEL);
 
@@ -753,6 +773,9 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
 
     alloc_luid(&tok->token_id);
     alloc_luid(&tok->modified_id);
+
+    if (TokenType == TokenImpersonation)
+        tok->impersonation_level = impersonation_level;
 
     // add handle
 
