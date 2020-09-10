@@ -1595,3 +1595,22 @@ NTSTATUS __stdcall NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION Sec
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                     BOOLEAN OpenAsSelf, PHANDLE TokenHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)OpenAsSelf,
+        (uintptr_t)TokenHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENTHREADTOKEN, args, ret);
+
+    return (NTSTATUS)ret;
+}

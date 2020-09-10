@@ -829,6 +829,8 @@ NTSTATUS __stdcall NtAllocateLocallyUniqueId(PLUID Luid);
 NTSTATUS __stdcall NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                                          PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
                                          PULONG LengthNeeded);
+NTSTATUS __stdcall NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                     BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
 
 #ifdef __cplusplus
 }
