@@ -558,7 +558,7 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* s
     aaa->Mask = READ_CONTROL | KEY_NOTIFY | KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE;
     memcpy(&aaa->SidStart, sid_users, sizeof(sid_users));
 
-    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa[1] + sizeof(sid_users));
+    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa->SidStart + sizeof(sid_users));
     aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
     aaa->Header.AceFlags = CONTAINER_INHERIT_ACE;
     aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_administrators);
@@ -566,7 +566,7 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* s
                 KEY_ENUMERATE_SUB_KEYS | KEY_CREATE_SUB_KEY | KEY_SET_VALUE | KEY_QUERY_VALUE;
     memcpy(&aaa->SidStart, sid_administrators, sizeof(sid_administrators));
 
-    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa[1] + sizeof(sid_administrators));
+    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa->SidStart + sizeof(sid_administrators));
     aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
     aaa->Header.AceFlags = CONTAINER_INHERIT_ACE;
     aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_local_system);
@@ -574,7 +574,7 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* s
                 KEY_ENUMERATE_SUB_KEYS | KEY_CREATE_SUB_KEY | KEY_SET_VALUE | KEY_QUERY_VALUE;
     memcpy(&aaa->SidStart, sid_local_system, sizeof(sid_local_system));
 
-    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa[1] + sizeof(sid_local_system));
+    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)&aaa->SidStart + sizeof(sid_local_system));
     aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
     aaa->Header.AceFlags = CONTAINER_INHERIT_ACE;
     aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_creator_owner);
