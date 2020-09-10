@@ -91,7 +91,7 @@ static struct muwine_func funcs[] = {
     { user_NtAdjustPrivilegesToken, 6 },
     { user_NtQueryInformationToken, 5 },
     { user_NtAllocateLocallyUniqueId, 1 },
-    { NtQuerySecurityObject, 5 },
+    { user_NtQuerySecurityObject, 5 },
     { NtOpenThreadToken, 4 },
     { NtSetInformationThread, 4 },
 };

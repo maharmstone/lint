@@ -1752,9 +1752,9 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
     return Status;
 }
 
-NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
-                               PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
-                               PULONG LengthNeeded) {
+static NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                                      PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
+                                      PULONG LengthNeeded) {
     printk(KERN_INFO "NtQuerySecurityObject(%lx, %x, %px, %x, %px): stub\n",
            (uintptr_t)Handle, SecurityInformation, SecurityDescriptor,
            Length, LengthNeeded);
@@ -1762,6 +1762,48 @@ NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInfor
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                                    PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
+                                    PULONG LengthNeeded) {
+    NTSTATUS Status;
+    void* buf;
+    ULONG needed;
+
+    if (!SecurityDescriptor || !LengthNeeded)
+        return STATUS_INVALID_PARAMETER;
+
+    if (Handle != NtCurrentProcess() && Handle != NtCurrentThread() &&
+        (uintptr_t)Handle & KERNEL_HANDLE_MASK) {
+        return STATUS_INVALID_HANDLE;
+    }
+
+    if (Length > 0) {
+        buf = kmalloc(Length, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        buf = NULL;
+
+    Status = NtQuerySecurityObject(Handle, SecurityInformation, buf, Length, &needed);
+
+    if (buf) {
+        size_t size = needed;
+
+        if (needed > Length)
+            size = Length;
+
+        if (copy_to_user(SecurityDescriptor, buf, size) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(buf);
+    }
+
+    if (put_user(needed, LengthNeeded) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS muwine_init_tokens(void) {
