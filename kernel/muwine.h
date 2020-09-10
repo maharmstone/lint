@@ -1039,12 +1039,52 @@ typedef struct __attribute__((aligned(16))) {
     DWORD64 LastExceptionFromRip;
 } CONTEXT, *PCONTEXT;
 
+typedef enum {
+    ThreadBasicInformation,
+    ThreadTimes,
+    ThreadPriority,
+    ThreadBasePriority,
+    ThreadAffinityMask,
+    ThreadImpersonationToken,
+    ThreadDescriptorTableEntry,
+    ThreadEnableAlignmentFaultFixup,
+    ThreadEventPair_Reusable,
+    ThreadQuerySetWin32StartAddress,
+    ThreadZeroTlsCell,
+    ThreadPerformanceCount,
+    ThreadAmILastThread,
+    ThreadIdealProcessor,
+    ThreadPriorityBoost,
+    ThreadSetTlsArrayAddress,
+    ThreadIsIoPending,
+    ThreadHideFromDebugger,
+    ThreadBreakOnTermination,
+    ThreadSwitchLegacyState,
+    ThreadIsTerminated,
+    ThreadLastSystemCall,
+    ThreadIoPriority,
+    ThreadCycleTime,
+    ThreadPagePriority,
+    ThreadActualBasePriority,
+    ThreadTebInformation,
+    ThreadCSwitchMon,
+    ThreadCSwitchPmu,
+    ThreadWow64Context,
+    ThreadGroupInformation,
+    ThreadUmsInformation,
+    ThreadCounterProfiling,
+    ThreadIdealProcessorEx,
+    MaxThreadInfoClass
+} THREADINFOCLASS;
+
 NTSTATUS muwine_init_threads(void);
 NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                              POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
                              PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
                              BOOLEAN CreateSuspended);
 NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
+NTSTATUS NtSetInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInformationClass,
+                                PVOID ThreadInformation, ULONG ThreadInformationLength);
 int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
 
 // proc.c

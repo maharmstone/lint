@@ -311,6 +311,17 @@ NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus) {
     return NtTerminateThread(ThreadHandle, ExitStatus);
 }
 
+NTSTATUS NtSetInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInformationClass,
+                                PVOID ThreadInformation, ULONG ThreadInformationLength) {
+    printk(KERN_INFO "NtSetInformationThread(%lx, %x, %px, %x): stub\n",
+           (uintptr_t)ThreadHandle, ThreadInformationClass, ThreadInformation,
+           ThreadInformationLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 static void thread_object_close(object_header* obj) {
     thread_object* t = (thread_object*)obj;
 
