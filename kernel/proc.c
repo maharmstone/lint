@@ -55,17 +55,9 @@ void muwine_add_current_process(void) {
     struct list_head* le;
     process_object* obj;
 
-    obj = kzalloc(sizeof(process_object), GFP_KERNEL);
+    obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type);
+
     // FIXME - handle out of memory
-
-    obj->header.h.refcount = 1;
-
-    obj->header.h.type = process_type;
-    inc_obj_refcount(&process_type->header);
-
-    spin_lock_init(&obj->header.h.header_lock);
-    spin_lock_init(&obj->header.sync_lock);
-    INIT_LIST_HEAD(&obj->header.waiters);
 
     obj->pid = task_tgid_vnr(current);
 
@@ -230,21 +222,12 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
         return 0;
     }
 
-    new_obj = kzalloc(sizeof(process_object), GFP_KERNEL);
+    new_obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type);
     if (!new_obj) {
         printk(KERN_ERR "muwine fork_handler: out of memory\n");
         dec_obj_refcount(&obj->header.h);
         return 0;
     }
-
-    new_obj->header.h.refcount = 1;
-
-    new_obj->header.h.type = process_type;
-    inc_obj_refcount(&process_type->header);
-
-    spin_lock_init(&new_obj->header.h.header_lock);
-    spin_lock_init(&new_obj->header.sync_lock);
-    INIT_LIST_HEAD(&new_obj->header.waiters);
 
     new_obj->pid = retval;
 

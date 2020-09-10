@@ -32,19 +32,9 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = kzalloc(sizeof(timer_object), GFP_KERNEL);
+    obj = (timer_object*)muwine_alloc_object(sizeof(timer_object), timer_type);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
-
-    obj->header.h.refcount = 1;
-
-    obj->header.h.type = timer_type;
-    inc_obj_refcount(&timer_type->header);
-
-    spin_lock_init(&obj->header.h.header_lock);
-
-    spin_lock_init(&obj->header.sync_lock);
-    INIT_LIST_HEAD(&obj->header.waiters);
 
     obj->type = TimerType;
     spin_lock_init(&obj->lock);

@@ -886,6 +886,7 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
 NTSTATUS muwine_add_entry_in_hierarchy2(object_header** obj, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc);
 void object_cleanup(object_header* obj);
+object_header* muwine_alloc_object(size_t size, type_object* type);
 
 // sect.c
 typedef enum {

@@ -414,15 +414,8 @@ void muwine_make_process_token(token_object** t) {
     size_t dacl_size;
     ACCESS_ALLOWED_ACE* aaa;
 
-    tok = kzalloc(sizeof(token_object), GFP_KERNEL);
+    tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type);
     // FIXME - handle malloc failure
-
-    tok->header.refcount = 1;
-
-    tok->header.type = token_type;
-    inc_obj_refcount(&token_type->header);
-
-    spin_lock_init(&tok->header.header_lock);
 
     init_rwsem(&tok->sem);
 
@@ -702,14 +695,9 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
         }
     }
 
-    tok = kzalloc(sizeof(token_object), GFP_KERNEL);
-
-    tok->header.refcount = 1;
-
-    tok->header.type = token_type;
-    inc_obj_refcount(&token_type->header);
-
-    spin_lock_init(&tok->header.header_lock);
+    tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type);
+    if (!tok)
+        return STATUS_INSUFFICIENT_RESOURCES;
 
     init_rwsem(&tok->sem);
 

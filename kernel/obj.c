@@ -42,18 +42,9 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_obj
                                     uint32_t generic_all, uint32_t valid) {
     type_object* obj;
 
-    obj = kzalloc(sizeof(type_object), GFP_KERNEL);
+    obj = (type_object*)muwine_alloc_object(sizeof(type_object), type_type);
     if (!obj)
         return ERR_PTR(-ENOMEM);
-
-    obj->header.refcount = 1;
-
-    if (type_type) {
-        obj->header.type = type_type;
-        inc_obj_refcount(&type_type->header);
-    }
-
-    spin_lock_init(&obj->header.header_lock);
 
     obj->name.Length = obj->name.MaximumLength = name->Length;
 
@@ -349,18 +340,6 @@ static void dir_object_close(object_header* obj) {
     free_object(&dir->header);
 }
 
-static void init_dir(dir_object* dir) {
-    dir->header.refcount = 1;
-
-    dir->header.type = dir_type;
-    inc_obj_refcount(&dir_type->header);
-
-    spin_lock_init(&dir->header.header_lock);
-
-    spin_lock_init(&dir->children_lock);
-    INIT_LIST_HEAD(&dir->children);
-}
-
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part) {
     unsigned int i;
 
@@ -596,11 +575,12 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
     if (!ObjectAttributes || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
 
-    obj = kzalloc(sizeof(dir_object), GFP_KERNEL);
+    obj = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    init_dir(obj);
+    spin_lock_init(&obj->children_lock);
+    INIT_LIST_HEAD(&obj->children);
 
     Status = muwine_add_entry_in_hierarchy2((object_header**)&obj, ObjectAttributes);
     if (!NT_SUCCESS(Status))
@@ -760,20 +740,13 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
         return STATUS_INVALID_PARAMETER;
     }
 
-    obj = kzalloc(sizeof(symlink_object), GFP_KERNEL);
+    obj = (symlink_object*)muwine_alloc_object(sizeof(symlink_object), symlink_type);
     if (!obj) {
         if (us_alloc)
             kfree(us.Buffer);
 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-
-    obj->header.refcount = 1;
-
-    obj->header.type = symlink_type;
-    inc_obj_refcount(&symlink_type->header);
-
-    spin_lock_init(&obj->header.header_lock);
 
     obj->header.path.Length = us.Length;
     obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);
@@ -875,6 +848,32 @@ NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAcc
     return Status;
 }
 
+object_header* muwine_alloc_object(size_t size, type_object* type) {
+    object_header* obj;
+
+    obj = kzalloc(size, GFP_KERNEL);
+    if (!obj)
+        return NULL;
+
+    obj->refcount = 1;
+
+    obj->type = type;
+
+    if (type)
+        inc_obj_refcount(&type->header);
+
+    spin_lock_init(&obj->header_lock);
+
+    if (type && type->valid & SYNCHRONIZE) { // sync object
+        sync_object* sync = (sync_object*)obj;
+
+        spin_lock_init(&sync->sync_lock);
+        INIT_LIST_HEAD(&sync->waiters);
+    }
+
+    return obj;
+}
+
 void object_cleanup(object_header* obj) {
     NTSTATUS Status;
     dir_object* dir;
@@ -973,11 +972,12 @@ NTSTATUS muwine_init_objdir(void) {
         return muwine_error_to_ntstatus((int)(uintptr_t)symlink_type);
     }
 
-    dir_root = kzalloc(sizeof(dir_object), GFP_KERNEL);
+    dir_root = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type);
     if (!dir_root)
         return -ENOMEM;
 
-    init_dir(dir_root);
+    spin_lock_init(&dir_root->children_lock);
+    INIT_LIST_HEAD(&dir_root->children);
 
     dir_root->header.path.Length = dir_root->header.path.MaximumLength = sizeof(WCHAR);
     dir_root->header.path.Buffer = kmalloc(dir_root->header.path.Length, GFP_KERNEL);

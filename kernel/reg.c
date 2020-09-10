@@ -776,7 +776,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             // create key object and return handle
 
-            k = kzalloc(sizeof(key_object), GFP_KERNEL);
+            k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type);
             if (!k) {
                 up_read(&hive_list_sem);
 
@@ -789,12 +789,6 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
 
-            k->header.refcount = 1;
-
-            k->header.type = key_type;
-            inc_obj_refcount(&key_type->header);
-
-            spin_lock_init(&k->header.header_lock);
             k->header.path.Length = k->header.path.MaximumLength = orig_us.Length + sizeof(prefix) - sizeof(WCHAR);
             k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
@@ -3625,15 +3619,10 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     // create handle
 
-    k = kzalloc(sizeof(key_object), GFP_KERNEL);
+    k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type);
     if (!k)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    k->header.refcount = 1;
-    k->header.type = key_type;
-    inc_obj_refcount(&key_type->header);
-
-    spin_lock_init(&k->header.header_lock);
     k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + h->path.Length + us->Length;
 
     if (h->depth != 0 && us->Length > 0)

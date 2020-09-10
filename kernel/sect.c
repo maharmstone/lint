@@ -226,7 +226,8 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
         return muwine_error_to_ntstatus(written);
     }
 
-    sect = kzalloc(offsetof(section_object, sections) + (nt_header.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER)), GFP_KERNEL);
+    sect = (section_object*)muwine_alloc_object(offsetof(section_object, sections) + (nt_header.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER)),
+                                                section_type);
     if (!sect) {
         filp_close(file, NULL);
         vfree(buf);
@@ -310,7 +311,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
         file_size = image_size;
     } else {
-        obj = kzalloc(offsetof(section_object, sections), GFP_KERNEL);
+        obj = (section_object*)muwine_alloc_object(offsetof(section_object, sections), section_type);
         if (!obj) {
             if (file)
                 dec_obj_refcount(&file->header);
@@ -321,13 +322,6 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
             return STATUS_INSUFFICIENT_RESOURCES;
         }
     }
-
-    obj->header.refcount = 1;
-
-    obj->header.type = section_type;
-    inc_obj_refcount(&section_type->header);
-
-    spin_lock_init(&obj->header.header_lock);
 
     if (MaximumSize && MaximumSize->QuadPart != 0) {
         obj->max_size = MaximumSize->QuadPart;

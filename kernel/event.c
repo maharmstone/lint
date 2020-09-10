@@ -20,19 +20,10 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = kzalloc(sizeof(event_object), GFP_KERNEL);
+    obj = (event_object*)muwine_alloc_object(sizeof(event_object), event_type);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    obj->header.h.refcount = 1;
-
-    obj->header.h.type = event_type;
-    inc_obj_refcount(&event_type->header);
-
-    spin_lock_init(&obj->header.h.header_lock);
-
-    spin_lock_init(&obj->header.sync_lock);
-    INIT_LIST_HEAD(&obj->header.waiters);
     obj->header.signalled = InitialState;
 
     obj->type = EventType;

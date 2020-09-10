@@ -20,19 +20,11 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
 
     // create object
 
-    obj = kzalloc(sizeof(sem_object), GFP_KERNEL);
+    obj = (sem_object*)muwine_alloc_object(sizeof(sem_object), sem_type);
+
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    obj->header.h.refcount = 1;
-
-    obj->header.h.type = sem_type;
-    inc_obj_refcount(&sem_type->header);
-
-    spin_lock_init(&obj->header.h.header_lock);
-
-    spin_lock_init(&obj->header.sync_lock);
-    INIT_LIST_HEAD(&obj->header.waiters);
     obj->count = InitialCount;
     obj->max_count = MaximumCount;
     obj->header.signalled = obj->count > 0;

@@ -538,7 +538,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     // create file object (with path)
 
-    obj = kzalloc(sizeof(unixfs_file_object), GFP_KERNEL);
+    obj = (unixfs_file_object*)muwine_alloc_object(sizeof(unixfs_file_object), file_type);
     if (!obj) {
         down_write(&file_list_sem);
         free_unixfs_inode(ui);
@@ -546,11 +546,6 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    obj->fileobj.header.refcount = 1;
-    obj->fileobj.header.type = file_type;
-    inc_obj_refcount(&file_type->header);
-
-    spin_lock_init(&obj->fileobj.header.header_lock);
     obj->fileobj.header.path.Length = obj->fileobj.header.path.MaximumLength = us->Length + dev->header.path.Length;
     obj->fileobj.header.path.Buffer = kmalloc(obj->fileobj.header.path.Length, GFP_KERNEL);
 
@@ -1716,16 +1711,9 @@ NTSTATUS muwine_init_unixroot(void) {
         return muwine_error_to_ntstatus((int)(uintptr_t)file_type);
     }
 
-    dev = kzalloc(sizeof(device), GFP_KERNEL);
+    dev = (device*)muwine_alloc_object(sizeof(device), device_type);
     if (!dev)
         return STATUS_INSUFFICIENT_RESOURCES;
-
-    dev->header.refcount = 1;
-
-    dev->header.type = device_type;
-    inc_obj_refcount(&device_type->header);
-
-    spin_lock_init(&dev->header.header_lock);
 
     dev->header.path.Length = sizeof(name) - sizeof(WCHAR);
     dev->header.path.Buffer = kmalloc(dev->header.path.Length, GFP_KERNEL);

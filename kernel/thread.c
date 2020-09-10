@@ -192,19 +192,9 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     // create thread object
 
-    obj = kzalloc(sizeof(thread_object), GFP_KERNEL);
+    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
-
-    obj->header.h.refcount = 1;
-
-    obj->header.h.type = thread_type;
-    inc_obj_refcount(&thread_type->header);
-
-    spin_lock_init(&obj->header.h.header_lock);
-
-    spin_lock_init(&obj->header.sync_lock);
-    INIT_LIST_HEAD(&obj->header.waiters);
 
     get_task_struct(ts);
     obj->ts = ts;
@@ -438,21 +428,11 @@ thread_object* muwine_current_thread_object(void) {
 
     // add new
 
-    obj = kzalloc(sizeof(thread_object), GFP_KERNEL);
+    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type);
     if (!obj) {
         spin_unlock(&thread_list_lock);
         return NULL;
     }
-
-    obj->header.h.refcount = 1;
-
-    obj->header.h.type = thread_type;
-    inc_obj_refcount(&thread_type->header);
-
-    spin_lock_init(&obj->header.h.header_lock);
-
-    spin_lock_init(&obj->header.sync_lock);
-    INIT_LIST_HEAD(&obj->header.waiters);
 
     get_task_struct(current);
     obj->ts = current;

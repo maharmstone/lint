@@ -20,19 +20,10 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = kzalloc(sizeof(mutant_object), GFP_KERNEL);
+    obj = (mutant_object*)muwine_alloc_object(sizeof(mutant_object), mutant_type);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    obj->header.h.refcount = 1;
-
-    obj->header.h.type = mutant_type;
-    inc_obj_refcount(&mutant_type->header);
-
-    spin_lock_init(&obj->header.h.header_lock);
-
-    spin_lock_init(&obj->header.sync_lock);
-    INIT_LIST_HEAD(&obj->header.waiters);
     obj->header.signalled = !InitialOwner;
 
     if (InitialOwner) {
