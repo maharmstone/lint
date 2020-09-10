@@ -1614,3 +1614,23 @@ NTSTATUS __stdcall NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAcc
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle,
+                                          THREADINFOCLASS ThreadInformationClass,
+                                          PVOID ThreadInformation, ULONG ThreadInformationLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)ThreadInformationClass,
+        (uintptr_t)ThreadInformation,
+        (uintptr_t)ThreadInformationLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETINFORMATIONTHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
