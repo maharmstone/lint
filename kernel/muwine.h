@@ -182,6 +182,7 @@ typedef enum _KEY_VALUE_INFORMATION_CLASS {
 #define WRITE_OWNER             0x00080000
 #define SYNCHRONIZE             0x00100000
 #define STANDARD_RIGHTS_REQUIRED    WRITE_OWNER | WRITE_DAC | READ_CONTROL | DELETE
+#define ACCESS_SYSTEM_SECURITY  0x01000000
 #define MAXIMUM_ALLOWED         0x02000000
 #define GENERIC_READ            0x80000000
 #define GENERIC_WRITE           0x40000000
@@ -236,14 +237,16 @@ typedef NTSTATUS (*muwine_func13arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t a
                                      uintptr_t arg13);
 
 typedef struct _type_object type_object;
+typedef struct _SECURITY_DESCRIPTOR_RELATIVE SECURITY_DESCRIPTOR_RELATIVE;
 
 typedef struct _object_header {
     int refcount;
     int handle_count;
     type_object* type;
     UNICODE_STRING path;
-    spinlock_t path_lock;
+    spinlock_t header_lock;
     bool permanent;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
 } object_header;
 
 typedef struct {
@@ -368,7 +371,7 @@ typedef ULONG SECURITY_INFORMATION;
 
 typedef WORD SECURITY_DESCRIPTOR_CONTROL;
 
-typedef struct {
+typedef struct _SECURITY_DESCRIPTOR_RELATIVE {
     BYTE Revision;
     BYTE Sbz1;
     SECURITY_DESCRIPTOR_CONTROL Control;

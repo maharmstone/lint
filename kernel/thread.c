@@ -201,7 +201,7 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     obj->header.h.type = thread_type;
     inc_obj_refcount(&thread_type->header);
 
-    spin_lock_init(&obj->header.h.path_lock);
+    spin_lock_init(&obj->header.h.header_lock);
 
     spin_lock_init(&obj->header.sync_lock);
     INIT_LIST_HEAD(&obj->header.waiters);
@@ -449,7 +449,7 @@ thread_object* muwine_current_thread_object(void) {
     obj->header.h.type = thread_type;
     inc_obj_refcount(&thread_type->header);
 
-    spin_lock_init(&obj->header.h.path_lock);
+    spin_lock_init(&obj->header.h.header_lock);
 
     spin_lock_init(&obj->header.sync_lock);
     INIT_LIST_HEAD(&obj->header.waiters);

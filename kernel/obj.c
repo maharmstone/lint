@@ -53,7 +53,7 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_obj
         inc_obj_refcount(&type_type->header);
     }
 
-    spin_lock_init(&obj->header.path_lock);
+    spin_lock_init(&obj->header.header_lock);
 
     obj->name.Length = obj->name.MaximumLength = name->Length;
 
@@ -205,7 +205,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
     do {
         dir_object* new_parent = NULL;
 
-        spin_lock(&parent->header.path_lock);
+        spin_lock(&parent->header.header_lock);
         spin_lock(&parent->children_lock);
 
         if (parent->header.handle_count > 0 || parent->header.permanent) {
@@ -217,7 +217,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
                     if (left.Length == 0) {
                         if (open_parent) {
                             spin_unlock(&parent->children_lock);
-                            spin_unlock(&parent->header.path_lock);
+                            spin_unlock(&parent->header.header_lock);
 
                             *obj = &parent->header;
 
@@ -237,7 +237,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
                         inc_obj_refcount(item->object);
 
                         spin_unlock(&parent->children_lock);
-                        spin_unlock(&parent->header.path_lock);
+                        spin_unlock(&parent->header.header_lock);
 
                         dec_obj_refcount(&parent->header);
 
@@ -255,7 +255,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
                         inc_obj_refcount(item->object);
 
                         spin_unlock(&parent->children_lock);
-                        spin_unlock(&parent->header.path_lock);
+                        spin_unlock(&parent->header.header_lock);
 
                         dec_obj_refcount(&parent->header);
 
@@ -292,7 +292,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
             *obj = &parent->header;
 
             spin_unlock(&parent->children_lock);
-            spin_unlock(&parent->header.path_lock);
+            spin_unlock(&parent->header.header_lock);
 
             after->Buffer = left.Buffer;
             after->Length = left.Length;
@@ -317,7 +317,7 @@ NTSTATUS muwine_open_object(const UNICODE_STRING* us, object_header** obj, UNICO
         }
 
         spin_unlock(&parent->children_lock);
-        spin_unlock(&parent->header.path_lock);
+        spin_unlock(&parent->header.header_lock);
 
         dec_obj_refcount(&parent->header);
 
@@ -355,7 +355,7 @@ static void init_dir(dir_object* dir) {
     dir->header.type = dir_type;
     inc_obj_refcount(&dir_type->header);
 
-    spin_lock_init(&dir->header.path_lock);
+    spin_lock_init(&dir->header.header_lock);
 
     spin_lock_init(&dir->children_lock);
     INIT_LIST_HEAD(&dir->children);
@@ -773,7 +773,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
     obj->header.type = symlink_type;
     inc_obj_refcount(&symlink_type->header);
 
-    spin_lock_init(&obj->header.path_lock);
+    spin_lock_init(&obj->header.header_lock);
 
     obj->header.path.Length = us.Length;
     obj->header.path.Buffer = kmalloc(us.Length, GFP_KERNEL);

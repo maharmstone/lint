@@ -63,7 +63,7 @@ void muwine_add_current_process(void) {
     obj->header.h.type = process_type;
     inc_obj_refcount(&process_type->header);
 
-    spin_lock_init(&obj->header.h.path_lock);
+    spin_lock_init(&obj->header.h.header_lock);
     spin_lock_init(&obj->header.sync_lock);
     INIT_LIST_HEAD(&obj->header.waiters);
 
@@ -242,7 +242,7 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
     new_obj->header.h.type = process_type;
     inc_obj_refcount(&process_type->header);
 
-    spin_lock_init(&new_obj->header.h.path_lock);
+    spin_lock_init(&new_obj->header.h.header_lock);
     spin_lock_init(&new_obj->header.sync_lock);
     INIT_LIST_HEAD(&new_obj->header.waiters);
 

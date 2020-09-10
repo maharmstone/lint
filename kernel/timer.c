@@ -41,7 +41,7 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
     obj->header.h.type = timer_type;
     inc_obj_refcount(&timer_type->header);
 
-    spin_lock_init(&obj->header.h.path_lock);
+    spin_lock_init(&obj->header.h.header_lock);
 
     spin_lock_init(&obj->header.sync_lock);
     INIT_LIST_HEAD(&obj->header.waiters);
@@ -117,13 +117,13 @@ static NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
             return STATUS_INVALID_HANDLE;
         }
 
-        spin_lock(&obj->path_lock);
+        spin_lock(&obj->header_lock);
 
         us.Length = obj->path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
         us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
 
         if (!us.Buffer) {
-            spin_unlock(&obj->path_lock);
+            spin_unlock(&obj->header_lock);
             dec_obj_refcount(obj);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -133,7 +133,7 @@ static NTSTATUS NtOpenTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
         memcpy(&us.Buffer[(obj->path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
                ObjectAttributes->ObjectName->Length);
 
-        spin_unlock(&obj->path_lock);
+        spin_unlock(&obj->header_lock);
 
         dec_obj_refcount(obj);
     } else {

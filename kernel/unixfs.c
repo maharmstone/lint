@@ -550,7 +550,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
     obj->fileobj.header.type = file_type;
     inc_obj_refcount(&file_type->header);
 
-    spin_lock_init(&obj->fileobj.header.path_lock);
+    spin_lock_init(&obj->fileobj.header.header_lock);
     obj->fileobj.header.path.Length = obj->fileobj.header.path.MaximumLength = us->Length + dev->header.path.Length;
     obj->fileobj.header.path.Buffer = kmalloc(obj->fileobj.header.path.Length, GFP_KERNEL);
 
@@ -708,24 +708,24 @@ static NTSTATUS fill_in_file_name_information(unixfs_file_object* ufo, FILE_NAME
 
     // FIXME - handle fake symlinked drives, like C:
 
-    spin_lock(&ufo->fileobj.dev->header.path_lock);
+    spin_lock(&ufo->fileobj.dev->header.header_lock);
     dev_name_len = ufo->fileobj.dev->header.path.Length;
-    spin_unlock(&ufo->fileobj.dev->header.path_lock);
+    spin_unlock(&ufo->fileobj.dev->header.header_lock);
 
-    spin_lock(&ufo->fileobj.header.path_lock);
+    spin_lock(&ufo->fileobj.header.header_lock);
 
     fni->FileNameLength = ufo->fileobj.header.path.Length - dev_name_len;
 
     if (name_len < fni->FileNameLength) {
         memcpy(fni->FileName, ufo->fileobj.header.path.Buffer + (dev_name_len / sizeof(WCHAR)), name_len);
-        spin_unlock(&ufo->fileobj.header.path_lock);
+        spin_unlock(&ufo->fileobj.header.header_lock);
 
         *left -= offsetof(FILE_NAME_INFORMATION, FileName) + name_len;
         return STATUS_BUFFER_OVERFLOW;
     }
 
     memcpy(fni->FileName, ufo->fileobj.header.path.Buffer + (dev_name_len / sizeof(WCHAR)), fni->FileNameLength);
-    spin_unlock(&ufo->fileobj.header.path_lock);
+    spin_unlock(&ufo->fileobj.header.header_lock);
 
     *left -= offsetof(FILE_NAME_INFORMATION, FileName) + fni->FileNameLength;
 
@@ -1172,13 +1172,13 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     if (ret < 0)
         return muwine_error_to_ntstatus(ret);
 
-    spin_lock(&ufo->fileobj.header.path_lock);
+    spin_lock(&ufo->fileobj.header.header_lock);
 
     new_path.Length = ufo->fileobj.dev->header.path.Length + fri->FileNameLength;
     new_path.Buffer = kmalloc(new_path.Length, GFP_KERNEL);
 
     if (!new_path.Buffer) {
-        spin_unlock(&ufo->fileobj.header.path_lock);
+        spin_unlock(&ufo->fileobj.header.header_lock);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1189,7 +1189,7 @@ static NTSTATUS unixfs_rename(file_object* obj, FILE_RENAME_INFORMATION* fri) {
     memcpy(ufo->fileobj.header.path.Buffer + (ufo->fileobj.dev->header.path.Length / sizeof(WCHAR)),
         fri->FileName, fri->FileNameLength);
 
-    spin_unlock(&ufo->fileobj.header.path_lock);
+    spin_unlock(&ufo->fileobj.header.header_lock);
 
     return STATUS_SUCCESS;
 }
@@ -1725,7 +1725,7 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->header.type = device_type;
     inc_obj_refcount(&device_type->header);
 
-    spin_lock_init(&dev->header.path_lock);
+    spin_lock_init(&dev->header.header_lock);
 
     dev->header.path.Length = sizeof(name) - sizeof(WCHAR);
     dev->header.path.Buffer = kmalloc(dev->header.path.Length, GFP_KERNEL);

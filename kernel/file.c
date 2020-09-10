@@ -28,13 +28,13 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
             return STATUS_INVALID_HANDLE;
         }
 
-        spin_lock(&obj->path_lock);
+        spin_lock(&obj->header_lock);
 
         us.Length = obj->path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
         us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
 
         if (!us.Buffer) {
-            spin_unlock(&obj->path_lock);
+            spin_unlock(&obj->header_lock);
             dec_obj_refcount(obj);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -44,7 +44,7 @@ NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATT
         memcpy(&us.Buffer[(obj->path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
                ObjectAttributes->ObjectName->Length);
 
-        spin_unlock(&obj->path_lock);
+        spin_unlock(&obj->header_lock);
 
         dec_obj_refcount(obj);
     } else {
@@ -450,13 +450,13 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
                 goto end;
             }
 
-            spin_lock(&obj2->header.path_lock);
+            spin_lock(&obj2->header.header_lock);
 
             us.Length = obj2->header.path.Length + sizeof(WCHAR) + fri->FileNameLength;
             us.Buffer = kmalloc(us.Length, GFP_KERNEL);
 
             if (!us.Buffer) {
-                spin_unlock(&obj2->header.path_lock);
+                spin_unlock(&obj2->header.header_lock);
                 dec_obj_refcount(&obj2->header);
                 Status = STATUS_INSUFFICIENT_RESOURCES;
                 goto end;
@@ -467,7 +467,7 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
             memcpy(&us.Buffer[obj2->header.path.Length / sizeof(WCHAR)],
                    fri->FileName, fri->FileNameLength);
 
-            spin_unlock(&obj2->header.path_lock);
+            spin_unlock(&obj2->header.header_lock);
 
             us_alloc = true;
 

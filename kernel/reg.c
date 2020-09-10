@@ -673,13 +673,13 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             return STATUS_INVALID_HANDLE;
         }
 
-        spin_lock(&key->header.path_lock);
+        spin_lock(&key->header.header_lock);
 
         us.Length = key->header.path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
         us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
 
         if (!us.Buffer) {
-            spin_unlock(&key->header.path_lock);
+            spin_unlock(&key->header.header_lock);
             dec_obj_refcount(&key->header);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -689,7 +689,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         memcpy(&us.Buffer[(key->header.path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
                ObjectAttributes->ObjectName->Length);
 
-        spin_unlock(&key->header.path_lock);
+        spin_unlock(&key->header.header_lock);
 
         dec_obj_refcount(&key->header);
     } else {
@@ -794,7 +794,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             k->header.type = key_type;
             inc_obj_refcount(&key_type->header);
 
-            spin_lock_init(&k->header.path_lock);
+            spin_lock_init(&k->header.header_lock);
             k->header.path.Length = k->header.path.MaximumLength = orig_us.Length + sizeof(prefix) - sizeof(WCHAR);
             k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
@@ -3633,7 +3633,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->header.type = key_type;
     inc_obj_refcount(&key_type->header);
 
-    spin_lock_init(&k->header.path_lock);
+    spin_lock_init(&k->header.header_lock);
     k->header.path.Length = k->header.path.MaximumLength = sizeof(prefix) - sizeof(WCHAR) + h->path.Length + us->Length;
 
     if (h->depth != 0 && us->Length > 0)
@@ -3705,13 +3705,13 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
             return STATUS_INVALID_HANDLE;
         }
 
-        spin_lock(&key->header.path_lock);
+        spin_lock(&key->header.header_lock);
 
         us.Length = key->header.path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
         us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
 
         if (!us.Buffer) {
-            spin_unlock(&key->header.path_lock);
+            spin_unlock(&key->header.header_lock);
             dec_obj_refcount(&key->header);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
@@ -3721,7 +3721,7 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         memcpy(&us.Buffer[(key->header.path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
                ObjectAttributes->ObjectName->Length);
 
-        spin_unlock(&key->header.path_lock);
+        spin_unlock(&key->header.header_lock);
 
         dec_obj_refcount(&key->header);
     } else {
@@ -4222,12 +4222,12 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
 
     // FIXME - make sure file opened RW
 
-    spin_lock(&fileobj->path_lock);
+    spin_lock(&fileobj->header_lock);
 
     if (fileobj->path.Length > 0) {
         fs_path.Buffer = kmalloc(fileobj->path.Length, GFP_KERNEL);
         if (!fs_path.Buffer) {
-            spin_unlock(&fileobj->path_lock);
+            spin_unlock(&fileobj->header_lock);
             dec_obj_refcount(fileobj);
             vfree(h->data);
             kfree(h->path.Buffer);
@@ -4240,7 +4240,7 @@ static NTSTATUS NtLoadKey(POBJECT_ATTRIBUTES DestinationKeyName, POBJECT_ATTRIBU
         fs_path.Length = fs_path.MaximumLength = fileobj->path.Length;
     }
 
-    spin_unlock(&fileobj->path_lock);
+    spin_unlock(&fileobj->header_lock);
     dec_obj_refcount(fileobj);
 
     NtClose(fh);

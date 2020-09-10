@@ -422,7 +422,7 @@ void muwine_make_process_token(token_object** t) {
     tok->header.type = token_type;
     inc_obj_refcount(&token_type->header);
 
-    spin_lock_init(&tok->header.path_lock);
+    spin_lock_init(&tok->header.header_lock);
 
     init_rwsem(&tok->sem);
 
@@ -709,7 +709,7 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     tok->header.type = token_type;
     inc_obj_refcount(&token_type->header);
 
-    spin_lock_init(&tok->header.path_lock);
+    spin_lock_init(&tok->header.header_lock);
 
     init_rwsem(&tok->sem);
 
@@ -1752,16 +1752,127 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
     return Status;
 }
 
+static __inline SID* sd_get_owner(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    return (SID*)((uint8_t*)sd + sd->Owner);
+}
+
+static __inline SID* sd_get_group(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    return (SID*)((uint8_t*)sd + sd->Group);
+}
+
+static __inline ACL* sd_get_dacl(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    return (ACL*)((uint8_t*)sd + sd->Dacl);
+}
+
+static __inline ACL* sd_get_sacl(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    return (ACL*)((uint8_t*)sd + sd->Sacl);
+}
+
 static NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                                       PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
                                       PULONG LengthNeeded) {
-    printk(KERN_INFO "NtQuerySecurityObject(%lx, %x, %px, %x, %px): stub\n",
-           (uintptr_t)Handle, SecurityInformation, SecurityDescriptor,
-           Length, LengthNeeded);
+    NTSTATUS Status;
+    ACCESS_MASK access;
+    object_header* obj;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    DWORD off;
 
-    // FIXME
+    obj = get_object_from_handle(Handle, &access);
+    if (!obj)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    // FIXME - ATTRIBUTE_SECURITY_INFORMATION (8+)
+    // FIXME - BACKUP_SECURITY_INFORMATION (8+)
+    // FIXME - LABEL_SECURITY_INFORMATION (Vista+)
+    // FIXME - SCOPE_SECURITY_INFORMATION (8+)
+
+    if (SecurityInformation & (OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION) &&
+        !(access & READ_CONTROL)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    if (SecurityInformation & SACL_SECURITY_INFORMATION && !(access & ACCESS_SYSTEM_SECURITY)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
+
+    *LengthNeeded = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    spin_lock(&obj->header_lock);
+
+    if (SecurityInformation & OWNER_SECURITY_INFORMATION && obj->sd && obj->sd->Owner != 0)
+        *LengthNeeded += sid_length(sd_get_owner(obj->sd));
+
+    if (SecurityInformation & GROUP_SECURITY_INFORMATION && obj->sd && obj->sd->Group != 0)
+        *LengthNeeded += sid_length(sd_get_group(obj->sd));
+
+    if (SecurityInformation & DACL_SECURITY_INFORMATION && obj->sd && obj->sd->Dacl != 0)
+        *LengthNeeded += sd_get_dacl(obj->sd)->AclSize;
+
+    if (SecurityInformation & SACL_SECURITY_INFORMATION && obj->sd && obj->sd->Sacl != 0)
+        *LengthNeeded += sd_get_sacl(obj->sd)->AclSize;
+
+    if (*LengthNeeded > Length) {
+        Status = STATUS_BUFFER_TOO_SMALL;
+        goto end2;
+    }
+
+    sd = (SECURITY_DESCRIPTOR_RELATIVE*)SecurityDescriptor;
+    memset(sd, 0, *LengthNeeded);
+
+    sd->Revision = 1;
+
+    if (obj->sd)
+        sd->Control = obj->sd->Control;
+    else
+        sd->Control = SE_SELF_RELATIVE;
+
+    off = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    if (SecurityInformation & OWNER_SECURITY_INFORMATION && obj->sd && obj->sd->Owner != 0) {
+        SID* owner = sd_get_owner(obj->sd);
+        size_t length = sid_length(owner);
+
+        sd->Owner = off;
+        memcpy(sd_get_owner(sd), owner, length);
+        off += length;
+    }
+
+    if (SecurityInformation & GROUP_SECURITY_INFORMATION && obj->sd && obj->sd->Group != 0) {
+        SID* group = sd_get_group(obj->sd);
+        size_t length = sid_length(group);
+
+        sd->Group = off;
+        memcpy(sd_get_group(sd), group, length);
+        off += length;
+    }
+
+    if (SecurityInformation & DACL_SECURITY_INFORMATION && obj->sd && obj->sd->Dacl != 0) {
+        ACL* dacl = sd_get_dacl(obj->sd);
+
+        sd->Dacl = off;
+        memcpy(sd_get_dacl(sd), dacl, dacl->AclSize);
+        off += dacl->AclSize;
+    }
+
+    if (SecurityInformation & SACL_SECURITY_INFORMATION && obj->sd && obj->sd->Sacl != 0) {
+        ACL* sacl = sd_get_sacl(obj->sd);
+
+        sd->Sacl = off;
+        memcpy(sd_get_sacl(sd), sacl, sacl->AclSize);
+        off += sacl->AclSize;
+    }
+
+    Status = STATUS_SUCCESS;
+
+end2:
+    spin_unlock(&obj->header_lock);
+
+end:
+    dec_obj_refcount(obj);
+
+    return Status;
 }
 
 NTSTATUS user_NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
