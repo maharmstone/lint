@@ -408,6 +408,8 @@ NTSTATUS user_NtAllocateLocallyUniqueId(PLUID Luid);
 NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                                PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
                                PULONG LengthNeeded);
+NTSTATUS NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                           BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

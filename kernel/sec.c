@@ -1120,6 +1120,16 @@ NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess
     return Status;
 }
 
+NTSTATUS NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                           BOOLEAN OpenAsSelf, PHANDLE TokenHandle) {
+    printk(KERN_INFO "NtOpenThreadToken(%lx, %x, %x, %px): stub\n",
+           (uintptr_t)ThreadHandle, DesiredAccess, OpenAsSelf, TokenHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 static bool __inline luid_equal(const LUID* luid1, const LUID* luid2) {
     return luid1->LowPart == luid2->LowPart && luid1->HighPart == luid2->HighPart;
 }
