@@ -24,6 +24,7 @@
 #define INHERITED_ACE               0x10
 
 #define ACCESS_ALLOWED_ACE_TYPE     0x0
+#define ACCESS_DENIED_ACE_TYPE      0x1
 
 #define TOKEN_ASSIGN_PRIMARY        0x0001
 #define TOKEN_DUPLICATE             0x0002
@@ -187,6 +188,12 @@ typedef struct {
     ACCESS_MASK Mask;
     DWORD SidStart;
 } ACCESS_ALLOWED_ACE;
+
+typedef struct {
+    ACE_HEADER Header;
+    ACCESS_MASK Mask;
+    DWORD SidStart;
+} ACCESS_DENIED_ACE;
 
 typedef struct _TOKEN_USER {
     SID_AND_ATTRIBUTES User;

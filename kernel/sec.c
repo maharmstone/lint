@@ -1905,6 +1905,150 @@ NTSTATUS user_NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION Security
     return Status;
 }
 
+static token_object* muwine_get_current_token(void) {
+    process_object* proc;
+    token_object* tok;
+
+    // FIXME - get thread impersonation token if available
+
+    proc = muwine_current_process_object();
+    if (!proc)
+        return NULL;
+
+    if (!proc->token) {
+        dec_obj_refcount(&proc->header.h);
+        return NULL;
+    }
+
+    tok = proc->token;
+    inc_obj_refcount(&tok->header);
+
+    dec_obj_refcount(&proc->header.h);
+
+    return tok;
+}
+
+SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type) {
+    token_object* tok;
+    size_t len;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    DWORD off;
+
+    tok = muwine_get_current_token();
+    if (!tok)
+        return NULL;
+
+    len = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    down_read(&tok->sem);
+
+    if (tok->owner)
+        len += sid_length(tok->owner);
+
+    if (tok->primary_group)
+        len += sid_length(tok->primary_group);
+
+    if (tok->default_dacl)
+        len += tok->default_dacl->AclSize;
+
+    sd = kzalloc(len, GFP_KERNEL);
+    if (!sd) {
+        up_read(&tok->sem);
+        dec_obj_refcount(&tok->header);
+        return NULL;
+    }
+
+    sd->Revision = 1;
+    sd->Control = SE_OWNER_DEFAULTED | SE_SELF_RELATIVE;
+
+    off = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    if (tok->owner) {
+        size_t sidlen = sid_length(tok->owner);
+
+        sd->Owner = off;
+        memcpy(sd_get_owner(sd), tok->owner, sidlen);
+        off += sidlen;
+    }
+
+    if (tok->primary_group) {
+        size_t sidlen = sid_length(tok->primary_group);
+
+        sd->Group = off;
+        memcpy(sd_get_group(sd), tok->primary_group, sidlen);
+        off += sidlen;
+    }
+
+    if (tok->default_dacl) {
+        unsigned int i;
+        PACL dacl;
+        ACE_HEADER* ace;
+
+        // FIXME - check DACL is valid
+
+        sd->Dacl = off;
+        dacl = sd_get_dacl(sd);
+        memcpy(dacl, tok->default_dacl, tok->default_dacl->AclSize);
+
+        ace = (ACE_HEADER*)&dacl[1];
+        for (i = 0; i < dacl->AceCount; i++) {
+            if (ace->AceType == ACCESS_ALLOWED_ACE_TYPE) {
+                ACCESS_ALLOWED_ACE* aaa = (ACCESS_ALLOWED_ACE*)ace;
+
+                if (aaa->Mask & GENERIC_READ) {
+                    aaa->Mask &= ~GENERIC_READ;
+                    aaa->Mask |= type->generic_read;
+                }
+
+                if (aaa->Mask & GENERIC_WRITE) {
+                    aaa->Mask &= ~GENERIC_WRITE;
+                    aaa->Mask |= type->generic_write;
+                }
+
+                if (aaa->Mask & GENERIC_EXECUTE) {
+                    aaa->Mask &= ~GENERIC_EXECUTE;
+                    aaa->Mask |= type->generic_execute;
+                }
+
+                if (aaa->Mask & GENERIC_ALL) {
+                    aaa->Mask &= ~GENERIC_ALL;
+                    aaa->Mask |= type->generic_all;
+                }
+            } else if (ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+                ACCESS_DENIED_ACE* ada = (ACCESS_DENIED_ACE*)ace;
+
+                if (ada->Mask & GENERIC_READ) {
+                    ada->Mask &= ~GENERIC_READ;
+                    ada->Mask |= type->generic_read;
+                }
+
+                if (ada->Mask & GENERIC_WRITE) {
+                    ada->Mask &= ~GENERIC_WRITE;
+                    ada->Mask |= type->generic_write;
+                }
+
+                if (ada->Mask & GENERIC_EXECUTE) {
+                    ada->Mask &= ~GENERIC_EXECUTE;
+                    ada->Mask |= type->generic_execute;
+                }
+
+                if (ada->Mask & GENERIC_ALL) {
+                    ada->Mask &= ~GENERIC_ALL;
+                    ada->Mask |= type->generic_all;
+                }
+            }
+
+            ace = (ACE_HEADER*)((uint8_t*)ace + ace->AceSize);
+        }
+    }
+
+    up_read(&tok->sem);
+
+    dec_obj_refcount(&tok->header);
+
+    return sd;
+}
+
 NTSTATUS muwine_init_tokens(void) {
     UNICODE_STRING us;
 

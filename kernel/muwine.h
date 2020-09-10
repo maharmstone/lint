@@ -413,6 +413,7 @@ NTSTATUS user_NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION Security
                                     PULONG LengthNeeded);
 NTSTATUS NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                            BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
+SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

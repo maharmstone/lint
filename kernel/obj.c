@@ -857,6 +857,12 @@ object_header* muwine_alloc_object(size_t size, type_object* type) {
 
     obj->refcount = 1;
 
+    obj->sd = muwine_create_object_sd(type);
+//     if (!obj->sd) {
+//         kfree(obj);
+//         return NULL;
+//     }
+
     obj->type = type;
 
     if (type)
