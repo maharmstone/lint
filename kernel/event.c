@@ -372,12 +372,6 @@ NTSTATUS NtQueryEvent(HANDLE EventHandle, EVENT_INFORMATION_CLASS EventInformati
     return STATUS_NOT_IMPLEMENTED;
 }
 
-static void event_object_close(object_header* obj) {
-    event_object* ev = (event_object*)obj;
-
-    free_object(&ev->header.h);
-}
-
 NTSTATUS muwine_init_events(void) {
     UNICODE_STRING us;
 
@@ -386,7 +380,7 @@ NTSTATUS muwine_init_events(void) {
     us.Length = us.MaximumLength = sizeof(event_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)event_name;
 
-    event_type = muwine_add_object_type(&us, event_object_close, NULL,
+    event_type = muwine_add_object_type(&us, NULL, NULL,
                                         EVENT_GENERIC_READ, EVENT_GENERIC_WRITE,
                                         EVENT_GENERIC_EXECUTE, EVENT_ALL_ACCESS,
                                         EVENT_ALL_ACCESS);

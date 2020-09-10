@@ -49,8 +49,6 @@ static void file_object_close(object_header* obj) {
         kfree(f->fileobj.query_string.Buffer);
 
     dec_obj_refcount(&f->fileobj.dev->header);
-
-    free_object(&f->fileobj.header);
 }
 
 static void file_object_cleanup(object_header* obj) {
@@ -1672,12 +1670,6 @@ static struct file* unixfs_get_filp(file_object* obj) {
     return ufo->f;
 }
 
-static void device_object_close(object_header* obj) {
-    device* dev = (device*)obj;
-
-    free_object(&dev->header);
-}
-
 NTSTATUS muwine_init_unixroot(void) {
     NTSTATUS Status;
     device* dev;
@@ -1690,7 +1682,7 @@ NTSTATUS muwine_init_unixroot(void) {
     us.Length = us.MaximumLength = sizeof(device_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)device_name;
 
-    device_type = muwine_add_object_type(&us, device_object_close, NULL,
+    device_type = muwine_add_object_type(&us, NULL, NULL,
                                          FILE_GENERIC_READ, FILE_GENERIC_WRITE,
                                          FILE_GENERIC_EXECUTE, FILE_ALL_ACCESS,
                                          FILE_ALL_ACCESS);
@@ -1718,7 +1710,7 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->header.path.Length = sizeof(name) - sizeof(WCHAR);
     dev->header.path.Buffer = kmalloc(dev->header.path.Length, GFP_KERNEL);
     if (!dev->header.path.Buffer) {
-        dev->header.type->close(&dev->header);
+        dec_obj_refcount(&dev->header);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -1735,7 +1727,7 @@ NTSTATUS muwine_init_unixroot(void) {
 
     Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header, true, true, NULL);
     if (!NT_SUCCESS(Status)) {
-        dev->header.type->close(&dev->header);
+        dec_obj_refcount(&dev->header);
         return Status;
     }
 

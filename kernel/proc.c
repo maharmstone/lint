@@ -21,8 +21,6 @@ static void process_object_close(object_header* obj) {
     spin_lock(&process_list_lock);
     list_del(&p->list);
     spin_unlock(&process_list_lock);
-
-    free_object(&p->header.h);
 }
 
 process_object* muwine_current_process_object(void) {

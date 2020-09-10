@@ -308,8 +308,6 @@ static void mutant_object_close(object_header* obj) {
     spin_lock(&mutant_list_lock);
     list_del(&mut->list);
     spin_unlock(&mutant_list_lock);
-
-    free_object(&mut->header.h);
 }
 
 NTSTATUS muwine_init_mutants(void) {

@@ -333,8 +333,6 @@ static void timer_object_close(object_header* obj) {
 
     del_timer_sync(&t->timer);
     lockdep_unregister_key(&t->key);
-
-    free_object(&t->header.h);
 }
 
 NTSTATUS muwine_init_timers(void) {

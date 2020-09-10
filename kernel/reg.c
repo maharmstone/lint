@@ -914,8 +914,6 @@ static void key_object_close(object_header* obj) {
     key_object* key = (key_object*)obj;
 
     __sync_sub_and_fetch(&key->h->refcount, 1);
-
-    free_object(&key->header);
 }
 
 static NTSTATUS get_key_item_by_index(hive* h, CM_KEY_NODE* kn, unsigned int index, uint32_t* cell_offset, bool is_volatile) {

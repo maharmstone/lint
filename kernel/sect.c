@@ -26,8 +26,6 @@ static void section_object_close(object_header* obj) {
 
     if (sect->anon_file)
         filp_close(sect->anon_file, NULL);
-
-    free_object(&sect->header);
 }
 
 static char* get_sect_name(HANDLE file_handle) {

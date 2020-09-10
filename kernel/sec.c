@@ -72,8 +72,6 @@ static void token_object_close(object_header* obj) {
 
     if (tok->default_dacl)
         kfree(tok->default_dacl);
-
-    free_object(&tok->header);
 }
 
 static unsigned int __inline sid_length(SID* sid) {

@@ -857,15 +857,6 @@ typedef struct _type_object {
     uint32_t valid;
 } type_object;
 
-static void __inline inc_obj_refcount(object_header* obj) {
-    __sync_add_and_fetch(&obj->refcount, 1);
-}
-
-static void __inline dec_obj_refcount(object_header* obj) {
-    if (__sync_sub_and_fetch(&obj->refcount, 1) == 0)
-        obj->type->close(obj);
-}
-
 void free_object(object_header* obj);
 type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close,
                                     muwine_cleanup_object cleanup, uint32_t generic_read,
@@ -887,7 +878,17 @@ NTSTATUS muwine_add_entry_in_hierarchy(const UNICODE_STRING* us, object_header* 
 NTSTATUS muwine_add_entry_in_hierarchy2(object_header** obj, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc);
 void object_cleanup(object_header* obj);
+void object_close(object_header* obj);
 object_header* muwine_alloc_object(size_t size, type_object* type);
+
+static void __inline inc_obj_refcount(object_header* obj) {
+    __sync_add_and_fetch(&obj->refcount, 1);
+}
+
+static void __inline dec_obj_refcount(object_header* obj) {
+    if (__sync_sub_and_fetch(&obj->refcount, 1) == 0)
+        object_close(obj);
+}
 
 // sect.c
 typedef enum {

@@ -32,8 +32,6 @@ static void type_object_close(object_header* obj) {
 
     if (to->name.Buffer)
         kfree(to->name.Buffer);
-
-    free_object(obj);
 }
 
 type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close,
@@ -336,8 +334,6 @@ static void dir_object_close(object_header* obj) {
 
         kfree(item);
     }
-
-    free_object(&dir->header);
 }
 
 static void next_part(UNICODE_STRING* left, UNICODE_STRING* part) {
@@ -637,8 +633,6 @@ static void symlink_object_close(object_header* obj) {
         kfree(symlink->cache->dest.Buffer);
         kfree(symlink->cache);
     }
-
-    free_object(&symlink->header);
 }
 
 static NTSTATUS add_symlink_cache_entry(UNICODE_STRING* src, UNICODE_STRING* dest,
@@ -925,6 +919,13 @@ void object_cleanup(object_header* obj) {
 
     dec_obj_refcount(&dir->header);
     dec_obj_refcount(obj);
+}
+
+void object_close(object_header* obj) {
+    if (obj->type->close)
+        obj->type->close(obj);
+
+    free_object(obj);
 }
 
 NTSTATUS muwine_init_objdir(void) {

@@ -267,12 +267,6 @@ NTSTATUS user_NtReleaseSemaphore(HANDLE SemaphoreHandle, ULONG ReleaseCount, PUL
     return Status;
 }
 
-static void sem_object_close(object_header* obj) {
-    sem_object* sem = (sem_object*)obj;
-
-    free_object(&sem->header.h);
-}
-
 NTSTATUS muwine_init_semaphores(void) {
     UNICODE_STRING us;
 
@@ -281,7 +275,7 @@ NTSTATUS muwine_init_semaphores(void) {
     us.Length = us.MaximumLength = sizeof(sem_name) - sizeof(WCHAR);
     us.Buffer = (WCHAR*)sem_name;
 
-    sem_type = muwine_add_object_type(&us, sem_object_close, NULL,
+    sem_type = muwine_add_object_type(&us, NULL, NULL,
                                       SEMAPHORE_GENERIC_READ, SEMAPHORE_GENERIC_WRITE,
                                       SEMAPHORE_GENERIC_EXECUTE, SEMAPHORE_ALL_ACCESS,
                                       SEMAPHORE_ALL_ACCESS);

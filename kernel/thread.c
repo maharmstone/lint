@@ -320,8 +320,6 @@ static void thread_object_close(object_header* obj) {
     spin_unlock(&thread_list_lock);
 
     put_task_struct(t->ts);
-
-    free_object(&t->header.h);
 }
 
 int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
