@@ -132,10 +132,10 @@ static void get_inherited_acl(ACL* src, ACL* dest, bool container) {
     }
 }
 
-NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len, bool container,
-                                    token_object* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen) {
-    unsigned int len = sizeof(SECURITY_DESCRIPTOR);
-    SECURITY_DESCRIPTOR* sd;
+NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR_RELATIVE* parent_sd, unsigned int parent_sd_len, bool container,
+                                    token_object* tok, SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* outlen) {
+    unsigned int len = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
     uint8_t* ptr;
     unsigned int sacl_length = 0, dacl_length = 0;
 
@@ -147,13 +147,13 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
     if (tok && tok->primary_group)
         len += sid_length(tok->primary_group);
 
-    if (parent_sd->OffsetSacl != 0) {
-        sacl_length = inherited_acl_length((ACL*)((uint8_t*)parent_sd + parent_sd->OffsetSacl), container);
+    if (parent_sd->Sacl != 0) {
+        sacl_length = inherited_acl_length((ACL*)((uint8_t*)parent_sd + parent_sd->Sacl), container);
         len += sacl_length;
     }
 
-    if (parent_sd->OffsetDacl != 0) {
-        dacl_length = inherited_acl_length((ACL*)((uint8_t*)parent_sd + parent_sd->OffsetDacl), container);
+    if (parent_sd->Dacl != 0) {
+        dacl_length = inherited_acl_length((ACL*)((uint8_t*)parent_sd + parent_sd->Dacl), container);
         len += dacl_length;
     }
 
@@ -166,10 +166,10 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
     sd->Sbz1 = 0;
     sd->Control = SE_SELF_RELATIVE;
 
-    if (parent_sd->OffsetSacl != 0)
+    if (parent_sd->Sacl != 0)
         sd->Control |= SE_SACL_PRESENT;
 
-    if (parent_sd->OffsetDacl != 0)
+    if (parent_sd->Dacl != 0)
         sd->Control |= SE_DACL_PRESENT;
 
     ptr = (uint8_t*)&sd[1];
@@ -177,40 +177,40 @@ NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsign
     if (tok && tok->owner) {
         unsigned int sidlen = sid_length(tok->owner);
 
-        sd->OffsetOwner = (uint32_t)(ptr - (uint8_t*)sd);
+        sd->Owner = (uint32_t)(ptr - (uint8_t*)sd);
         memcpy(ptr, tok->owner, sidlen);
         ptr += sidlen;
     } else
-        sd->OffsetOwner = 0;
+        sd->Owner = 0;
 
     if (tok && tok->primary_group) {
         unsigned int sidlen = sid_length(tok->primary_group);
 
-        sd->OffsetGroup = (uint32_t)(ptr - (uint8_t*)sd);
+        sd->Group = (uint32_t)(ptr - (uint8_t*)sd);
         memcpy(ptr, tok->primary_group, sidlen);
         ptr += sidlen;
     } else
-        sd->OffsetGroup = 0;
+        sd->Group = 0;
 
-    if (parent_sd->OffsetSacl != 0) {
-        sd->OffsetSacl = (uint32_t)(ptr - (uint8_t*)sd);
+    if (parent_sd->Sacl != 0) {
+        sd->Sacl = (uint32_t)(ptr - (uint8_t*)sd);
 
-        get_inherited_acl((ACL*)((uint8_t*)parent_sd + parent_sd->OffsetSacl),
-                          (ACL*)((uint8_t*)sd + sd->OffsetSacl), container);
+        get_inherited_acl((ACL*)((uint8_t*)parent_sd + parent_sd->Sacl),
+                          (ACL*)((uint8_t*)sd + sd->Sacl), container);
 
         ptr += sacl_length;
     } else
-        sd->OffsetSacl = 0;
+        sd->Sacl = 0;
 
-    if (parent_sd->OffsetDacl != 0) {
-        sd->OffsetDacl = (uint32_t)(ptr - (uint8_t*)sd);
+    if (parent_sd->Dacl != 0) {
+        sd->Dacl = (uint32_t)(ptr - (uint8_t*)sd);
 
-        get_inherited_acl((ACL*)((uint8_t*)parent_sd + parent_sd->OffsetDacl),
-                          (ACL*)((uint8_t*)sd + sd->OffsetDacl), container);
+        get_inherited_acl((ACL*)((uint8_t*)parent_sd + parent_sd->Dacl),
+                          (ACL*)((uint8_t*)sd + sd->Dacl), container);
 
         ptr += dacl_length;
     } else
-        sd->OffsetDacl = 0;
+        sd->Dacl = 0;
 
     *out = sd;
     *outlen = len;
@@ -501,9 +501,9 @@ void muwine_make_process_token(token_object** t) {
     *t = tok;
 }
 
-void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen) {
-    SECURITY_DESCRIPTOR* sd;
-    unsigned int len = sizeof(SECURITY_DESCRIPTOR);
+void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* sdlen) {
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    unsigned int len = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
     unsigned int dacl_len;
     ACL* sacl;
     ACL* dacl;
@@ -528,16 +528,16 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen) {
     sd->Revision = 1;
     sd->Sbz1 = 0;
     sd->Control = SE_SELF_RELATIVE | SE_SACL_PRESENT | SE_DACL_PRESENT;
-    sd->OffsetOwner = sizeof(SECURITY_DESCRIPTOR);
-    sd->OffsetGroup = sd->OffsetOwner + sizeof(sid_administrators);
-    sd->OffsetSacl = sd->OffsetGroup + sizeof(sid_local_system);
-    sd->OffsetDacl = sd->OffsetSacl + sizeof(ACL);
+    sd->Owner = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+    sd->Group = sd->Owner + sizeof(sid_administrators);
+    sd->Sacl = sd->Group + sizeof(sid_local_system);
+    sd->Dacl = sd->Sacl + sizeof(ACL);
 
-    memcpy((uint8_t*)sd + sd->OffsetOwner, sid_administrators, sizeof(sid_administrators));
-    memcpy((uint8_t*)sd + sd->OffsetGroup, sid_local_system, sizeof(sid_local_system));
+    memcpy((uint8_t*)sd + sd->Owner, sid_administrators, sizeof(sid_administrators));
+    memcpy((uint8_t*)sd + sd->Group, sid_local_system, sizeof(sid_local_system));
 
-    sacl = (ACL*)((uint8_t*)sd + sd->OffsetSacl);
-    dacl = (ACL*)((uint8_t*)sd + sd->OffsetDacl);
+    sacl = (ACL*)((uint8_t*)sd + sd->Sacl);
+    dacl = (ACL*)((uint8_t*)sd + sd->Dacl);
 
     sacl->AclRevision = 2;
     sacl->Sbz1 = 0;
@@ -1738,6 +1738,18 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
         Status = STATUS_ACCESS_VIOLATION;
 
     return Status;
+}
+
+NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                               PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
+                               PULONG LengthNeeded) {
+    printk(KERN_INFO "NtQuerySecurityObject(%lx, %x, %px, %x, %px): stub\n",
+           (uintptr_t)Handle, SecurityInformation, SecurityDescriptor,
+           Length, LengthNeeded);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS muwine_init_tokens(void) {

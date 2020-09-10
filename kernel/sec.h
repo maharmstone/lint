@@ -171,16 +171,6 @@ typedef struct _token_object {
     LUID modified_id;
 } token_object;
 
-typedef struct _SECURITY_DESCRIPTOR {
-    uint8_t Revision;
-    uint8_t Sbz1;
-    uint16_t Control;
-    uint32_t OffsetOwner;
-    uint32_t OffsetGroup;
-    uint32_t OffsetSacl;
-    uint32_t OffsetDacl;
-} SECURITY_DESCRIPTOR;
-
 typedef struct {
     uint8_t AceType;
     uint8_t AceFlags;

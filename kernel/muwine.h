@@ -354,7 +354,6 @@ typedef enum {
     MaxTokenInfoClass
 } TOKEN_INFORMATION_CLASS;
 
-typedef struct _SECURITY_DESCRIPTOR SECURITY_DESCRIPTOR;
 typedef struct _SID SID;
 typedef struct _token_object token_object;
 typedef struct _LUID LUID, *PLUID;
@@ -365,11 +364,26 @@ typedef struct _TOKEN_OWNER TOKEN_OWNER, *PTOKEN_OWNER;
 typedef struct _TOKEN_PRIMARY_GROUP TOKEN_PRIMARY_GROUP, *PTOKEN_PRIMARY_GROUP;
 typedef struct _TOKEN_DEFAULT_DACL TOKEN_DEFAULT_DACL, *PTOKEN_DEFAULT_DACL;
 typedef struct _TOKEN_SOURCE TOKEN_SOURCE, *PTOKEN_SOURCE;
+typedef ULONG SECURITY_INFORMATION;
 
-NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR* parent_sd, unsigned int parent_sd_len, bool container,
-                                    token_object* tok, SECURITY_DESCRIPTOR** out, unsigned int* outlen);
+typedef WORD SECURITY_DESCRIPTOR_CONTROL;
+
+typedef struct {
+    BYTE Revision;
+    BYTE Sbz1;
+    SECURITY_DESCRIPTOR_CONTROL Control;
+    DWORD Owner;
+    DWORD Group;
+    DWORD Sacl;
+    DWORD Dacl;
+} SECURITY_DESCRIPTOR_RELATIVE;
+
+typedef void* PSECURITY_DESCRIPTOR;
+
+NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR_RELATIVE* parent_sd, unsigned int parent_sd_len, bool container,
+                                    token_object* tok, SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* outlen);
 void muwine_make_process_token(token_object** t);
-void muwine_registry_root_sd(SECURITY_DESCRIPTOR** out, unsigned int* sdlen);
+void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* sdlen);
 ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type);
 NTSTATUS muwine_init_tokens(void);
 NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
@@ -391,6 +405,9 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
                                       PVOID TokenInformation, ULONG TokenInformationLength,
                                       PULONG ReturnLength);
 NTSTATUS user_NtAllocateLocallyUniqueId(PLUID Luid);
+NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                               PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
+                               PULONG LengthNeeded);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

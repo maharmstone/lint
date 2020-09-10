@@ -2792,7 +2792,7 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
     NTSTATUS Status;
     int32_t size;
     CM_KEY_SECURITY* sk;
-    SECURITY_DESCRIPTOR* sd;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
     unsigned int sdlen;
     uint32_t skoff, orig_skoff;
     void* parent_bins = parent_is_volatile ? h->volatile_bins : h->bins;
@@ -2808,7 +2808,7 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
     if (sk->Signature != CM_KEY_SECURITY_SIGNATURE || size < offsetof(CM_KEY_SECURITY, Descriptor) + sk->DescriptorLength)
         return STATUS_REGISTRY_CORRUPT;
 
-    Status = muwine_create_inherited_sd((SECURITY_DESCRIPTOR*)sk->Descriptor, sk->DescriptorLength,
+    Status = muwine_create_inherited_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength,
                                         true, tok, &sd, &sdlen);
     if (!NT_SUCCESS(Status))
         return Status;
@@ -4598,7 +4598,7 @@ NTSTATUS muwine_init_registry(void) {
     hive* h;
     uint32_t offset;
     CM_KEY_NODE* kn;
-    SECURITY_DESCRIPTOR* sd;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
     unsigned int sdlen;
     CM_KEY_SECURITY* sk;
     UNICODE_STRING us;
