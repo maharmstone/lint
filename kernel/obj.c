@@ -24,6 +24,9 @@ void free_object(object_header* obj) {
     if (obj != &type_type->header)
         dec_obj_refcount(&obj->type->header);
 
+    if (obj->sd)
+        kfree(obj->sd);
+
     kfree(obj);
 }
 
