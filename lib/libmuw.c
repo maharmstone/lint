@@ -1574,3 +1574,24 @@ NTSTATUS __stdcall NtAllocateLocallyUniqueId(PLUID Luid) {
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                                         PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
+                                         PULONG LengthNeeded) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)Handle,
+        (uintptr_t)SecurityInformation,
+        (uintptr_t)SecurityDescriptor,
+        (uintptr_t)Length,
+        (uintptr_t)LengthNeeded,
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYSECURITYOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
+}

@@ -646,6 +646,9 @@ typedef enum {
     MaxTokenInfoClass
 } TOKEN_INFORMATION_CLASS;
 
+typedef ULONG SECURITY_INFORMATION;
+typedef void* PSECURITY_DESCRIPTOR;
+
 #endif
 
 void close_muwine();
@@ -822,6 +825,9 @@ NTSTATUS __stdcall NtQueryInformationToken(HANDLE TokenHandle,
                                            PVOID TokenInformation, ULONG TokenInformationLength,
                                            PULONG ReturnLength);
 NTSTATUS __stdcall NtAllocateLocallyUniqueId(PLUID Luid);
+NTSTATUS __stdcall NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                                         PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
+                                         PULONG LengthNeeded);
 
 #ifdef __cplusplus
 }
