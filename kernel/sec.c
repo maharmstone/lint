@@ -498,6 +498,8 @@ void muwine_make_process_token(token_object** t) {
     alloc_luid(&tok->token_id);
     alloc_luid(&tok->modified_id);
 
+    tok->expiry = 0x7fffffffffffffff;
+
     *t = tok;
 }
 
