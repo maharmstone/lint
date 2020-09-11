@@ -621,14 +621,41 @@ NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK Desir
     return Status;
 }
 
-NTSTATUS NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
-                               POBJECT_ATTRIBUTES ObjectAttributes) {
+static NTSTATUS NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
+                                      POBJECT_ATTRIBUTES ObjectAttributes) {
     printk(KERN_INFO "NtOpenDirectoryObject(%px, %x, %px): stub\n",
            DirectoryHandle, DesiredAccess, ObjectAttributes);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
+                                    POBJECT_ATTRIBUTES ObjectAttributes) {
+    HANDLE h;
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES oa;
+
+    if (!DirectoryHandle || !ObjectAttributes)
+        return STATUS_INVALID_PARAMETER;
+
+    if (!get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (oa.Attributes & OBJ_KERNEL_HANDLE) {
+        free_object_attributes(&oa);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Status = NtOpenDirectoryObject(&h, DesiredAccess, &oa);
+
+    free_object_attributes(&oa);
+
+    if (put_user(h, DirectoryHandle) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 static void symlink_object_close(object_header* obj) {
