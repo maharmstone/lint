@@ -621,6 +621,16 @@ NTSTATUS user_NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK Desir
     return Status;
 }
 
+NTSTATUS NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
+                               POBJECT_ATTRIBUTES ObjectAttributes) {
+    printk(KERN_INFO "NtOpenDirectoryObject(%px, %x, %px): stub\n",
+           DirectoryHandle, DesiredAccess, ObjectAttributes);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 static void symlink_object_close(object_header* obj) {
     symlink_object* symlink = (symlink_object*)obj;
 
