@@ -872,6 +872,8 @@ NTSTATUS __stdcall NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAcc
 NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle,
                                           THREADINFOCLASS ThreadInformationClass,
                                           PVOID ThreadInformation, ULONG ThreadInformationLength);
+NTSTATUS __stdcall NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
+                                         POBJECT_ATTRIBUTES ObjectAttributes);
 
 #ifdef __cplusplus
 }

@@ -1634,3 +1634,21 @@ NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle,
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
+                                         POBJECT_ATTRIBUTES ObjectAttributes) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)DirectoryHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENDIRECTORYOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
+}
