@@ -1957,12 +1957,14 @@ SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type) {
     }
 
     sd->Revision = 1;
-    sd->Control = SE_OWNER_DEFAULTED | SE_SELF_RELATIVE;
+    sd->Control = SE_SELF_RELATIVE;
 
     off = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
 
     if (tok->owner) {
         size_t sidlen = sid_length(tok->owner);
+
+        sd->Control |= SE_OWNER_DEFAULTED;
 
         sd->Owner = off;
         memcpy(sd_get_owner(sd), tok->owner, sidlen);
@@ -1971,6 +1973,8 @@ SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type) {
 
     if (tok->primary_group) {
         size_t sidlen = sid_length(tok->primary_group);
+
+        sd->Control |= SE_GROUP_DEFAULTED;
 
         sd->Group = off;
         memcpy(sd_get_group(sd), tok->primary_group, sidlen);
@@ -1983,6 +1987,8 @@ SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type) {
         ACE_HEADER* ace;
 
         // FIXME - check DACL is valid
+
+        sd->Control |= SE_DACL_PRESENT | SE_DACL_DEFAULTED;
 
         sd->Dacl = off;
         dacl = sd_get_dacl(sd);
