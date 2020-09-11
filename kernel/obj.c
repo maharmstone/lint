@@ -43,7 +43,7 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_obj
                                     uint32_t generic_all, uint32_t valid) {
     type_object* obj;
 
-    obj = (type_object*)muwine_alloc_object(sizeof(type_object), type_type);
+    obj = (type_object*)muwine_alloc_object(sizeof(type_object), type_type, NULL);
     if (!obj)
         return ERR_PTR(-ENOMEM);
 
@@ -574,7 +574,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
     if (!ObjectAttributes || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
 
-    obj = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type);
+    obj = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type, NULL);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 
@@ -737,7 +737,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
         return STATUS_INVALID_PARAMETER;
     }
 
-    obj = (symlink_object*)muwine_alloc_object(sizeof(symlink_object), symlink_type);
+    obj = (symlink_object*)muwine_alloc_object(sizeof(symlink_object), symlink_type, NULL);
     if (!obj) {
         if (us_alloc)
             kfree(us.Buffer);
@@ -845,7 +845,8 @@ NTSTATUS user_NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAcc
     return Status;
 }
 
-object_header* muwine_alloc_object(size_t size, type_object* type) {
+object_header* muwine_alloc_object(size_t size, type_object* type,
+                                   SECURITY_DESCRIPTOR_RELATIVE* sd) {
     object_header* obj;
 
     obj = kzalloc(size, GFP_KERNEL);
@@ -854,11 +855,23 @@ object_header* muwine_alloc_object(size_t size, type_object* type) {
 
     obj->refcount = 1;
 
-    obj->sd = muwine_create_object_sd(type);
-//     if (!obj->sd) {
-//         kfree(obj);
-//         return NULL;
-//     }
+    if (sd) {
+        size_t size = sd_length(sd);
+
+        obj->sd = kmalloc(size, GFP_KERNEL);
+        if (!obj->sd) {
+            kfree(obj);
+            return NULL;
+        }
+
+        memcpy(obj->sd, sd, size);
+    } else {
+        obj->sd = muwine_create_object_sd(type);
+//         if (!obj->sd) {
+//             kfree(obj);
+//             return NULL;
+//         }
+    }
 
     obj->type = type;
 
@@ -936,6 +949,7 @@ NTSTATUS muwine_init_objdir(void) {
     HANDLE dir, symlink;
     UNICODE_STRING us, us2;
     OBJECT_ATTRIBUTES oa;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
 
     static const WCHAR device_dir[] = L"\\Device";
     static const WCHAR global_dir[] = L"\\GLOBAL??";
@@ -982,9 +996,17 @@ NTSTATUS muwine_init_objdir(void) {
         return muwine_error_to_ntstatus((int)(uintptr_t)symlink_type);
     }
 
-    dir_root = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type);
-    if (!dir_root)
+    sd = create_dir_root_sd();
+    if (!sd)
         return -ENOMEM;
+
+    dir_root = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type, sd);
+    if (!dir_root) {
+        kfree(sd);
+        return -ENOMEM;
+    }
+
+    kfree(sd);
 
     spin_lock_init(&dir_root->children_lock);
     INIT_LIST_HEAD(&dir_root->children);

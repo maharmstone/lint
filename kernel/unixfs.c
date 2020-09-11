@@ -536,7 +536,7 @@ static NTSTATUS unixfs_create_file(device* dev, PHANDLE FileHandle, ACCESS_MASK 
 
     // create file object (with path)
 
-    obj = (unixfs_file_object*)muwine_alloc_object(sizeof(unixfs_file_object), file_type);
+    obj = (unixfs_file_object*)muwine_alloc_object(sizeof(unixfs_file_object), file_type, NULL);
     if (!obj) {
         down_write(&file_list_sem);
         free_unixfs_inode(ui);
@@ -1703,7 +1703,7 @@ NTSTATUS muwine_init_unixroot(void) {
         return muwine_error_to_ntstatus((int)(uintptr_t)file_type);
     }
 
-    dev = (device*)muwine_alloc_object(sizeof(device), device_type);
+    dev = (device*)muwine_alloc_object(sizeof(device), device_type, NULL);
     if (!dev)
         return STATUS_INSUFFICIENT_RESOURCES;
 

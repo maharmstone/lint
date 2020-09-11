@@ -20,7 +20,7 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = (mutant_object*)muwine_alloc_object(sizeof(mutant_object), mutant_type);
+    obj = (mutant_object*)muwine_alloc_object(sizeof(mutant_object), mutant_type, NULL);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 

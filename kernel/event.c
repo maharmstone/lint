@@ -20,7 +20,7 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = (event_object*)muwine_alloc_object(sizeof(event_object), event_type);
+    obj = (event_object*)muwine_alloc_object(sizeof(event_object), event_type, NULL);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 

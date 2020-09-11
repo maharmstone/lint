@@ -101,6 +101,8 @@
 #define DACL_SECURITY_INFORMATION   0x00000004
 #define SACL_SECURITY_INFORMATION   0x00000008
 
+#define ACL_REVISION        2
+
 typedef struct _LUID {
     DWORD LowPart;
     LONG HighPart;

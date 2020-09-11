@@ -32,7 +32,7 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = (timer_object*)muwine_alloc_object(sizeof(timer_object), timer_type);
+    obj = (timer_object*)muwine_alloc_object(sizeof(timer_object), timer_type, NULL);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 

@@ -53,7 +53,7 @@ void muwine_add_current_process(void) {
     struct list_head* le;
     process_object* obj;
 
-    obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type);
+    obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type, NULL);
 
     // FIXME - handle out of memory
 
@@ -220,7 +220,7 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
         return 0;
     }
 
-    new_obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type);
+    new_obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type, NULL);
     if (!new_obj) {
         printk(KERN_ERR "muwine fork_handler: out of memory\n");
         dec_obj_refcount(&obj->header.h);

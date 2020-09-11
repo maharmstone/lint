@@ -776,7 +776,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             // create key object and return handle
 
-            k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type);
+            k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type, NULL);
             if (!k) {
                 up_read(&hive_list_sem);
 
@@ -3617,7 +3617,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     // create handle
 
-    k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type);
+    k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type, NULL);
     if (!k)
         return STATUS_INSUFFICIENT_RESOURCES;
 

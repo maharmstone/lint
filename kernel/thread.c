@@ -192,7 +192,7 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     // create thread object
 
-    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type);
+    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type, NULL);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 
@@ -426,7 +426,7 @@ thread_object* muwine_current_thread_object(void) {
 
     // add new
 
-    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type);
+    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type, NULL);
     if (!obj) {
         spin_unlock(&thread_list_lock);
         return NULL;

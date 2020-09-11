@@ -879,7 +879,9 @@ NTSTATUS muwine_add_entry_in_hierarchy2(object_header** obj, POBJECT_ATTRIBUTES 
 NTSTATUS muwine_resolve_obj_symlinks(UNICODE_STRING* us, bool* done_alloc);
 void object_cleanup(object_header* obj);
 void object_close(object_header* obj);
-object_header* muwine_alloc_object(size_t size, type_object* type);
+object_header* muwine_alloc_object(size_t size, type_object* type, SECURITY_DESCRIPTOR_RELATIVE* sd);
+size_t sd_length(SECURITY_DESCRIPTOR_RELATIVE* sd);
+SECURITY_DESCRIPTOR_RELATIVE* create_dir_root_sd(void);
 
 static void __inline inc_obj_refcount(object_header* obj) {
     __sync_add_and_fetch(&obj->refcount, 1);

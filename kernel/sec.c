@@ -1,11 +1,14 @@
 #include "muwine.h"
 #include "sec.h"
 #include "proc.h"
+#include "obj.h"
 
 static const uint8_t sid_users[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0, 0, 0x21, 0x2, 0, 0 }; // S-1-5-32-545
 static const uint8_t sid_administrators[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0, 0, 0x20, 0x2, 0, 0 }; // S-1-5-32-544
 static const uint8_t sid_local_system[] = { 1, 1, 0, 0, 0, 0, 0, 5, 0x12, 0, 0, 0 }; // S-1-5-18
 static const uint8_t sid_creator_owner[] = { 1, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0 }; // S-1-3-0
+static const uint8_t sid_everyone[] = { 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 }; // S-1-1-0
+static const uint8_t sid_restricted[] = { 1, 1, 0, 0, 0, 0, 0, 5, 12, 0, 0, 0 }; // S-1-5-12
 
 typedef struct {
     unsigned int num;
@@ -412,7 +415,7 @@ void muwine_make_process_token(token_object** t) {
     size_t dacl_size;
     ACCESS_ALLOWED_ACE* aaa;
 
-    tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type);
+    tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type, NULL);
     // FIXME - handle malloc failure
 
     init_rwsem(&tok->sem);
@@ -693,7 +696,7 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
         }
     }
 
-    tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type);
+    tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type, NULL);
     if (!tok)
         return STATUS_INSUFFICIENT_RESOURCES;
 
@@ -2049,6 +2052,99 @@ SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type) {
     up_read(&tok->sem);
 
     dec_obj_refcount(&tok->header);
+
+    return sd;
+}
+
+size_t sd_length(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    size_t len;
+
+    len = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    if (sd->Owner != 0)
+        len += sid_length(sd_get_owner(sd));
+
+    if (sd->Group != 0)
+        len += sid_length(sd_get_group(sd));
+
+    if (sd->Dacl != 0)
+        len += sd_get_dacl(sd)->AclSize;
+
+    if (sd->Sacl != 0)
+        len += sd_get_sacl(sd)->AclSize;
+
+    return len;
+}
+
+static void add_access_allowed_ace(ACE_HEADER** ace, PSID sid, ACCESS_MASK access) {
+    ACCESS_ALLOWED_ACE* aaa = (ACCESS_ALLOWED_ACE*)*ace;
+    size_t sidlen = sid_length(sid);
+
+    aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+    aaa->Header.AceFlags = 0;
+    aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sidlen;
+    aaa->Mask = access;
+    memcpy(&aaa->SidStart, sid, sidlen);
+
+    *ace = (ACE_HEADER*)((uint8_t*)*ace + aaa->Header.AceSize);
+}
+
+SECURITY_DESCRIPTOR_RELATIVE* create_dir_root_sd(void) {
+    size_t len, dacl_size;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    DWORD off;
+    ACL* dacl;
+    ACE_HEADER* ace;
+
+    len = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    len += sizeof(sid_administrators);
+    len += sizeof(sid_local_system);
+
+    dacl_size = sizeof(ACL);
+    dacl_size += 4 * offsetof(ACCESS_ALLOWED_ACE, SidStart);
+    dacl_size += sizeof(sid_everyone);
+    dacl_size += sizeof(sid_local_system);
+    dacl_size += sizeof(sid_administrators);
+    dacl_size += sizeof(sid_restricted);
+
+    len += dacl_size;
+
+    sd = kzalloc(len, GFP_KERNEL);
+    if (!sd)
+        return NULL;
+
+    sd->Revision = 1;
+    sd->Control = SE_SELF_RELATIVE;
+
+    off = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    sd->Owner = off;
+    memcpy(sd_get_owner(sd), sid_administrators, sizeof(sid_administrators));
+    off += sizeof(sid_administrators);
+
+    sd->Group = off;
+    memcpy(sd_get_group(sd), sid_local_system, sizeof(sid_local_system));
+    off += sizeof(sid_local_system);
+
+    sd->Dacl = off;
+    dacl = sd_get_dacl(sd);
+
+    dacl->AclRevision = ACL_REVISION;
+    dacl->Sbz1 = 0;
+    dacl->AclSize = dacl_size;
+    dacl->AceCount = 4;
+    dacl->Sbz2 = 0;
+
+    ace = (ACE_HEADER*)&dacl[1];
+    add_access_allowed_ace(&ace, (PSID)sid_everyone, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | READ_CONTROL);
+    add_access_allowed_ace(&ace, (PSID)sid_local_system, DIRECTORY_QUERY | DIRECTORY_TRAVERSE |
+                                                         DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY |
+                                                         STANDARD_RIGHTS_REQUIRED);
+    add_access_allowed_ace(&ace, (PSID)sid_administrators, DIRECTORY_QUERY | DIRECTORY_TRAVERSE |
+                                                           DIRECTORY_CREATE_OBJECT | DIRECTORY_CREATE_SUBDIRECTORY |
+                                                           STANDARD_RIGHTS_REQUIRED);
+    add_access_allowed_ace(&ace, (PSID)sid_restricted, DIRECTORY_QUERY | DIRECTORY_TRAVERSE | READ_CONTROL);
 
     return sd;
 }

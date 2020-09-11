@@ -20,7 +20,7 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
 
     // create object
 
-    obj = (sem_object*)muwine_alloc_object(sizeof(sem_object), sem_type);
+    obj = (sem_object*)muwine_alloc_object(sizeof(sem_object), sem_type, NULL);
 
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;

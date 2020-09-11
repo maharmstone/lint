@@ -225,7 +225,7 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     }
 
     sect = (section_object*)muwine_alloc_object(offsetof(section_object, sections) + (nt_header.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER)),
-                                                section_type);
+                                                section_type, NULL);
     if (!sect) {
         filp_close(file, NULL);
         vfree(buf);
@@ -309,7 +309,8 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
         file_size = image_size;
     } else {
-        obj = (section_object*)muwine_alloc_object(offsetof(section_object, sections), section_type);
+        obj = (section_object*)muwine_alloc_object(offsetof(section_object, sections),
+                                                   section_type, NULL);
         if (!obj) {
             if (file)
                 dec_obj_refcount(&file->header);
