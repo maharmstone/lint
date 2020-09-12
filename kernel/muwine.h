@@ -417,10 +417,11 @@ SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type);
 
 typedef struct _GENERIC_MAPPING GENERIC_MAPPING;
 
-NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
-                          SECURITY_DESCRIPTOR_RELATIVE* creator, token_object* token,
-                          GENERIC_MAPPING* generic_mapping, unsigned int flags,
-                          bool is_container, SECURITY_DESCRIPTOR_RELATIVE** ret);
+NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* creator,
+                          token_object* token, GENERIC_MAPPING* generic_mapping,
+                          unsigned int flags, bool is_container,
+                          SECURITY_DESCRIPTOR_RELATIVE** ret);
+token_object* muwine_get_current_token(void);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000
@@ -895,6 +896,8 @@ void object_close(object_header* obj);
 object_header* muwine_alloc_object(size_t size, type_object* type, SECURITY_DESCRIPTOR_RELATIVE* sd);
 size_t sd_length(SECURITY_DESCRIPTOR_RELATIVE* sd);
 SECURITY_DESCRIPTOR_RELATIVE* create_dir_root_sd(void);
+NTSTATUS muwine_open_object2(const POBJECT_ATTRIBUTES ObjectAttributes, object_header** obj,
+                             UNICODE_STRING* ret_after, bool* ret_after_alloc, bool open_parent);
 
 static void __inline inc_obj_refcount(object_header* obj) {
     __sync_add_and_fetch(&obj->refcount, 1);

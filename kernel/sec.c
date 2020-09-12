@@ -1907,7 +1907,7 @@ NTSTATUS user_NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION Security
     return Status;
 }
 
-static token_object* muwine_get_current_token(void) {
+token_object* muwine_get_current_token(void) {
     process_object* proc;
     token_object* tok;
 
@@ -2296,17 +2296,25 @@ static NTSTATUS post_process_acl(ACL* src_acl, bool copy_all, SID* owner, SID* g
                     memcpy(&dest_aaa->SidStart, &src_aaa->SidStart, sid_length((SID*)&src_aaa->SidStart));
                 }
 
-                if (dest_aaa->Mask & GENERIC_READ)
+                if (dest_aaa->Mask & GENERIC_READ) {
+                    dest_aaa->Mask &= ~GENERIC_READ;
                     dest_aaa->Mask |= generic_mapping->GenericRead;
+                }
 
-                if (dest_aaa->Mask & GENERIC_WRITE)
+                if (dest_aaa->Mask & GENERIC_WRITE) {
+                    dest_aaa->Mask &= ~GENERIC_WRITE;
                     dest_aaa->Mask |= generic_mapping->GenericWrite;
+                }
 
-                if (dest_aaa->Mask & GENERIC_EXECUTE)
+                if (dest_aaa->Mask & GENERIC_EXECUTE) {
+                    dest_aaa->Mask &= ~GENERIC_EXECUTE;
                     dest_aaa->Mask |= generic_mapping->GenericExecute;
+                }
 
-                if (dest_aaa->Mask & GENERIC_ALL)
+                if (dest_aaa->Mask & GENERIC_ALL) {
+                    dest_aaa->Mask &= ~GENERIC_ALL;
                     dest_aaa->Mask |= generic_mapping->GenericAll;
+                }
 
                 acl->AceCount++;
 
@@ -2502,10 +2510,13 @@ static NTSTATUS compute_acl(ACL* parent, SECURITY_DESCRIPTOR_RELATIVE* creator_s
 
     // FIXME - handle object ACEs?
 
-    if (dacl)
-        creator = creator_sd->Dacl != 0 ? sd_get_dacl(creator_sd) : NULL;
-    else
-        creator = creator_sd->Sacl != 0 ? sd_get_sacl(creator_sd) : NULL;
+    if (creator_sd) {
+        if (dacl)
+            creator = creator_sd->Dacl != 0 ? sd_get_dacl(creator_sd) : NULL;
+        else
+            creator = creator_sd->Sacl != 0 ? sd_get_sacl(creator_sd) : NULL;
+    } else
+        creator = NULL;
 
     *control = 0;
 
@@ -2603,6 +2614,11 @@ static NTSTATUS compute_acl(ACL* parent, SECURITY_DESCRIPTOR_RELATIVE* creator_s
         else
             preprocess_acl_from_creator(creator, &tmp_acl);
 
+        if (!tmp_acl) {
+            *ret = NULL;
+            return STATUS_SUCCESS;
+        }
+
         Status = post_process_acl(tmp_acl, true, owner, group, generic_mapping, ret);
 
         if (creator)
@@ -2612,10 +2628,64 @@ static NTSTATUS compute_acl(ACL* parent, SECURITY_DESCRIPTOR_RELATIVE* creator_s
     }
 }
 
-NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
-                          SECURITY_DESCRIPTOR_RELATIVE* creator, token_object* token,
-                          GENERIC_MAPPING* generic_mapping, unsigned int flags,
-                          bool is_container, SECURITY_DESCRIPTOR_RELATIVE** ret) {
+static NTSTATUS copy_sd(SECURITY_DESCRIPTOR_RELATIVE* in, SECURITY_DESCRIPTOR_RELATIVE** out) {
+    size_t size;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    DWORD off;
+
+    size = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+    size += in->Owner != 0 ? sid_length(sd_get_owner(in)) : 0;
+    size += in->Group != 0 ? sid_length(sd_get_group(in)) : 0;
+    size += in->Dacl != 0 ? sd_get_dacl(in)->AclSize : 0;
+    size += in->Sacl != 0 ? sd_get_sacl(in)->AclSize : 0;
+
+    sd = kmalloc(size, GFP_KERNEL);
+    if (!sd)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    sd->Revision = 1;
+    sd->Sbz1 = 0;
+    sd->Control = in->Control;
+
+    off = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    if (in->Owner != 0) {
+        sd->Owner = off;
+        memcpy(sd_get_owner(sd), sd_get_owner(in), sid_length(sd_get_owner(in)));
+        off += sid_length(sd_get_owner(in));
+    } else
+        sd->Owner = 0;
+
+    if (in->Group != 0) {
+        sd->Group = off;
+        memcpy(sd_get_group(sd), sd_get_group(in), sid_length(sd_get_group(in)));
+        off += sid_length(sd_get_group(in));
+    } else
+        sd->Group = 0;
+
+    if (in->Dacl != 0) {
+        sd->Dacl = off;
+        memcpy(sd_get_dacl(sd), sd_get_dacl(in), sd_get_dacl(in)->AclSize);
+        off += sd_get_dacl(in)->AclSize;
+    } else
+        sd->Dacl = 0;
+
+    if (in->Sacl != 0) {
+        sd->Sacl = off;
+        memcpy(sd_get_sacl(sd), sd_get_sacl(in), sd_get_sacl(in)->AclSize);
+        off += sd_get_sacl(in)->AclSize;
+    } else
+        sd->Sacl = 0;
+
+    *out = sd;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* creator,
+                          token_object* token, GENERIC_MAPPING* generic_mapping,
+                          unsigned int flags, bool is_container,
+                          SECURITY_DESCRIPTOR_RELATIVE** ret) {
     NTSTATUS Status;
     SID* owner;
     SID* group;
@@ -2625,12 +2695,26 @@ NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
     size_t size;
     SECURITY_DESCRIPTOR_RELATIVE* sd;
     DWORD off;
+    SECURITY_DESCRIPTOR_RELATIVE* parent_sd;
+
+    if (parent) {
+        // take a copy of the parent SD to avoid locking issues later
+        spin_lock(&parent->header_lock);
+        Status = copy_sd(parent->sd, &parent_sd);
+        spin_unlock(&parent->header_lock);
+
+        if (!NT_SUCCESS(Status))
+            return Status;
+    } else
+        parent_sd = NULL;
+
+    down_read(&token->sem);
 
     // owner
 
     if (!creator || creator->Owner == 0) {
-        if (parent && parent->Owner != 0 && flags & SEF_DEFAULT_OWNER_FROM_PARENT)
-            owner = sd_get_owner(parent);
+        if (parent_sd && parent_sd->Owner != 0 && flags & SEF_DEFAULT_OWNER_FROM_PARENT)
+            owner = sd_get_owner(parent_sd);
         else
             owner = token->owner;
     } else
@@ -2639,8 +2723,8 @@ NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
     // group
 
     if (!creator || creator->Group == 0) {
-        if (parent && parent->Group != 0 && flags & SEF_DEFAULT_GROUP_FROM_PARENT)
-            group = sd_get_group(parent);
+        if (parent_sd && parent_sd->Group != 0 && flags & SEF_DEFAULT_GROUP_FROM_PARENT)
+            group = sd_get_group(parent_sd);
         else
             group = token->primary_group;
     } else
@@ -2648,23 +2732,36 @@ NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
 
     // DACL
 
-    Status = compute_acl(parent && parent->Dacl != 0 ? sd_get_dacl(parent) : NULL, creator,
+    Status = compute_acl(parent_sd && parent_sd->Dacl != 0 ? sd_get_dacl(parent_sd) : NULL, creator,
                          token->default_dacl, true, owner, group,
                          generic_mapping, flags, is_container, &ctrl1, &dacl);
-    if (!NT_SUCCESS(Status))
+
+    up_read(&token->sem);
+
+    if (!NT_SUCCESS(Status)) {
+        if (parent_sd)
+            kfree(parent_sd);
+
         return Status;
+    }
 
     // SACL
 
-    Status = compute_acl(parent && parent->Sacl != 0 ? sd_get_sacl(parent) : NULL, creator,
+    Status = compute_acl(parent_sd && parent_sd->Sacl != 0 ? sd_get_sacl(parent_sd) : NULL, creator,
                          NULL, false, owner, group, generic_mapping,
                          flags, is_container, &ctrl2, &sacl);
     if (!NT_SUCCESS(Status)) {
         if (dacl)
             kfree(dacl);
 
+        if (parent_sd)
+            kfree(parent_sd);
+
         return Status;
     }
+
+    if (parent_sd)
+        kfree(parent_sd);
 
     // assemble SD
 
@@ -2676,11 +2773,11 @@ NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
 
     sd = kmalloc(size, GFP_KERNEL);
     if (!sd) {
-        if (dacl)
-            kfree(dacl);
-
         if (sacl)
             kfree(sacl);
+
+        if (dacl)
+            kfree(dacl);
 
         return STATUS_INSUFFICIENT_RESOURCES;
     }

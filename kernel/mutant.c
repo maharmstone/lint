@@ -12,6 +12,9 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
     NTSTATUS Status;
     mutant_object* obj;
     ACCESS_MASK access;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    object_header* parent = NULL;
+    token_object* token;
 
     access = sanitize_access_mask(DesiredAccess, mutant_type);
 
@@ -20,7 +23,27 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = (mutant_object*)muwine_alloc_object(sizeof(mutant_object), mutant_type, NULL);
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
+
+    token = muwine_get_current_token();
+
+    Status = muwine_create_sd(parent,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              token, &mutant_type->generic_mapping, 0, false, &sd);
+
+    if (parent)
+        dec_obj_refcount(parent);
+
+    dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    obj = (mutant_object*)muwine_alloc_object(sizeof(mutant_object), mutant_type, sd);
     if (!obj)
         return STATUS_INSUFFICIENT_RESOURCES;
 

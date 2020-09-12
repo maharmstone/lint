@@ -962,17 +962,9 @@ object_header* muwine_alloc_object(size_t size, type_object* type,
 
     obj->refcount = 1;
 
-    if (sd) {
-        size_t size = sd_length(sd);
-
-        obj->sd = kmalloc(size, GFP_KERNEL);
-        if (!obj->sd) {
-            kfree(obj);
-            return NULL;
-        }
-
-        memcpy(obj->sd, sd, size);
-    } else {
+    if (sd)
+        obj->sd = sd;
+    else {
         obj->sd = muwine_create_object_sd(type);
 //         if (!obj->sd) {
 //             kfree(obj);
@@ -995,6 +987,71 @@ object_header* muwine_alloc_object(size_t size, type_object* type,
     }
 
     return obj;
+}
+
+NTSTATUS muwine_open_object2(const POBJECT_ATTRIBUTES ObjectAttributes, object_header** obj,
+                             UNICODE_STRING* ret_after, bool* ret_after_alloc, bool open_parent) {
+    NTSTATUS Status;
+    UNICODE_STRING us, after;
+    WCHAR* oa_us_alloc = NULL;
+    bool after_alloc = false;
+
+    if (ObjectAttributes->RootDirectory) {
+        ACCESS_MASK access;
+        object_header* dir = get_object_from_handle(ObjectAttributes->RootDirectory, &access);
+
+        if (!dir)
+            return STATUS_INVALID_HANDLE;
+
+        if (dir->type != dir_type) {
+            dec_obj_refcount(dir);
+            return STATUS_INVALID_HANDLE;
+        }
+
+        spin_lock(&dir->header_lock);
+
+        us.Length = dir->path.Length + sizeof(WCHAR) + ObjectAttributes->ObjectName->Length;
+        us.Buffer = oa_us_alloc = kmalloc(us.Length, GFP_KERNEL);
+
+        if (!us.Buffer) {
+            spin_unlock(&dir->header_lock);
+            dec_obj_refcount(dir);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memcpy(us.Buffer, dir->path.Buffer, dir->path.Length);
+        us.Buffer[dir->path.Length / sizeof(WCHAR)] = '\\';
+        memcpy(&us.Buffer[(dir->path.Length / sizeof(WCHAR)) + 1], ObjectAttributes->ObjectName->Buffer,
+               ObjectAttributes->ObjectName->Length);
+
+        spin_unlock(&dir->header_lock);
+
+        dec_obj_refcount(dir);
+    } else {
+        us.Length = ObjectAttributes->ObjectName->Length;
+        us.Buffer = ObjectAttributes->ObjectName->Buffer;
+    }
+
+    Status = muwine_open_object(&us, obj, &after, &after_alloc, open_parent);
+
+    if (ret_after) {
+        ret_after->Length = after.Length;
+        ret_after->MaximumLength = after.MaximumLength;
+        ret_after->Buffer = after.Buffer;
+
+        *ret_after_alloc = after_alloc;
+    } else if (after.Length != 0) {
+        dec_obj_refcount(*obj);
+        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
+    if (oa_us_alloc)
+        kfree(oa_us_alloc);
+
+    if (after_alloc)
+        kfree(after.Buffer);
+
+    return Status;
 }
 
 void object_cleanup(object_header* obj) {
@@ -1112,8 +1169,6 @@ NTSTATUS muwine_init_objdir(void) {
         kfree(sd);
         return -ENOMEM;
     }
-
-    kfree(sd);
 
     spin_lock_init(&dir_root->children_lock);
     INIT_LIST_HEAD(&dir_root->children);
