@@ -112,6 +112,8 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     thread_object* obj;
     uintptr_t teb;
     size_t teb_size;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    token_object* token;
 
     if (ProcessHandle != NtCurrentProcess()) {
         printk("NtCreateThread: FIXME - support process handles\n"); // FIXME
@@ -192,9 +194,22 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     // create thread object
 
-    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type, NULL);
-    if (!obj)
+    token = muwine_get_current_token();
+
+    Status = muwine_create_sd(NULL,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              token, &thread_type->generic_mapping, 0, false, &sd);
+
+    dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type, sd);
+    if (!obj) {
+        kfree(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     get_task_struct(ts);
     obj->ts = ts;
