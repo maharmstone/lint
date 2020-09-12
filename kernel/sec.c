@@ -589,22 +589,22 @@ ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type) {
 
     if (access & GENERIC_READ) {
         access &= ~GENERIC_READ;
-        access |= type->generic_read;
+        access |= type->generic_mapping.GenericRead;
     }
 
     if (access & GENERIC_WRITE) {
         access &= ~GENERIC_WRITE;
-        access |= type->generic_write;
+        access |= type->generic_mapping.GenericWrite;
     }
 
     if (access & GENERIC_EXECUTE) {
         access &= ~GENERIC_EXECUTE;
-        access |= type->generic_execute;
+        access |= type->generic_mapping.GenericExecute;
     }
 
     if (access & GENERIC_ALL) {
         access &= ~GENERIC_ALL;
-        access |= type->generic_all;
+        access |= type->generic_mapping.GenericAll;
     }
 
     access &= type->valid;
@@ -2005,44 +2005,44 @@ SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type) {
 
                 if (aaa->Mask & GENERIC_READ) {
                     aaa->Mask &= ~GENERIC_READ;
-                    aaa->Mask |= type->generic_read;
+                    aaa->Mask |= type->generic_mapping.GenericRead;
                 }
 
                 if (aaa->Mask & GENERIC_WRITE) {
                     aaa->Mask &= ~GENERIC_WRITE;
-                    aaa->Mask |= type->generic_write;
+                    aaa->Mask |= type->generic_mapping.GenericWrite;
                 }
 
                 if (aaa->Mask & GENERIC_EXECUTE) {
                     aaa->Mask &= ~GENERIC_EXECUTE;
-                    aaa->Mask |= type->generic_execute;
+                    aaa->Mask |= type->generic_mapping.GenericExecute;
                 }
 
                 if (aaa->Mask & GENERIC_ALL) {
                     aaa->Mask &= ~GENERIC_ALL;
-                    aaa->Mask |= type->generic_all;
+                    aaa->Mask |= type->generic_mapping.GenericAll;
                 }
             } else if (ace->AceType == ACCESS_DENIED_ACE_TYPE) {
                 ACCESS_DENIED_ACE* ada = (ACCESS_DENIED_ACE*)ace;
 
                 if (ada->Mask & GENERIC_READ) {
                     ada->Mask &= ~GENERIC_READ;
-                    ada->Mask |= type->generic_read;
+                    ada->Mask |= type->generic_mapping.GenericRead;
                 }
 
                 if (ada->Mask & GENERIC_WRITE) {
                     ada->Mask &= ~GENERIC_WRITE;
-                    ada->Mask |= type->generic_write;
+                    ada->Mask |= type->generic_mapping.GenericWrite;
                 }
 
                 if (ada->Mask & GENERIC_EXECUTE) {
                     ada->Mask &= ~GENERIC_EXECUTE;
-                    ada->Mask |= type->generic_execute;
+                    ada->Mask |= type->generic_mapping.GenericExecute;
                 }
 
                 if (ada->Mask & GENERIC_ALL) {
                     ada->Mask &= ~GENERIC_ALL;
-                    ada->Mask |= type->generic_all;
+                    ada->Mask |= type->generic_mapping.GenericAll;
                 }
             }
 

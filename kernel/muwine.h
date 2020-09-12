@@ -864,12 +864,8 @@ typedef struct _type_object {
     object_header header;
     UNICODE_STRING name;
     muwine_close_object close;
-    GENERIC_MAPPING generic_mapping;
     muwine_cleanup_object cleanup;
-    uint32_t generic_read;
-    uint32_t generic_write;
-    uint32_t generic_execute;
-    uint32_t generic_all;
+    GENERIC_MAPPING generic_mapping;
     uint32_t valid;
 } type_object;
 

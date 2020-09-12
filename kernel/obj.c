@@ -61,10 +61,10 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_obj
 
     obj->close = close;
     obj->cleanup = cleanup;
-    obj->generic_read = generic_read;
-    obj->generic_write = generic_write;
-    obj->generic_execute = generic_execute;
-    obj->generic_all = generic_all;
+    obj->generic_mapping.GenericRead = generic_read;
+    obj->generic_mapping.GenericWrite = generic_write;
+    obj->generic_mapping.GenericExecute = generic_execute;
+    obj->generic_mapping.GenericAll = generic_all;
     obj->valid = valid;
 
     if (!type_type)
