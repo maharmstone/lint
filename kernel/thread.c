@@ -419,8 +419,14 @@ NTSTATUS muwine_init_threads(void) {
 }
 
 thread_object* muwine_current_thread_object(void) {
+    NTSTATUS Status;
     struct list_head* le;
     thread_object* obj;
+    process_object* proc;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    token_object* token;
+
+    // search through list
 
     spin_lock(&thread_list_lock);
 
@@ -439,18 +445,61 @@ thread_object* muwine_current_thread_object(void) {
         le = le->next;
     }
 
+    spin_unlock(&thread_list_lock);
+
+    // create SD
+
+    proc = muwine_current_process_object();
+
+    token = proc->token;
+    inc_obj_refcount((object_header*)token);
+
+    Status = muwine_create_sd(NULL, NULL, token, &thread_type->generic_mapping, 0, false, &sd);
+
+    dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status)) {
+        kfree(sd);
+        dec_obj_refcount(&proc->header.h);
+        return NULL;
+    }
+
+    // search through list again
+
+    spin_lock(&thread_list_lock);
+
+    le = thread_list.next;
+
+    while (le != &thread_list) {
+        obj = list_entry(le, thread_object, list);
+
+        if (obj->ts == current) {
+            inc_obj_refcount(&obj->header.h);
+            spin_unlock(&thread_list_lock);
+
+            kfree(sd);
+            dec_obj_refcount(&proc->header.h);
+
+            return obj;
+        }
+
+        le = le->next;
+    }
+
     // add new
 
-    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type, NULL);
+    obj = (thread_object*)muwine_alloc_object(sizeof(thread_object), thread_type, sd);
     if (!obj) {
         spin_unlock(&thread_list_lock);
+        kfree(sd);
+        dec_obj_refcount(&proc->header.h);
         return NULL;
     }
 
     get_task_struct(current);
     obj->ts = current;
 
-    obj->process = muwine_current_process_object();
+    obj->process = proc;
 
     list_add_tail(&obj->list, &thread_list);
 
