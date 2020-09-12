@@ -90,7 +90,8 @@ static char* get_sect_name(HANDLE file_handle) {
 }
 
 static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file** anon_file,
-                           uint32_t* ret_image_size, section_object** obj) {
+                           uint32_t* ret_image_size, section_object** obj,
+                           SECURITY_DESCRIPTOR_RELATIVE* sd) {
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
@@ -225,7 +226,7 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     }
 
     sect = (section_object*)muwine_alloc_object(offsetof(section_object, sections) + (nt_header.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER)),
-                                                section_type, NULL);
+                                                section_type, sd);
     if (!sect) {
         filp_close(file, NULL);
         vfree(buf);
@@ -261,6 +262,9 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     struct file* anon_file = NULL;
     uint64_t file_size = 0;
     ACCESS_MASK file_access;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    object_header* parent = NULL;
+    token_object* token;
 
     if (AllocationAttributes & SEC_IMAGE && !FileHandle)
         return STATUS_INVALID_PARAMETER;
@@ -298,11 +302,46 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
     // FIXME - make sure we're not trying to map a read-only file handle read-write
 
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
+        if (!NT_SUCCESS(Status)) {
+            if (file)
+                dec_obj_refcount(&file->header);
+
+            if (anon_file)
+                filp_close(anon_file, NULL);
+
+            return Status;
+        }
+    }
+
+    token = muwine_get_current_token();
+
+    Status = muwine_create_sd(parent,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              token, &section_type->generic_mapping, 0, false, &sd);
+
+    if (parent)
+        dec_obj_refcount(parent);
+
+    dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status)) {
+        if (file)
+            dec_obj_refcount(&file->header);
+
+        if (anon_file)
+            filp_close(anon_file, NULL);
+
+        return Status;
+    }
+
     if (AllocationAttributes & SEC_IMAGE) {
         uint32_t image_size;
 
-        Status = load_image(FileHandle, file_size, &anon_file, &image_size, &obj);
+        Status = load_image(FileHandle, file_size, &anon_file, &image_size, &obj, sd);
         if (!NT_SUCCESS(Status)) {
+            kfree(sd);
             dec_obj_refcount(&file->header);
             return Status;
         }
@@ -310,8 +349,10 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
         file_size = image_size;
     } else {
         obj = (section_object*)muwine_alloc_object(offsetof(section_object, sections),
-                                                   section_type, NULL);
+                                                   section_type, sd);
         if (!obj) {
+            kfree(sd);
+
             if (file)
                 dec_obj_refcount(&file->header);
 
