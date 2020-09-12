@@ -9,6 +9,9 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
     NTSTATUS Status;
     sem_object* obj;
     ACCESS_MASK access;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    object_header* parent = NULL;
+    token_object* token;
 
     access = sanitize_access_mask(DesiredAccess, sem_type);
 
@@ -20,10 +23,31 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
 
     // create object
 
-    obj = (sem_object*)muwine_alloc_object(sizeof(sem_object), sem_type, NULL);
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
 
-    if (!obj)
+    token = muwine_get_current_token();
+
+    Status = muwine_create_sd(parent,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              token, &sem_type->generic_mapping, 0, false, &sd);
+
+    if (parent)
+        dec_obj_refcount(parent);
+
+    dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    obj = (sem_object*)muwine_alloc_object(sizeof(sem_object), sem_type, sd);
+    if (!obj) {
+        kfree(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     obj->count = InitialCount;
     obj->max_count = MaximumCount;
