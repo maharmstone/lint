@@ -570,13 +570,36 @@ NTSTATUS muwine_add_entry_in_hierarchy2(object_header** obj, POBJECT_ATTRIBUTES 
 NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
     NTSTATUS Status;
     dir_object* obj;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    object_header* parent;
+    token_object* token;
 
     if (!ObjectAttributes || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
 
+    Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    token = muwine_get_current_token();
+
+    Status = muwine_create_sd(parent,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              token, &dir_type->generic_mapping, 0, true, &sd);
+
+    dec_obj_refcount(parent);
+
+    if (token)
+        dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+
     obj = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type, NULL);
-    if (!obj)
+    if (!obj) {
+        kfree(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     spin_lock_init(&obj->children_lock);
     INIT_LIST_HEAD(&obj->children);
