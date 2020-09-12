@@ -2946,3 +2946,101 @@ token_object* duplicate_token(token_object* tok) {
 
     return obj;
 }
+
+static bool valid_acl(ACL* acl, unsigned int len) {
+    ACE_HEADER* ace;
+    unsigned int i;
+
+    // FIXME - also a revision 4?
+    if (acl->AclRevision != ACL_REVISION)
+        return false;
+
+    if (acl->Sbz1 != 0)
+        return false;
+
+    if (acl->AclSize > len)
+        return false;
+
+    if (acl->Sbz2 != 0)
+        return false;
+
+    len -= sizeof(ACL);
+
+    ace = (ACE_HEADER*)&acl[1];
+
+    for (i = 0; i < acl->AceCount; i++) {
+        if (len < sizeof(ACE_HEADER))
+            return false;
+
+        if (len < ace->AceSize)
+            return false;
+
+        len -= ace->AceSize;
+
+        ace = (ACE_HEADER*)((uint8_t*)ace + ace->AceSize);
+    }
+
+    return true;
+}
+
+bool valid_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len) {
+    if (len < sizeof(SECURITY_DESCRIPTOR_RELATIVE))
+        return false;
+
+    if (sd->Revision != 1)
+        return false;
+
+    if (sd->Sbz1 != 0)
+        return false;
+
+    if (!(sd->Control & SE_SELF_RELATIVE))
+        return false;
+
+    if (sd->Owner != 0) {
+        SID* owner = sd_get_owner(sd);
+
+        if (sd->Owner + offsetof(SID, SubAuthority) > len)
+            return false;
+
+        if (owner->Revision != 1)
+            return false;
+
+        if (sd->Owner + sid_length(owner) > len)
+            return false;
+    }
+
+    if (sd->Group != 0) {
+        SID* group = sd_get_group(sd);
+
+        if (sd->Group + offsetof(SID, SubAuthority) > len)
+            return false;
+
+        if (group->Revision != 1)
+            return false;
+
+        if (sd->Group + sid_length(group) > len)
+            return false;
+    }
+
+    if (sd->Sacl != 0) {
+        ACL* sacl = sd_get_sacl(sd);
+
+        if (sd->Sacl + sizeof(ACL) > len)
+            return false;
+
+        if (!valid_acl(sacl, len - sd->Sacl))
+            return false;
+    }
+
+    if (sd->Dacl != 0) {
+        ACL* dacl = sd_get_dacl(sd);
+
+        if (sd->Dacl + sizeof(ACL) > len)
+            return false;
+
+        if (!valid_acl(dacl, len - sd->Dacl))
+            return false;
+    }
+
+    return true;
+}

@@ -744,6 +744,8 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         if (h->depth == 0 || !wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
             key_object* k;
             bool is_volatile, parent_is_volatile;
+            CM_KEY_NODE* nk;
+            SECURITY_DESCRIPTOR_RELATIVE* sd = NULL;
 
             us.Buffer += h->path.Length / sizeof(WCHAR);
             us.Length -= h->path.Length;
@@ -769,6 +771,50 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                 return Status;
             }
 
+            if (is_volatile)
+                nk = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+            else
+                nk = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
+            if (nk->Security != 0) {
+                CM_KEY_SECURITY* sk;
+
+                if (is_volatile)
+                    sk = (CM_KEY_SECURITY*)((uint8_t*)h->volatile_bins + nk->Security + sizeof(int32_t));
+                else
+                    sk = (CM_KEY_SECURITY*)((uint8_t*)h->bins + nk->Security + sizeof(int32_t));
+
+                if (sk->Signature != CM_KEY_SECURITY_SIGNATURE ||
+                    !valid_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength)) {
+                    up_read(&h->sem);
+                    up_read(&hive_list_sem);
+
+                    if (us_alloc)
+                        kfree(orig_us.Buffer);
+
+                    if (oa_us_alloc)
+                        kfree(oa_us_alloc);
+
+                    return STATUS_REGISTRY_CORRUPT;
+                }
+
+                sd = kmalloc(sk->DescriptorLength, GFP_KERNEL);
+                if (!sd) {
+                    up_read(&h->sem);
+                    up_read(&hive_list_sem);
+
+                    if (us_alloc)
+                        kfree(orig_us.Buffer);
+
+                    if (oa_us_alloc)
+                        kfree(oa_us_alloc);
+
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                memcpy(sd, sk->Descriptor, sk->DescriptorLength);
+            }
+
             up_read(&h->sem);
 
             // FIXME - do SeAccessCheck
@@ -776,7 +822,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             // create key object and return handle
 
-            k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type, NULL);
+            k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type, sd);
             if (!k) {
                 up_read(&hive_list_sem);
 
