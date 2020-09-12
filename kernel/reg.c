@@ -2826,12 +2826,13 @@ NTSTATUS user_NtDeleteValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName) {
 }
 
 static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* off, token_object* tok,
-                                      bool is_volatile, bool parent_is_volatile) {
+                                      bool is_volatile, bool parent_is_volatile,
+                                      SECURITY_DESCRIPTOR_RELATIVE* provided_sd) {
     NTSTATUS Status;
     int32_t size;
     CM_KEY_SECURITY* sk;
     SECURITY_DESCRIPTOR_RELATIVE* sd;
-    unsigned int sdlen;
+    size_t sdlen;
     uint32_t skoff, orig_skoff;
     void* parent_bins = parent_is_volatile ? h->volatile_bins : h->bins;
     void* bins = is_volatile ? h->volatile_bins : h->bins;
@@ -2846,10 +2847,17 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
     if (sk->Signature != CM_KEY_SECURITY_SIGNATURE || size < offsetof(CM_KEY_SECURITY, Descriptor) + sk->DescriptorLength)
         return STATUS_REGISTRY_CORRUPT;
 
-    Status = muwine_create_inherited_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength,
-                                        true, tok, &sd, &sdlen);
+    if (!valid_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength))
+        return STATUS_REGISTRY_CORRUPT;
+
+    Status = muwine_create_sd2((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor,
+                               provided_sd, tok, &key_type->generic_mapping, 0,
+                               true, &sd, &sdlen);
+
     if (!NT_SUCCESS(Status))
         return Status;
+
+    // FIXME - need to remove any ACEs for temporary SIDs (logon SIDs etc.) from SD?
 
     if (!is_volatile || h->volatile_sk != 0xffffffff) {
         // walk through sk list, and increase refcount if already present
@@ -3097,7 +3105,7 @@ static NTSTATUS extract_subkey_list(hive* h, bool is_volatile, uint32_t offset, 
 }
 
 static NTSTATUS add_subkey_entry(hive* h, bool is_volatile, CM_INDEX** list, uint32_t count, uint32_t hash,
-                                 uint32_t offset, UNICODE_STRING* us) {
+                                 uint32_t offset, const UNICODE_STRING* us) {
     uint8_t* bins = is_volatile ? h->volatile_bins : h->bins;
     CM_INDEX* lh = *list;
     CM_INDEX* new_lh;
@@ -3330,9 +3338,9 @@ static void free_subkey_list(hive* h, bool is_volatile, uint32_t subkey_list) {
     free_cell(h, subkey_list, is_volatile);
 }
 
-static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_volatile, UNICODE_STRING* us,
+static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_volatile, const UNICODE_STRING* us,
                                uint32_t* subkey_offset, bool* subkey_is_volatile, ULONG CreateOptions,
-                               bool* created) {
+                               bool* created, SECURITY_DESCRIPTOR_RELATIVE* provided_sd) {
     NTSTATUS Status;
     CM_KEY_NODE* kn;
     CM_KEY_NODE* kn2;
@@ -3424,7 +3432,7 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
         dec_obj_refcount(&p->header.h);
 
         Status = allocate_inherited_sk(h, kn->Security, &kn2->Security, tok,
-                                       is_volatile, parent_is_volatile); // FIXME - owner and group
+                                       is_volatile, parent_is_volatile, provided_sd);
 
         dec_obj_refcount(&tok->header);
 
@@ -3584,7 +3592,7 @@ static NTSTATUS create_sub_key(hive* h, uint32_t parent_offset, bool parent_is_v
 }
 
 static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE KeyHandle, ULONG CreateOptions,
-                                   PULONG Disposition, ULONG oa_attributes) {
+                                   PULONG Disposition, POBJECT_ATTRIBUTES ObjectAttributes) {
     NTSTATUS Status;
     key_object* k;
     bool is_volatile, created;
@@ -3617,12 +3625,14 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     if (us->Length > 0) {
         do {
             unsigned int i;
+            bool last_part = part.Buffer + (part.Length / sizeof(WCHAR)) == us->Buffer + (us->Length / sizeof(WCHAR));
 
-            Status = create_sub_key(h, offset, is_volatile, &part, &offset, &is_volatile, CreateOptions, &created);
+            Status = create_sub_key(h, offset, is_volatile, &part, &offset, &is_volatile, CreateOptions,
+                                    &created, last_part ? ObjectAttributes->SecurityDescriptor : NULL);
             if (!NT_SUCCESS(Status))
                 return Status;
 
-            if (part.Buffer + (part.Length / sizeof(WCHAR)) == us->Buffer + (us->Length / sizeof(WCHAR)))
+            if (last_part)
                 break;
 
             part.Buffer += part.Length / sizeof(WCHAR);
@@ -3699,7 +3709,8 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->is_volatile = is_volatile;
     k->parent_is_volatile = parent_is_volatile;
 
-    Status = muwine_add_handle(&k->header, KeyHandle, oa_attributes & OBJ_KERNEL_HANDLE, 0);
+    Status = muwine_add_handle(&k->header, KeyHandle,
+                               ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
         dec_obj_refcount(&key_type->header);
@@ -3824,7 +3835,8 @@ static NTSTATUS NtCreateKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
 
             down_write(&h->sem);
 
-            Status = create_key_in_hive(h, &us2, KeyHandle, CreateOptions, Disposition, ObjectAttributes->Attributes);
+            Status = create_key_in_hive(h, &us2, KeyHandle, CreateOptions, Disposition,
+                                        ObjectAttributes);
 
             up_write(&h->sem);
             up_read(&hive_list_sem);

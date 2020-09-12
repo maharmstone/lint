@@ -383,8 +383,6 @@ typedef struct _SECURITY_DESCRIPTOR_RELATIVE {
 
 typedef void* PSECURITY_DESCRIPTOR;
 
-NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR_RELATIVE* parent_sd, unsigned int parent_sd_len, bool container,
-                                    token_object* tok, SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* outlen);
 NTSTATUS muwine_make_process_token(token_object** t);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* sdlen);
 ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type);
@@ -420,6 +418,11 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
                           token_object* token, GENERIC_MAPPING* generic_mapping,
                           unsigned int flags, bool is_container,
                           SECURITY_DESCRIPTOR_RELATIVE** ret, size_t* retlen);
+NTSTATUS muwine_create_sd2(SECURITY_DESCRIPTOR_RELATIVE* parent_sd,
+                           SECURITY_DESCRIPTOR_RELATIVE* creator,
+                           token_object* token, GENERIC_MAPPING* generic_mapping,
+                           unsigned int flags, bool is_container,
+                           SECURITY_DESCRIPTOR_RELATIVE** ret, size_t* retlen);
 token_object* muwine_get_current_token(void);
 token_object* duplicate_token(token_object* tok);
 NTSTATUS copy_sd(SECURITY_DESCRIPTOR_RELATIVE* in, SECURITY_DESCRIPTOR_RELATIVE** out);

@@ -82,144 +82,6 @@ static unsigned int __inline sid_length(SID* sid) {
     return offsetof(SID, SubAuthority[0]) + (sid->SubAuthorityCount * sizeof(uint32_t));
 }
 
-static unsigned int inherited_acl_length(ACL* acl, bool container) {
-    unsigned int len = sizeof(ACL);
-    unsigned int i;
-    ACE_HEADER* h;
-
-    h = (ACE_HEADER*)&acl[1];
-
-    for (i = 0; i < acl->AceCount; i++) {
-        if ((container && h->AceFlags & CONTAINER_INHERIT_ACE) || (!container && h->AceFlags & OBJECT_INHERIT_ACE))
-            len += h->AceSize;
-
-        h = (ACE_HEADER*)((uint8_t*)h + h->AceSize);
-    }
-
-    return len;
-}
-
-static void get_inherited_acl(ACL* src, ACL* dest, bool container) {
-    ACE_HEADER* src_ace;
-    ACE_HEADER* dest_ace;
-    unsigned int i;
-
-    dest->AclRevision = 2;
-    dest->Sbz1 = 0;
-    dest->AclSize = sizeof(ACL); // FIXME
-    dest->AceCount = 0;
-    dest->Sbz2 = 0;
-
-    src_ace = (ACE_HEADER*)&src[1];
-    dest_ace = (ACE_HEADER*)&dest[1];
-
-    for (i = 0; i < src->AceCount; i++) {
-        if ((container && src_ace->AceFlags & CONTAINER_INHERIT_ACE) || (!container && src_ace->AceFlags & OBJECT_INHERIT_ACE)) {
-            dest->AclSize += src_ace->AceSize;
-            dest->AceCount++;
-
-            memcpy(dest_ace, src_ace, src_ace->AceSize);
-
-            dest_ace->AceFlags |= INHERITED_ACE;
-
-            if (dest_ace->AceFlags & NO_PROPAGATE_INHERIT_ACE)
-                dest_ace->AceFlags &= (uint8_t)~(OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE);
-
-            dest_ace->AceFlags &= (uint8_t)~INHERIT_ONLY_ACE;
-
-            dest_ace = (ACE_HEADER*)((uint8_t*)dest_ace + dest_ace->AceSize);
-        }
-
-        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
-    }
-}
-
-NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR_RELATIVE* parent_sd, unsigned int parent_sd_len, bool container,
-                                    token_object* tok, SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* outlen) {
-    unsigned int len = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
-    SECURITY_DESCRIPTOR_RELATIVE* sd;
-    uint8_t* ptr;
-    unsigned int sacl_length = 0, dacl_length = 0;
-
-    // FIXME - check parent_sd is valid
-
-    if (tok && tok->owner)
-        len += sid_length(tok->owner);
-
-    if (tok && tok->primary_group)
-        len += sid_length(tok->primary_group);
-
-    if (parent_sd->Sacl != 0) {
-        sacl_length = inherited_acl_length((ACL*)((uint8_t*)parent_sd + parent_sd->Sacl), container);
-        len += sacl_length;
-    }
-
-    if (parent_sd->Dacl != 0) {
-        dacl_length = inherited_acl_length((ACL*)((uint8_t*)parent_sd + parent_sd->Dacl), container);
-        len += dacl_length;
-    }
-
-    sd = kmalloc(len, GFP_KERNEL);
-
-    if (!sd)
-        return STATUS_INSUFFICIENT_RESOURCES;
-
-    sd->Revision = 1;
-    sd->Sbz1 = 0;
-    sd->Control = SE_SELF_RELATIVE;
-
-    if (parent_sd->Sacl != 0)
-        sd->Control |= SE_SACL_PRESENT;
-
-    if (parent_sd->Dacl != 0)
-        sd->Control |= SE_DACL_PRESENT;
-
-    ptr = (uint8_t*)&sd[1];
-
-    if (tok && tok->owner) {
-        unsigned int sidlen = sid_length(tok->owner);
-
-        sd->Owner = (uint32_t)(ptr - (uint8_t*)sd);
-        memcpy(ptr, tok->owner, sidlen);
-        ptr += sidlen;
-    } else
-        sd->Owner = 0;
-
-    if (tok && tok->primary_group) {
-        unsigned int sidlen = sid_length(tok->primary_group);
-
-        sd->Group = (uint32_t)(ptr - (uint8_t*)sd);
-        memcpy(ptr, tok->primary_group, sidlen);
-        ptr += sidlen;
-    } else
-        sd->Group = 0;
-
-    if (parent_sd->Sacl != 0) {
-        sd->Sacl = (uint32_t)(ptr - (uint8_t*)sd);
-
-        get_inherited_acl((ACL*)((uint8_t*)parent_sd + parent_sd->Sacl),
-                          (ACL*)((uint8_t*)sd + sd->Sacl), container);
-
-        ptr += sacl_length;
-    } else
-        sd->Sacl = 0;
-
-    if (parent_sd->Dacl != 0) {
-        sd->Dacl = (uint32_t)(ptr - (uint8_t*)sd);
-
-        get_inherited_acl((ACL*)((uint8_t*)parent_sd + parent_sd->Dacl),
-                          (ACL*)((uint8_t*)sd + sd->Dacl), container);
-
-        ptr += dacl_length;
-    } else
-        sd->Dacl = 0;
-
-    *out = sd;
-    *outlen = len;
-
-    return STATUS_SUCCESS;
-}
-
 static void uid_to_sid(SID** sid, kuid_t uid) {
     SID* s;
 
@@ -2666,10 +2528,11 @@ NTSTATUS copy_sd(SECURITY_DESCRIPTOR_RELATIVE* in, SECURITY_DESCRIPTOR_RELATIVE*
     return STATUS_SUCCESS;
 }
 
-NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* creator,
-                          token_object* token, GENERIC_MAPPING* generic_mapping,
-                          unsigned int flags, bool is_container,
-                          SECURITY_DESCRIPTOR_RELATIVE** ret, size_t* retlen) {
+NTSTATUS muwine_create_sd2(SECURITY_DESCRIPTOR_RELATIVE* parent_sd,
+                           SECURITY_DESCRIPTOR_RELATIVE* creator,
+                           token_object* token, GENERIC_MAPPING* generic_mapping,
+                           unsigned int flags, bool is_container,
+                           SECURITY_DESCRIPTOR_RELATIVE** ret, size_t* retlen) {
     NTSTATUS Status;
     SID* owner;
     SID* group;
@@ -2679,25 +2542,6 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
     size_t size;
     SECURITY_DESCRIPTOR_RELATIVE* sd;
     DWORD off;
-    SECURITY_DESCRIPTOR_RELATIVE* parent_sd;
-
-    if (parent) {
-        // take a copy of the parent SD to avoid locking issues later
-        spin_lock(&parent->header_lock);
-
-        if (parent->sd)
-            Status = copy_sd(parent->sd, &parent_sd);
-        else {
-            parent_sd = NULL;
-            Status = STATUS_SUCCESS;
-        }
-
-        spin_unlock(&parent->header_lock);
-
-        if (!NT_SUCCESS(Status))
-            return Status;
-    } else
-        parent_sd = NULL;
 
     if (token)
         down_read(&token->sem);
@@ -2735,12 +2579,8 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
     if (token)
         up_read(&token->sem);
 
-    if (!NT_SUCCESS(Status)) {
-        if (parent_sd)
-            kfree(parent_sd);
-
+    if (!NT_SUCCESS(Status))
         return Status;
-    }
 
     // SACL
 
@@ -2751,14 +2591,8 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
         if (dacl)
             kfree(dacl);
 
-        if (parent_sd)
-            kfree(parent_sd);
-
         return Status;
     }
-
-    if (parent_sd)
-        kfree(parent_sd);
 
     // assemble SD
 
@@ -2823,6 +2657,40 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
         *retlen = size;
 
     return STATUS_SUCCESS;
+}
+
+NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* creator,
+                          token_object* token, GENERIC_MAPPING* generic_mapping,
+                          unsigned int flags, bool is_container,
+                          SECURITY_DESCRIPTOR_RELATIVE** ret, size_t* retlen) {
+    NTSTATUS Status;
+    SECURITY_DESCRIPTOR_RELATIVE* parent_sd;
+
+    if (parent) {
+        // take a copy of the parent SD to avoid locking issues later
+        spin_lock(&parent->header_lock);
+
+        if (parent->sd)
+            Status = copy_sd(parent->sd, &parent_sd);
+        else {
+            parent_sd = NULL;
+            Status = STATUS_SUCCESS;
+        }
+
+        spin_unlock(&parent->header_lock);
+
+        if (!NT_SUCCESS(Status))
+            return Status;
+    } else
+        parent_sd = NULL;
+
+    Status = muwine_create_sd2(parent_sd, creator, token, generic_mapping, flags, is_container,
+                               ret, retlen);
+
+    if (parent_sd)
+        kfree(parent_sd);
+
+    return Status;
 }
 
 token_object* duplicate_token(token_object* tok) {
