@@ -413,7 +413,6 @@ NTSTATUS user_NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION Security
                                     PULONG LengthNeeded);
 NTSTATUS NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                            BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
-SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type);
 
 typedef struct _GENERIC_MAPPING GENERIC_MAPPING;
 
