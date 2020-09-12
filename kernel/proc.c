@@ -225,15 +225,15 @@ static void duplicate_handle(handle* old, handle** new) {
 }
 
 int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
+    NTSTATUS Status;
     long retval;
     struct list_head* le;
     process_object* obj = muwine_current_process_object();
     process_object* new_obj;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
 
     if (!obj)
         return 0;
-
-    // FIXME - should we be doing this for the clone syscall as well?
 
     retval = regs_return_value(regs);
 
@@ -242,12 +242,37 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
         return 0;
     }
 
-    new_obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type, NULL);
-    if (!new_obj) {
-        printk(KERN_ERR "muwine fork_handler: out of memory\n");
+    spin_lock(&obj->header.h.header_lock);
+
+    if (obj->header.h.sd)
+        Status = copy_sd(obj->header.h.sd, &sd);
+    else {
+        sd = NULL;
+        Status = STATUS_SUCCESS;
+    }
+
+    spin_unlock(&obj->header.h.header_lock);
+
+    if (!NT_SUCCESS(Status)) {
         dec_obj_refcount(&obj->header.h);
         return 0;
     }
+
+    new_obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type, NULL);
+    if (!new_obj) {
+        printk(KERN_ERR "muwine fork_handler: out of memory\n");
+
+        if (sd)
+            kfree(sd);
+
+        dec_obj_refcount(&obj->header.h);
+        return 0;
+    }
+
+    if (new_obj->header.h.sd)
+        kfree(new_obj->header.h.sd);
+
+    new_obj->header.h.sd = sd;
 
     new_obj->pid = retval;
 
