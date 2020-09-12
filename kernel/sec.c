@@ -7,6 +7,7 @@ static const uint8_t sid_users[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0, 0, 0x21
 static const uint8_t sid_administrators[] = { 1, 2, 0, 0, 0, 0, 0, 5, 0x20, 0, 0, 0, 0x20, 0x2, 0, 0 }; // S-1-5-32-544
 static const uint8_t sid_local_system[] = { 1, 1, 0, 0, 0, 0, 0, 5, 0x12, 0, 0, 0 }; // S-1-5-18
 static const uint8_t sid_creator_owner[] = { 1, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0 }; // S-1-3-0
+static const uint8_t sid_creator_group[] = { 1, 1, 0, 0, 0, 0, 0, 3, 1, 0, 0, 0 }; // S-1-3-1
 static const uint8_t sid_everyone[] = { 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 }; // S-1-1-0
 static const uint8_t sid_restricted[] = { 1, 1, 0, 0, 0, 0, 0, 5, 12, 0, 0, 0 }; // S-1-5-12
 
@@ -2165,6 +2166,565 @@ NTSTATUS muwine_init_tokens(void) {
         printk(KERN_ALERT "muwine_add_object_type returned %d\n", (int)(uintptr_t)token_type);
         return muwine_error_to_ntstatus((int)(uintptr_t)token_type);
     }
+
+    return STATUS_SUCCESS;
+}
+
+static bool acl_contains_inheritable_ace(ACL* acl) {
+    unsigned int i;
+    ACE_HEADER* ace = (ACE_HEADER*)&acl[1];
+
+    for (i = 0; i < acl->AceCount; i++) {
+        if (ace->AceFlags & CONTAINER_INHERIT_ACE || ace->AceFlags & OBJECT_INHERIT_ACE)
+            return true;
+
+        ace = (ACE_HEADER*)((uint8_t*)ace + ace->AceSize);
+    }
+
+    return false;
+}
+
+static NTSTATUS preprocess_acl_from_creator(ACL* creator, ACL** ret) {
+    unsigned int i;
+    size_t size;
+    ACE_HEADER* src_ace;
+    ACE_HEADER* dest_ace;
+    ACL* acl;
+
+    size = sizeof(ACL);
+
+    src_ace = (ACE_HEADER*)&creator[1];
+
+    for (i = 0; i < creator->AceCount; i++) {
+        if (!(src_ace->AceFlags & INHERITED_ACE))
+            size += src_ace->AceSize;
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    acl = kmalloc(size, GFP_KERNEL);
+    if (!acl)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    acl->AclRevision = ACL_REVISION;
+    acl->Sbz1 = 0;
+    acl->AclSize = size;
+    acl->AceCount = 0;
+    acl->Sbz2 = 0;
+
+    src_ace = (ACE_HEADER*)&creator[1];
+    dest_ace = (ACE_HEADER*)&acl[1];
+
+    for (i = 0; i < creator->AceCount; i++) {
+        if (!(src_ace->AceFlags & INHERITED_ACE)) {
+            memcpy(dest_ace, src_ace, src_ace->AceSize);
+            acl->AceCount++;
+
+            dest_ace = (ACE_HEADER*)((uint8_t*)dest_ace + dest_ace->AceSize);
+        }
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    *ret = acl;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS post_process_acl(ACL* src_acl, bool copy_all, SID* owner, SID* group,
+                                 GENERIC_MAPPING* generic_mapping, ACL** ret) {
+    unsigned int i;
+    size_t size;
+    ACL* acl;
+    ACE_HEADER* src_ace;
+    ACE_HEADER* dest_ace;
+
+    size = sizeof(ACL);
+
+    src_ace = (ACE_HEADER*)&src_acl[1];
+
+    for (i = 0; i < src_acl->AceCount; i++) {
+        if (src_ace->AceFlags & INHERITED_ACE || copy_all) {
+            if (src_ace->AceType == ACCESS_ALLOWED_ACE_TYPE || src_ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+                ACCESS_ALLOWED_ACE* aaa = (ACCESS_ALLOWED_ACE*)src_ace;
+
+                size += offsetof(ACCESS_ALLOWED_ACE, SidStart);
+
+                if (!memcmp(&aaa->SidStart, &sid_creator_owner, sizeof(sid_creator_owner)))
+                    size += sid_length(owner);
+                else if (!memcmp(&aaa->SidStart, &sid_creator_group, sizeof(sid_creator_group)))
+                    size += sid_length(group);
+                else
+                    size += sid_length((SID*)&aaa->SidStart);
+            }
+        }
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    acl = kmalloc(size, GFP_KERNEL);
+    if (!acl)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    acl->AclRevision = ACL_REVISION;
+    acl->Sbz1 = 0;
+    acl->AclSize = size;
+    acl->AceCount = 0;
+    acl->Sbz2 = 0;
+
+    src_ace = (ACE_HEADER*)&src_acl[1];
+    dest_ace = (ACE_HEADER*)&acl[1];
+
+    for (i = 0; i < src_acl->AceCount; i++) {
+        if (src_ace->AceFlags & INHERITED_ACE || copy_all) {
+            if (src_ace->AceType == ACCESS_ALLOWED_ACE_TYPE || src_ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+                ACCESS_ALLOWED_ACE* src_aaa = (ACCESS_ALLOWED_ACE*)src_ace;
+                ACCESS_ALLOWED_ACE* dest_aaa = (ACCESS_ALLOWED_ACE*)dest_ace;
+
+                memcpy(dest_aaa, src_aaa, offsetof(ACCESS_ALLOWED_ACE, SidStart));
+
+                dest_aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart);
+
+                if (!memcmp(&src_aaa->SidStart, &sid_creator_owner, sizeof(sid_creator_owner))) {
+                    dest_aaa->Header.AceSize += sid_length(owner);
+                    memcpy(&dest_aaa->SidStart, owner, sid_length(owner));
+                } else if (!memcmp(&src_aaa->SidStart, &sid_creator_group, sizeof(sid_creator_group))) {
+                    dest_aaa->Header.AceSize += sid_length(group);
+                    memcpy(&dest_aaa->SidStart, group, sid_length(group));
+                } else {
+                    dest_aaa->Header.AceSize += sid_length((SID*)&src_aaa->SidStart);
+                    memcpy(&dest_aaa->SidStart, &src_aaa->SidStart, sid_length((SID*)&src_aaa->SidStart));
+                }
+
+                if (dest_aaa->Mask & GENERIC_READ)
+                    dest_aaa->Mask |= generic_mapping->GenericRead;
+
+                if (dest_aaa->Mask & GENERIC_WRITE)
+                    dest_aaa->Mask |= generic_mapping->GenericWrite;
+
+                if (dest_aaa->Mask & GENERIC_EXECUTE)
+                    dest_aaa->Mask |= generic_mapping->GenericExecute;
+
+                if (dest_aaa->Mask & GENERIC_ALL)
+                    dest_aaa->Mask |= generic_mapping->GenericAll;
+
+                acl->AceCount++;
+
+                dest_ace = (ACE_HEADER*)((uint8_t*)dest_ace + dest_ace->AceSize);
+            }
+        }
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    *ret = acl;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS compute_inherited_acl_from_parent(ACL* parent, bool is_container,
+                                                  ACL** ret) {
+    unsigned int i;
+    size_t size;
+    ACE_HEADER* src_ace;
+    ACE_HEADER* dest_ace;
+    ACL* acl;
+
+    size = sizeof(ACL);
+
+    src_ace = (ACE_HEADER*)&parent[1];
+
+    for (i = 0; i < parent->AceCount; i++) {
+        if (!(src_ace->AceFlags & INHERIT_ONLY_ACE) &&
+            ((is_container && src_ace->AceFlags & CONTAINER_INHERIT_ACE) ||
+            (!is_container && src_ace->AceFlags & OBJECT_INHERIT_ACE))) {
+            if (src_ace->AceType == ACCESS_ALLOWED_ACE_TYPE ||
+                src_ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+                size += src_ace->AceSize;
+            }
+        }
+
+        if (is_container && !(src_ace->AceFlags & NO_PROPAGATE_INHERIT_ACE)) {
+            if (src_ace->AceFlags & CONTAINER_INHERIT_ACE || src_ace->AceFlags & OBJECT_INHERIT_ACE)
+                size += src_ace->AceSize;
+        }
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    acl = kmalloc(size, GFP_KERNEL);
+    if (!acl)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    acl->AclRevision = ACL_REVISION;
+    acl->Sbz1 = 0;
+    acl->AclSize = size;
+    acl->AceCount = 0;
+    acl->Sbz2 = 0;
+
+    src_ace = (ACE_HEADER*)&parent[1];
+    dest_ace = (ACE_HEADER*)&acl[1];
+
+    for (i = 0; i < parent->AceCount; i++) {
+        if (src_ace->AceFlags & INHERIT_ONLY_ACE) {
+            src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+            continue;
+        }
+
+        if ((is_container && src_ace->AceFlags & CONTAINER_INHERIT_ACE) ||
+            (!is_container && src_ace->AceFlags & OBJECT_INHERIT_ACE)) {
+            if (src_ace->AceType == ACCESS_ALLOWED_ACE_TYPE ||
+                src_ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+                memcpy(dest_ace, src_ace, src_ace->AceSize);
+                dest_ace->AceFlags = INHERITED_ACE;
+
+                acl->AceCount++;
+                dest_ace = (ACE_HEADER*)((uint8_t*)dest_ace + dest_ace->AceSize);
+            }
+        }
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    if (!is_container) {
+        *ret = acl;
+        return STATUS_SUCCESS;
+    }
+
+    src_ace = (ACE_HEADER*)&parent[1];
+
+    for (i = 0; i < parent->AceCount; i++) {
+        if (!(src_ace->AceFlags & NO_PROPAGATE_INHERIT_ACE)) {
+            if (src_ace->AceFlags & CONTAINER_INHERIT_ACE || src_ace->AceFlags & OBJECT_INHERIT_ACE) {
+                memcpy(dest_ace, src_ace, src_ace->AceSize);
+                dest_ace->AceFlags |= INHERITED_ACE | INHERIT_ONLY_ACE;
+
+                acl->AceCount++;
+                dest_ace = (ACE_HEADER*)((uint8_t*)dest_ace + dest_ace->AceSize);
+            }
+        }
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    *ret = acl;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS compute_inherited_acl_from_creator(ACL* creator, bool is_container, ACL** ret) {
+    unsigned int i;
+    ACE_HEADER* src_ace;
+    ACE_HEADER* dest_ace;
+    size_t size;
+    ACL* acl;
+
+    size = sizeof(ACL);
+    src_ace = (ACE_HEADER*)&creator[1];
+
+    for (i = 0; i < creator->AceCount; i++) {
+        if ((is_container && src_ace->AceFlags & CONTAINER_INHERIT_ACE) ||
+            (!is_container && src_ace->AceFlags & OBJECT_INHERIT_ACE)) {
+            if (src_ace->AceType == ACCESS_ALLOWED_ACE_TYPE ||
+                src_ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+                size += src_ace->AceSize;
+            }
+        }
+
+        if (is_container && (src_ace->AceFlags & CONTAINER_INHERIT_ACE || src_ace->AceFlags & OBJECT_INHERIT_ACE))
+            size += src_ace->AceSize;
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    acl = kmalloc(size, GFP_KERNEL);
+    if (!acl)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    acl->AclRevision = ACL_REVISION;
+    acl->Sbz1 = 0;
+    acl->AclSize = size;
+    acl->AceCount = 0;
+    acl->Sbz2 = 0;
+
+    src_ace = (ACE_HEADER*)&creator[1];
+    dest_ace = (ACE_HEADER*)&acl[1];
+
+    for (i = 0; i < creator->AceCount; i++) {
+        if ((is_container && src_ace->AceFlags & CONTAINER_INHERIT_ACE) ||
+            (!is_container && src_ace->AceFlags & OBJECT_INHERIT_ACE)) {
+            if (src_ace->AceType == ACCESS_ALLOWED_ACE_TYPE ||
+                src_ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+                memcpy(dest_ace, src_ace, src_ace->AceSize);
+                dest_ace->AceFlags = 0;
+
+                acl->AceCount++;
+                dest_ace = (ACE_HEADER*)((uint8_t*)dest_ace + dest_ace->AceSize);
+            }
+        }
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    if (!is_container) {
+        *ret = acl;
+        return STATUS_SUCCESS;
+    }
+
+    src_ace = (ACE_HEADER*)&creator[1];
+
+    for (i = 0; i < creator->AceCount; i++) {
+        if (src_ace->AceFlags & CONTAINER_INHERIT_ACE || src_ace->AceFlags & OBJECT_INHERIT_ACE) {
+            memcpy(dest_ace, src_ace, src_ace->AceSize);
+            dest_ace->AceFlags |= INHERIT_ONLY_ACE;
+
+            acl->AceCount++;
+            dest_ace = (ACE_HEADER*)((uint8_t*)dest_ace + dest_ace->AceSize);
+        }
+
+        src_ace = (ACE_HEADER*)((uint8_t*)src_ace + src_ace->AceSize);
+    }
+
+    *ret = acl;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS compute_acl(ACL* parent, SECURITY_DESCRIPTOR_RELATIVE* creator_sd,
+                            ACL* default_acl, bool dacl, SID* owner, SID* group,
+                            GENERIC_MAPPING* generic_mapping, unsigned int flags,
+                            bool is_container, SECURITY_DESCRIPTOR_CONTROL* control,
+                            ACL** ret) {
+    NTSTATUS Status;
+    ACL* creator;
+
+    // See 2.5.3.4.2 of [MS-DTYP]
+
+    // FIXME - handle object ACEs?
+
+    if (dacl)
+        creator = creator_sd->Dacl != 0 ? sd_get_dacl(creator_sd) : NULL;
+    else
+        creator = creator_sd->Sacl != 0 ? sd_get_sacl(creator_sd) : NULL;
+
+    *control = 0;
+
+    if (parent && acl_contains_inheritable_ace(parent)) {
+        if (!creator || (creator && flags & SEF_DEFAULT_DESCRIPTOR_FOR_OBJECT)) {
+            ACL* next_acl;
+
+            Status = compute_inherited_acl_from_parent(parent, is_container, &next_acl);
+            if (!NT_SUCCESS(Status))
+                return Status;
+
+            Status = post_process_acl(next_acl, false, owner, group, generic_mapping, ret);
+
+            kfree(next_acl);
+
+            return Status;
+        } else {
+            ACL* pre_acl;
+            ACL* tmp_acl;
+            ACL* inherited = NULL;
+
+            Status = preprocess_acl_from_creator(creator, &pre_acl);
+            if (!NT_SUCCESS(Status))
+                return Status;
+
+            Status = compute_inherited_acl_from_creator(pre_acl, is_container, &tmp_acl);
+
+            kfree(pre_acl);
+
+            if (!NT_SUCCESS(Status))
+                return Status;
+
+            if (dacl) {
+                if (!(creator_sd->Control & SE_DACL_PROTECTED) && flags & SEF_DACL_AUTO_INHERIT) {
+                    ACL* inherited;
+
+                    Status = compute_inherited_acl_from_parent(parent, is_container, &inherited);
+                    if (!NT_SUCCESS(Status)) {
+                        kfree(tmp_acl);
+                        return Status;
+                    }
+
+                    *control |= SE_DACL_AUTO_INHERITED;
+                }
+            } else { // sacl
+                if (!(creator_sd->Control & SE_SACL_PROTECTED) && flags & SEF_SACL_AUTO_INHERIT) {
+                    Status = compute_inherited_acl_from_parent(parent, is_container, &inherited);
+                    if (!NT_SUCCESS(Status)) {
+                        kfree(tmp_acl);
+                        return Status;
+                    }
+
+                    *control |= SE_SACL_AUTO_INHERITED;
+                }
+            }
+
+            if (inherited) { // append inherited ACEs to tmp_acl
+                ACL* new_acl;
+                size_t size = tmp_acl->AclSize + inherited->AclSize - sizeof(ACL);
+
+                new_acl = kmalloc(size, GFP_KERNEL);
+                if (!new_acl) {
+                    kfree(inherited);
+                    kfree(tmp_acl);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+
+                new_acl->AclRevision = ACL_REVISION;
+                new_acl->Sbz1 = 0;
+                new_acl->AclSize = size;
+                new_acl->AceCount = tmp_acl->AceCount + inherited->AceCount;
+                new_acl->Sbz2 = 0;
+
+                memcpy(&new_acl[1], tmp_acl, tmp_acl->AclSize - sizeof(ACL));
+                memcpy((uint8_t*)new_acl + tmp_acl->AclSize, &inherited[1],
+                       inherited->AclSize - sizeof(ACL));
+
+                kfree(inherited);
+                kfree(tmp_acl);
+
+                tmp_acl = new_acl;
+            }
+
+            Status = post_process_acl(tmp_acl, false, owner, group, generic_mapping, ret);
+
+            kfree(tmp_acl);
+
+            return Status;
+        }
+    } else {
+        ACL* tmp_acl;
+
+        if (!creator)
+            tmp_acl = default_acl;
+        else
+            preprocess_acl_from_creator(creator, &tmp_acl);
+
+        Status = post_process_acl(tmp_acl, true, owner, group, generic_mapping, ret);
+
+        if (creator)
+            kfree(tmp_acl);
+
+        return Status;
+    }
+}
+
+NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
+                          SECURITY_DESCRIPTOR_RELATIVE* creator, token_object* token,
+                          GENERIC_MAPPING* generic_mapping, unsigned int flags,
+                          bool is_container, SECURITY_DESCRIPTOR_CONTROL* control,
+                          SECURITY_DESCRIPTOR_RELATIVE** ret) {
+    NTSTATUS Status;
+    SID* owner;
+    SID* group;
+    ACL* dacl;
+    ACL* sacl;
+    SECURITY_DESCRIPTOR_CONTROL ctrl1 = 0, ctrl2 = 0;
+    size_t size;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    DWORD off;
+
+    // owner
+
+    if (!creator || creator->Owner == 0) {
+        if (parent && parent->Owner != 0 && flags & SEF_DEFAULT_OWNER_FROM_PARENT)
+            owner = sd_get_owner(parent);
+        else
+            owner = token->owner;
+    } else
+        owner = sd_get_owner(creator);
+
+    // group
+
+    if (!creator || creator->Group == 0) {
+        if (parent && parent->Group != 0 && flags & SEF_DEFAULT_GROUP_FROM_PARENT)
+            group = sd_get_group(parent);
+        else
+            group = token->primary_group;
+    } else
+        group = sd_get_group(creator);
+
+    // DACL
+
+    Status = compute_acl(parent && parent->Dacl != 0 ? sd_get_dacl(parent) : NULL, creator,
+                         token->default_dacl, true, owner, group,
+                         generic_mapping, flags, is_container, &ctrl1, &dacl);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    // SACL
+
+    Status = compute_acl(parent && parent->Sacl != 0 ? sd_get_sacl(parent) : NULL, creator,
+                         NULL, false, owner, group, generic_mapping,
+                         flags, is_container, &ctrl2, &sacl);
+    if (!NT_SUCCESS(Status)) {
+        if (dacl)
+            kfree(dacl);
+
+        return Status;
+    }
+
+    // assemble SD
+
+    size = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+    size += owner ? sid_length(owner) : 0;
+    size += group ? sid_length(group) : 0;
+    size += dacl ? dacl->AclSize : 0;
+    size += sacl ? sacl->AclSize : 0;
+
+    sd = kmalloc(size, GFP_KERNEL);
+    if (!sd) {
+        if (dacl)
+            kfree(dacl);
+
+        if (sacl)
+            kfree(sacl);
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    sd->Revision = 1;
+    sd->Sbz1 = 0;
+    sd->Control = SE_SELF_RELATIVE | ctrl1 | ctrl2;
+
+    off = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    if (owner) {
+        sd->Owner = off;
+        memcpy(sd_get_owner(sd), owner, sid_length(owner));
+        off += sid_length(owner);
+    } else
+        sd->Owner = 0;
+
+    if (group) {
+        sd->Group = off;
+        memcpy(sd_get_group(sd), group, sid_length(group));
+        off += sid_length(group);
+    } else
+        sd->Group = 0;
+
+    if (dacl) {
+        sd->Dacl = off;
+        memcpy(sd_get_dacl(sd), dacl, dacl->AclSize);
+        off += dacl->AclSize;
+
+        kfree(dacl);
+    } else
+        sd->Dacl = 0;
+
+    if (sacl) {
+        sd->Sacl = off;
+        memcpy(sd_get_sacl(sd), sacl, sacl->AclSize);
+        off += sacl->AclSize;
+
+        kfree(sacl);
+    } else
+        sd->Sacl = 0;
+
+    *ret = sd;
 
     return STATUS_SUCCESS;
 }

@@ -415,6 +415,14 @@ NTSTATUS NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                            BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
 SECURITY_DESCRIPTOR_RELATIVE* muwine_create_object_sd(type_object* type);
 
+typedef struct _GENERIC_MAPPING GENERIC_MAPPING;
+
+NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
+                          SECURITY_DESCRIPTOR_RELATIVE* creator, token_object* token,
+                          GENERIC_MAPPING* generic_mapping, unsigned int flags,
+                          bool is_container, SECURITY_DESCRIPTOR_CONTROL* control,
+                          SECURITY_DESCRIPTOR_RELATIVE** ret);
+
 // file.c
 #define FILE_SUPERSEDE                    0x00000000
 #define FILE_OPEN                         0x00000001
@@ -845,10 +853,18 @@ typedef struct _device {
 typedef void (*muwine_close_object)(struct _object_header* obj);
 typedef void (*muwine_cleanup_object)(struct _object_header* obj);
 
+typedef struct _GENERIC_MAPPING {
+    ACCESS_MASK GenericRead;
+    ACCESS_MASK GenericWrite;
+    ACCESS_MASK GenericExecute;
+    ACCESS_MASK GenericAll;
+} GENERIC_MAPPING;
+
 typedef struct _type_object {
     object_header header;
     UNICODE_STRING name;
     muwine_close_object close;
+    GENERIC_MAPPING generic_mapping;
     muwine_cleanup_object cleanup;
     uint32_t generic_read;
     uint32_t generic_write;
