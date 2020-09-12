@@ -38,7 +38,8 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
     if (parent)
         dec_obj_refcount(parent);
 
-    dec_obj_refcount((object_header*)token);
+    if (token)
+        dec_obj_refcount((object_header*)token);
 
     if (!NT_SUCCESS(Status))
         return Status;

@@ -200,7 +200,8 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
                               token, &thread_type->generic_mapping, 0, false, &sd);
 
-    dec_obj_refcount((object_header*)token);
+    if (token)
+        dec_obj_refcount((object_header*)token);
 
     if (!NT_SUCCESS(Status))
         return Status;
@@ -452,11 +453,14 @@ thread_object* muwine_current_thread_object(void) {
     proc = muwine_current_process_object();
 
     token = proc->token;
-    inc_obj_refcount((object_header*)token);
+
+    if (token)
+        inc_obj_refcount((object_header*)token);
 
     Status = muwine_create_sd(NULL, NULL, token, &thread_type->generic_mapping, 0, false, &sd);
 
-    dec_obj_refcount((object_header*)token);
+    if (token)
+        dec_obj_refcount((object_header*)token);
 
     if (!NT_SUCCESS(Status)) {
         kfree(sd);

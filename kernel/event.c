@@ -38,7 +38,8 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
     if (parent)
         dec_obj_refcount(parent);
 
-    dec_obj_refcount((object_header*)token);
+    if (token)
+        dec_obj_refcount((object_header*)token);
 
     if (!NT_SUCCESS(Status))
         return Status;

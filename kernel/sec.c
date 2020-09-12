@@ -2605,13 +2605,16 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
     } else
         parent_sd = NULL;
 
-    down_read(&token->sem);
+    if (token)
+        down_read(&token->sem);
 
     // owner
 
     if (!creator || creator->Owner == 0) {
         if (parent_sd && parent_sd->Owner != 0 && flags & SEF_DEFAULT_OWNER_FROM_PARENT)
             owner = sd_get_owner(parent_sd);
+        else if (!token)
+            owner = NULL;
         else
             owner = token->owner;
     } else
@@ -2622,6 +2625,8 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
     if (!creator || creator->Group == 0) {
         if (parent_sd && parent_sd->Group != 0 && flags & SEF_DEFAULT_GROUP_FROM_PARENT)
             group = sd_get_group(parent_sd);
+        else if (!token)
+            group = NULL;
         else
             group = token->primary_group;
     } else
@@ -2630,10 +2635,11 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
     // DACL
 
     Status = compute_acl(parent_sd && parent_sd->Dacl != 0 ? sd_get_dacl(parent_sd) : NULL, creator,
-                         token->default_dacl, true, owner, group,
+                         token ? token->default_dacl : NULL, true, owner, group,
                          generic_mapping, flags, is_container, &ctrl1, &dacl);
 
-    up_read(&token->sem);
+    if (token)
+        up_read(&token->sem);
 
     if (!NT_SUCCESS(Status)) {
         if (parent_sd)
