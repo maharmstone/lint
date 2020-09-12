@@ -419,7 +419,7 @@ typedef struct _GENERIC_MAPPING GENERIC_MAPPING;
 NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* creator,
                           token_object* token, GENERIC_MAPPING* generic_mapping,
                           unsigned int flags, bool is_container,
-                          SECURITY_DESCRIPTOR_RELATIVE** ret);
+                          SECURITY_DESCRIPTOR_RELATIVE** ret, size_t* retlen);
 token_object* muwine_get_current_token(void);
 token_object* duplicate_token(token_object* tok);
 NTSTATUS copy_sd(SECURITY_DESCRIPTOR_RELATIVE* in, SECURITY_DESCRIPTOR_RELATIVE** out);

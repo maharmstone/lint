@@ -319,7 +319,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
 
     Status = muwine_create_sd(parent,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
-                              token, &section_type->generic_mapping, 0, false, &sd);
+                              token, &section_type->generic_mapping, 0, false, &sd, NULL);
 
     if (parent)
         dec_obj_refcount(parent);

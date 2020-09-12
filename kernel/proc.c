@@ -61,7 +61,7 @@ NTSTATUS muwine_add_current_process(void) {
         return Status;
 
     Status = muwine_create_sd(NULL, NULL, tok, &process_type->generic_mapping,
-                              0, false, &sd);
+                              0, false, &sd, NULL);
     if (!NT_SUCCESS(Status)) {
         if (tok)
             dec_obj_refcount(&tok->header);

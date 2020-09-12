@@ -587,7 +587,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
 
     Status = muwine_create_sd(parent,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
-                              token, &dir_type->generic_mapping, 0, true, &sd);
+                              token, &dir_type->generic_mapping, 0, true, &sd, NULL);
 
     dec_obj_refcount(parent);
 
@@ -861,7 +861,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess,
 
     Status = muwine_create_sd(parent,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
-                              token, &symlink_type->generic_mapping, 0, false, &sd);
+                              token, &symlink_type->generic_mapping, 0, false, &sd, NULL);
 
     dec_obj_refcount(parent);
 

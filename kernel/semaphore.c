@@ -33,7 +33,7 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
 
     Status = muwine_create_sd(parent,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
-                              token, &sem_type->generic_mapping, 0, false, &sd);
+                              token, &sem_type->generic_mapping, 0, false, &sd, NULL);
 
     if (parent)
         dec_obj_refcount(parent);

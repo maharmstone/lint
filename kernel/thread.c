@@ -198,7 +198,7 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 
     Status = muwine_create_sd(NULL,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
-                              token, &thread_type->generic_mapping, 0, false, &sd);
+                              token, &thread_type->generic_mapping, 0, false, &sd, NULL);
 
     if (token)
         dec_obj_refcount((object_header*)token);
@@ -457,7 +457,8 @@ thread_object* muwine_current_thread_object(void) {
     if (token)
         inc_obj_refcount((object_header*)token);
 
-    Status = muwine_create_sd(NULL, NULL, token, &thread_type->generic_mapping, 0, false, &sd);
+    Status = muwine_create_sd(NULL, NULL, token, &thread_type->generic_mapping, 0,
+                              false, &sd, NULL);
 
     if (token)
         dec_obj_refcount((object_header*)token);

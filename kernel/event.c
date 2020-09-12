@@ -33,7 +33,7 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
 
     Status = muwine_create_sd(parent,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
-                              token, &event_type->generic_mapping, 0, false, &sd);
+                              token, &event_type->generic_mapping, 0, false, &sd, NULL);
 
     if (parent)
         dec_obj_refcount(parent);

@@ -815,7 +815,7 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
 
     Status = muwine_create_sd(NULL,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
-                              cur_token, &token_type->generic_mapping, 0, false, &sd);
+                              cur_token, &token_type->generic_mapping, 0, false, &sd, NULL);
 
     dec_obj_refcount(&cur_token->header);
 
@@ -2669,7 +2669,7 @@ NTSTATUS copy_sd(SECURITY_DESCRIPTOR_RELATIVE* in, SECURITY_DESCRIPTOR_RELATIVE*
 NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* creator,
                           token_object* token, GENERIC_MAPPING* generic_mapping,
                           unsigned int flags, bool is_container,
-                          SECURITY_DESCRIPTOR_RELATIVE** ret) {
+                          SECURITY_DESCRIPTOR_RELATIVE** ret, size_t* retlen) {
     NTSTATUS Status;
     SID* owner;
     SID* group;
@@ -2818,6 +2818,9 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
         sd->Sacl = 0;
 
     *ret = sd;
+
+    if (retlen)
+        *retlen = size;
 
     return STATUS_SUCCESS;
 }

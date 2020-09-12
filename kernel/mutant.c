@@ -33,7 +33,7 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
 
     Status = muwine_create_sd(parent,
                               ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
-                              token, &mutant_type->generic_mapping, 0, false, &sd);
+                              token, &mutant_type->generic_mapping, 0, false, &sd, NULL);
 
     if (parent)
         dec_obj_refcount(parent);
