@@ -671,6 +671,8 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     unsigned int i;
     size_t privsize;
     SECURITY_IMPERSONATION_LEVEL impersonation_level;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    token_object* cur_token;
 
     if (!check_privilege(SE_CREATE_TOKEN_PRIVILEGE))
         return STATUS_PRIVILEGE_NOT_HELD;
@@ -697,9 +699,24 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
         }
     }
 
-    tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type, NULL);
-    if (!tok)
+    // create object
+
+    cur_token = muwine_get_current_token();
+
+    Status = muwine_create_sd(NULL,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              cur_token, &token_type->generic_mapping, 0, false, &sd);
+
+    dec_obj_refcount(&cur_token->header);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type, sd);
+    if (!tok) {
+        kfree(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     init_rwsem(&tok->sem);
 
