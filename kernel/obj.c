@@ -43,6 +43,8 @@ type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_obj
                                     uint32_t generic_all, uint32_t valid) {
     type_object* obj;
 
+    // FIXME - create SD?
+
     obj = (type_object*)muwine_alloc_object(sizeof(type_object), type_type, NULL);
     if (!obj)
         return ERR_PTR(-ENOMEM);
