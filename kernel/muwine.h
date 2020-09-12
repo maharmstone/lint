@@ -1114,7 +1114,7 @@ int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* re
 typedef struct _thread_object thread_object;
 
 NTSTATUS muwine_init_processes(void);
-void muwine_add_current_process(void);
+NTSTATUS muwine_add_current_process(void);
 process_object* muwine_current_process_object(void);
 int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
 int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs);

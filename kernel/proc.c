@@ -49,13 +49,33 @@ process_object* muwine_current_process_object(void) {
     return NULL;
 }
 
-void muwine_add_current_process(void) {
+NTSTATUS muwine_add_current_process(void) {
+    NTSTATUS Status;
     struct list_head* le;
     process_object* obj;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    token_object* tok;
 
-    obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type, NULL);
+    muwine_make_process_token(&tok);
 
-    // FIXME - handle out of memory
+    Status = muwine_create_sd(NULL, NULL, tok, &process_type->generic_mapping,
+                              0, false, &sd);
+    if (!NT_SUCCESS(Status)) {
+        if (tok)
+            dec_obj_refcount(&tok->header);
+
+        return Status;
+    }
+
+    obj = (process_object*)muwine_alloc_object(sizeof(process_object), process_type, sd);
+    if (!obj) {
+        kfree(sd);
+
+        if (tok)
+            dec_obj_refcount(&tok->header);
+
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     obj->pid = task_tgid_vnr(current);
 
@@ -63,7 +83,7 @@ void muwine_add_current_process(void) {
     spin_lock_init(&obj->handle_list_lock);
     obj->next_handle_no = MUW_FIRST_HANDLE + 4;
 
-    muwine_make_process_token(&obj->token);
+    obj->token = tok;
 
     init_rwsem(&obj->mapping_list_sem);
     INIT_LIST_HEAD(&obj->mapping_list);
@@ -79,7 +99,7 @@ void muwine_add_current_process(void) {
             spin_unlock(&process_list_lock);
             dec_obj_refcount(&obj->token->header);
             free_object(&obj->header.h);
-            return;
+            return STATUS_SUCCESS;
         }
 
         le = le->next;
@@ -88,6 +108,8 @@ void muwine_add_current_process(void) {
     list_add_tail(&obj->list, &process_list);
 
     spin_unlock(&process_list_lock);
+
+    return STATUS_SUCCESS;
 }
 
 static void reap_process(process_object* obj) {

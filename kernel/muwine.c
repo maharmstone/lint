@@ -512,7 +512,11 @@ NTSTATUS muwine_error_to_ntstatus(int err) {
 }
 
 static int muwine_open(struct inode* inode, struct file* file) {
-    muwine_add_current_process();
+    NTSTATUS Status;
+
+    Status = muwine_add_current_process();
+    if (!NT_SUCCESS(Status))
+        return -ENOMEM;
 
     try_module_get(THIS_MODULE);
 
