@@ -385,7 +385,7 @@ typedef void* PSECURITY_DESCRIPTOR;
 
 NTSTATUS muwine_create_inherited_sd(const SECURITY_DESCRIPTOR_RELATIVE* parent_sd, unsigned int parent_sd_len, bool container,
                                     token_object* tok, SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* outlen);
-void muwine_make_process_token(token_object** t);
+NTSTATUS muwine_make_process_token(token_object** t);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* sdlen);
 ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type);
 NTSTATUS muwine_init_tokens(void);

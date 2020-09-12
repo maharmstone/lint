@@ -56,7 +56,9 @@ NTSTATUS muwine_add_current_process(void) {
     SECURITY_DESCRIPTOR_RELATIVE* sd;
     token_object* tok;
 
-    muwine_make_process_token(&tok);
+    Status = muwine_make_process_token(&tok);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     Status = muwine_create_sd(NULL, NULL, tok, &process_type->generic_mapping,
                               0, false, &sd);

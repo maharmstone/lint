@@ -409,7 +409,8 @@ NTSTATUS user_NtAllocateLocallyUniqueId(PLUID Luid) {
     return Status;
 }
 
-void muwine_make_process_token(token_object** t) {
+NTSTATUS muwine_make_process_token(token_object** t) {
+    NTSTATUS Status;
     token_object* tok;
     unsigned int priv_count, i;
     const default_privilege* def_privs;
@@ -417,13 +418,18 @@ void muwine_make_process_token(token_object** t) {
     ACCESS_ALLOWED_ACE* aaa;
 
     tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type, NULL);
-    // FIXME - handle malloc failure
+    if (!tok)
+        return STATUS_INSUFFICIENT_RESOURCES;
 
     init_rwsem(&tok->sem);
 
     uid_to_sid(&tok->user, current_euid());
 
-    get_current_process_groups(tok); // FIXME - handle errors
+    Status = get_current_process_groups(tok);
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&tok->header);
+        return Status;
+    }
 
     tok->owner = tok->user;
 
@@ -437,7 +443,10 @@ void muwine_make_process_token(token_object** t) {
 
     tok->privs = kmalloc(offsetof(TOKEN_PRIVILEGES, Privileges) +
                          (sizeof(LUID_AND_ATTRIBUTES) * priv_count), GFP_KERNEL);
-    // FIXME - handle malloc failure
+    if (!tok->privs) {
+        dec_obj_refcount(&tok->header);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     tok->privs->PrivilegeCount = priv_count;
 
@@ -466,7 +475,10 @@ void muwine_make_process_token(token_object** t) {
     // FIXME - don't duplicate ACE if owner is same as sid_local_system
 
     tok->default_dacl = kmalloc(dacl_size, GFP_KERNEL);
-    // FIXME - handle malloc failure
+    if (!tok->default_dacl) {
+        dec_obj_refcount(&tok->header);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     // FIXME - should also have ACE for logon SID and GENERIC_READ | GENERIC_EXECUTE
 
@@ -496,6 +508,8 @@ void muwine_make_process_token(token_object** t) {
     tok->expiry = 0x7fffffffffffffff;
 
     *t = tok;
+
+    return STATUS_SUCCESS;
 }
 
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* sdlen) {
