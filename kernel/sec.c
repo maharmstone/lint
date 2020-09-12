@@ -2615,8 +2615,7 @@ static NTSTATUS compute_acl(ACL* parent, SECURITY_DESCRIPTOR_RELATIVE* creator_s
 NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
                           SECURITY_DESCRIPTOR_RELATIVE* creator, token_object* token,
                           GENERIC_MAPPING* generic_mapping, unsigned int flags,
-                          bool is_container, SECURITY_DESCRIPTOR_CONTROL* control,
-                          SECURITY_DESCRIPTOR_RELATIVE** ret) {
+                          bool is_container, SECURITY_DESCRIPTOR_RELATIVE** ret) {
     NTSTATUS Status;
     SID* owner;
     SID* group;

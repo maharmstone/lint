@@ -420,8 +420,7 @@ typedef struct _GENERIC_MAPPING GENERIC_MAPPING;
 NTSTATUS muwine_create_sd(SECURITY_DESCRIPTOR_RELATIVE* parent,
                           SECURITY_DESCRIPTOR_RELATIVE* creator, token_object* token,
                           GENERIC_MAPPING* generic_mapping, unsigned int flags,
-                          bool is_container, SECURITY_DESCRIPTOR_CONTROL* control,
-                          SECURITY_DESCRIPTOR_RELATIVE** ret);
+                          bool is_container, SECURITY_DESCRIPTOR_RELATIVE** ret);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000
