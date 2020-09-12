@@ -44,8 +44,10 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
         return Status;
 
     obj = (mutant_object*)muwine_alloc_object(sizeof(mutant_object), mutant_type, sd);
-    if (!obj)
+    if (!obj) {
+        kfree(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     obj->header.signalled = !InitialOwner;
 
