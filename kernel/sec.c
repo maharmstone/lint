@@ -409,13 +409,31 @@ NTSTATUS user_NtAllocateLocallyUniqueId(PLUID Luid) {
     return Status;
 }
 
+static __inline SID* sd_get_owner(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    return (SID*)((uint8_t*)sd + sd->Owner);
+}
+
+static __inline SID* sd_get_group(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    return (SID*)((uint8_t*)sd + sd->Group);
+}
+
+static __inline ACL* sd_get_dacl(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    return (ACL*)((uint8_t*)sd + sd->Dacl);
+}
+
+static __inline ACL* sd_get_sacl(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    return (ACL*)((uint8_t*)sd + sd->Sacl);
+}
+
 NTSTATUS muwine_make_process_token(token_object** t) {
     NTSTATUS Status;
     token_object* tok;
     unsigned int priv_count, i;
     const default_privilege* def_privs;
-    size_t dacl_size;
+    size_t dacl_size, sd_size;
     ACCESS_ALLOWED_ACE* aaa;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    DWORD off;
 
     tok = (token_object*)muwine_alloc_object(sizeof(token_object), token_type, NULL);
     if (!tok)
@@ -506,6 +524,84 @@ NTSTATUS muwine_make_process_token(token_object** t) {
     alloc_luid(&tok->modified_id);
 
     tok->expiry = 0x7fffffffffffffff;
+
+    // create SD for token
+
+    sd_size = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+    sd_size += tok->owner ? sid_length(tok->owner) : 0;
+    sd_size += tok->primary_group ? sid_length(tok->primary_group) : 0;
+    sd_size += tok->default_dacl ? tok->default_dacl->AclSize : 0;
+
+    sd = kzalloc(sd_size, GFP_KERNEL);
+    if (!sd) {
+        dec_obj_refcount(&tok->header);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    // FIXME - create token SD
+
+    sd->Revision = 1;
+    sd->Sbz1 = 0;
+    sd->Control = SE_SELF_RELATIVE;
+
+    off = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    if (tok->owner) {
+        sd->Owner = off;
+        memcpy(sd_get_owner(sd), tok->owner, sid_length(tok->owner));
+        off += sid_length(tok->owner);
+    }
+
+    if (tok->primary_group) {
+        sd->Group = off;
+        memcpy(sd_get_group(sd), tok->primary_group, sid_length(tok->primary_group));
+        off += sid_length(tok->primary_group);
+    }
+
+    if (tok->default_dacl) {
+        ACL* dacl;
+        ACE_HEADER* ace;
+        unsigned int i;
+
+        sd->Dacl = off;
+        dacl = sd_get_dacl(sd);
+
+        memcpy(dacl, tok->default_dacl, tok->default_dacl->AclSize);
+        sd->Control |= SE_DACL_PRESENT;
+
+        // fix generics
+        ace = (ACE_HEADER*)&dacl[1];
+        for (i = 0; i < dacl->AceCount; i++) {
+            if (ace->AceType == ACCESS_ALLOWED_ACE_TYPE || ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+                ACCESS_ALLOWED_ACE* aaa = (ACCESS_ALLOWED_ACE*)ace;
+
+                if (aaa->Mask & GENERIC_READ) {
+                    aaa->Mask &= ~GENERIC_READ;
+                    aaa->Mask |= token_type->generic_mapping.GenericRead;
+                }
+
+                if (aaa->Mask & GENERIC_WRITE) {
+                    aaa->Mask &= ~GENERIC_WRITE;
+                    aaa->Mask |= token_type->generic_mapping.GenericWrite;
+                }
+
+                if (aaa->Mask & GENERIC_EXECUTE) {
+                    aaa->Mask &= ~GENERIC_EXECUTE;
+                    aaa->Mask |= token_type->generic_mapping.GenericExecute;
+                }
+
+                if (aaa->Mask & GENERIC_ALL) {
+                    aaa->Mask &= ~GENERIC_ALL;
+                    aaa->Mask |= token_type->generic_mapping.GenericAll;
+                }
+            }
+
+            ace = (ACE_HEADER*)((uint8_t*)ace + ace->AceSize);
+        }
+
+        // FIXME - Windows 10 gives Administrators TOKEN_QUERY access if not already set(?)
+    }
+
+    tok->header.sd = sd;
 
     *t = tok;
 
@@ -1771,22 +1867,6 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
         Status = STATUS_ACCESS_VIOLATION;
 
     return Status;
-}
-
-static __inline SID* sd_get_owner(SECURITY_DESCRIPTOR_RELATIVE* sd) {
-    return (SID*)((uint8_t*)sd + sd->Owner);
-}
-
-static __inline SID* sd_get_group(SECURITY_DESCRIPTOR_RELATIVE* sd) {
-    return (SID*)((uint8_t*)sd + sd->Group);
-}
-
-static __inline ACL* sd_get_dacl(SECURITY_DESCRIPTOR_RELATIVE* sd) {
-    return (ACL*)((uint8_t*)sd + sd->Dacl);
-}
-
-static __inline ACL* sd_get_sacl(SECURITY_DESCRIPTOR_RELATIVE* sd) {
-    return (ACL*)((uint8_t*)sd + sd->Sacl);
 }
 
 static NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
