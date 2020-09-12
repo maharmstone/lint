@@ -2590,7 +2590,14 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
     if (parent) {
         // take a copy of the parent SD to avoid locking issues later
         spin_lock(&parent->header_lock);
-        Status = copy_sd(parent->sd, &parent_sd);
+
+        if (parent->sd)
+            Status = copy_sd(parent->sd, &parent_sd);
+        else {
+            parent_sd = NULL;
+            Status = STATUS_SUCCESS;
+        }
+
         spin_unlock(&parent->header_lock);
 
         if (!NT_SUCCESS(Status))
