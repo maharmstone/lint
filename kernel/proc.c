@@ -251,8 +251,7 @@ int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs) {
 
     new_obj->pid = retval;
 
-    new_obj->token = obj->token;
-    inc_obj_refcount(&obj->token->header);
+    new_obj->token = duplicate_token(obj->token);
 
     init_rwsem(&new_obj->mapping_list_sem);
     INIT_LIST_HEAD(&new_obj->mapping_list);

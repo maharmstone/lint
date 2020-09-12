@@ -2727,3 +2727,128 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
 
     return STATUS_SUCCESS;
 }
+
+token_object* duplicate_token(token_object* tok) {
+    NTSTATUS Status;
+    token_object* obj;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+
+    spin_lock(&tok->header.header_lock);
+    Status = copy_sd(tok->header.sd, &sd);
+    spin_unlock(&tok->header.header_lock);
+
+    if (!NT_SUCCESS(Status))
+        return NULL;
+
+    obj = (token_object*)muwine_alloc_object(sizeof(token_object), token_type, sd);
+
+    if (!obj) {
+        kfree(sd);
+        return NULL;
+    }
+
+    init_rwsem(&obj->sem);
+
+    down_read(&tok->sem);
+
+    if (tok->user) {
+        obj->user = kmalloc(sid_length(tok->user), GFP_KERNEL);
+        if (!obj->user) {
+            dec_obj_refcount(&obj->header);
+            up_read(&tok->sem);
+            return NULL;
+        }
+
+        memcpy(obj->user, tok->user, sid_length(tok->user));
+
+        if (tok->owner && !memcmp(tok->owner, obj->user, sid_length(obj->user)))
+            obj->owner = tok->user;
+
+        if (tok->primary_group && !memcmp(tok->primary_group, obj->user, sid_length(obj->user)))
+            obj->primary_group = tok->user;
+    }
+
+    if (tok->privs) {
+        size_t size;
+
+        size = offsetof(TOKEN_PRIVILEGES, Privileges) + (tok->privs->PrivilegeCount * sizeof(LUID_AND_ATTRIBUTES));
+
+        obj->privs = kmalloc(size, GFP_KERNEL);
+        if (!obj->privs) {
+            dec_obj_refcount(&obj->header);
+            up_read(&tok->sem);
+            return NULL;
+        }
+
+        memcpy(obj->privs, tok->privs, size);
+    }
+
+    obj->expiry = tok->expiry;
+    obj->auth_id = tok->auth_id;
+
+    if (tok->groups) {
+        unsigned int i;
+        size_t size;
+
+        size = offsetof(TOKEN_GROUPS, Groups) + (tok->groups->GroupCount * sizeof(SID_AND_ATTRIBUTES));
+
+        obj->groups = kmalloc(size, GFP_KERNEL);
+        if (!obj->groups) {
+            dec_obj_refcount(&obj->header);
+            up_read(&tok->sem);
+            return NULL;
+        }
+
+        obj->groups->GroupCount = tok->groups->GroupCount;
+
+        for (i = 0; i < obj->groups->GroupCount; i++) {
+            obj->groups->Groups[i].Attributes = tok->groups->Groups[i].Attributes;
+
+            obj->groups->Groups[i].Sid = kmalloc(sid_length(tok->groups->Groups[i].Sid), GFP_KERNEL);
+
+            if (!obj->groups->Groups[i].Sid) {
+                unsigned int j;
+
+                for (j = 0; j < i; j++) {
+                    kfree(obj->groups->Groups[j].Sid);
+                }
+                kfree(obj->groups);
+                obj->groups = NULL;
+
+                dec_obj_refcount(&obj->header);
+                up_read(&tok->sem);
+                return NULL;
+            }
+
+            memcpy(obj->groups->Groups[i].Sid, tok->groups->Groups[i].Sid, sid_length(tok->groups->Groups[i].Sid));
+
+            if (!obj->owner && tok->owner && !memcmp(obj->groups->Groups[i].Sid, tok->owner, sid_length(tok->owner)))
+                obj->owner = obj->groups->Groups[i].Sid;
+
+            if (!obj->primary_group && tok->primary_group && !memcmp(obj->groups->Groups[i].Sid, tok->primary_group, sid_length(tok->primary_group)))
+                obj->primary_group = obj->groups->Groups[i].Sid;
+        }
+    }
+
+    obj->source = tok->source;
+
+    if (tok->default_dacl) {
+        obj->default_dacl = kmalloc(tok->default_dacl->AclSize, GFP_KERNEL);
+        if (!obj->default_dacl) {
+            dec_obj_refcount(&obj->header);
+            up_read(&tok->sem);
+            return NULL;
+        }
+
+        memcpy(obj->default_dacl, tok->default_dacl, tok->default_dacl->AclSize);
+    }
+
+    obj->type = tok->type;
+    obj->impersonation_level = tok->impersonation_level;
+    obj->token_id = tok->token_id;
+    obj->modified_id = tok->modified_id;
+
+    up_read(&tok->sem);
+
+    return obj;
+}

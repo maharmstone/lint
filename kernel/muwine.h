@@ -421,6 +421,7 @@ NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* c
                           unsigned int flags, bool is_container,
                           SECURITY_DESCRIPTOR_RELATIVE** ret);
 token_object* muwine_get_current_token(void);
+token_object* duplicate_token(token_object* tok);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000
