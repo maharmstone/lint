@@ -21,6 +21,9 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
     NTSTATUS Status;
     timer_object* obj;
     ACCESS_MASK access;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    object_header* parent = NULL;
+    token_object* token;
 
     access = sanitize_access_mask(DesiredAccess, timer_type);
 
@@ -32,9 +35,31 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = (timer_object*)muwine_alloc_object(sizeof(timer_object), timer_type, NULL);
-    if (!obj)
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
+
+    token = muwine_get_current_token();
+
+    Status = muwine_create_sd(parent,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              token, &timer_type->generic_mapping, 0, false, &sd);
+
+    if (parent)
+        dec_obj_refcount(parent);
+
+    dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    obj = (timer_object*)muwine_alloc_object(sizeof(timer_object), timer_type, sd);
+    if (!obj) {
+        kfree(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     obj->type = TimerType;
     spin_lock_init(&obj->lock);
