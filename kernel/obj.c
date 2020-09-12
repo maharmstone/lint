@@ -595,7 +595,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
     if (!NT_SUCCESS(Status))
         return Status;
 
-    obj = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type, NULL);
+    obj = (dir_object*)muwine_alloc_object(sizeof(dir_object), dir_type, sd);
     if (!obj) {
         kfree(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -836,16 +836,38 @@ static NTSTATUS add_symlink_cache_entry(UNICODE_STRING* src, UNICODE_STRING* des
     return STATUS_SUCCESS;
 }
 
-NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess,
+                                    POBJECT_ATTRIBUTES ObjectAttributes,
                                     PUNICODE_STRING DestinationName) {
     NTSTATUS Status;
     UNICODE_STRING us;
     symlink_object* obj;
     symlink_cache* cache;
     bool us_alloc = false;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    object_header* parent;
+    token_object* token;
 
     if (!ObjectAttributes || !ObjectAttributes->ObjectName || !DestinationName || DestinationName->Length < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
+
+    Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    token = muwine_get_current_token();
+
+    Status = muwine_create_sd(parent,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              token, &symlink_type->generic_mapping, 0, false, &sd);
+
+    dec_obj_refcount(parent);
+
+    if (token)
+        dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     // FIXME - RootDirectory
 
@@ -867,8 +889,10 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess, 
         return STATUS_INVALID_PARAMETER;
     }
 
-    obj = (symlink_object*)muwine_alloc_object(sizeof(symlink_object), symlink_type, NULL);
+    obj = (symlink_object*)muwine_alloc_object(sizeof(symlink_object), symlink_type, sd);
     if (!obj) {
+        kfree(sd);
+
         if (us_alloc)
             kfree(us.Buffer);
 
