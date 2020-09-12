@@ -9,6 +9,9 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
     NTSTATUS Status;
     event_object* obj;
     ACCESS_MASK access;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    object_header* parent = NULL;
+    token_object* token;
 
     access = sanitize_access_mask(DesiredAccess, event_type);
 
@@ -20,9 +23,31 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
 
     // create object
 
-    obj = (event_object*)muwine_alloc_object(sizeof(event_object), event_type, NULL);
-    if (!obj)
+    if (ObjectAttributes && ObjectAttributes->ObjectName) {
+        Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
+        if (!NT_SUCCESS(Status))
+            return Status;
+    }
+
+    token = muwine_get_current_token();
+
+    Status = muwine_create_sd(parent,
+                              ObjectAttributes ? ObjectAttributes->SecurityDescriptor : NULL,
+                              token, &event_type->generic_mapping, 0, false, &sd);
+
+    if (parent)
+        dec_obj_refcount(parent);
+
+    dec_obj_refcount((object_header*)token);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    obj = (event_object*)muwine_alloc_object(sizeof(event_object), event_type, sd);
+    if (!obj) {
+        kfree(sd);
         return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     obj->header.signalled = InitialState;
 
