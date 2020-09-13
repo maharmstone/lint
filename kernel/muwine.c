@@ -95,6 +95,13 @@ static struct muwine_func funcs[] = {
     { NtOpenThreadToken, 4 },
     { NtSetInformationThread, 4 },
     { user_NtOpenDirectoryObject, 3 },
+    { NtAccessCheck, 8 },
+    { NtSetSecurityObject, 3 },
+    { NtPrivilegeCheck, 3 },
+    { NtDuplicateToken, 6 },
+    { NtSetInformationToken, 4 },
+    { NtOpenProcessTokenEx, 4 },
+    { NtOpenThreadTokenEx, 5 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)

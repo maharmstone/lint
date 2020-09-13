@@ -236,3 +236,9 @@ typedef struct {
     SECURITY_CONTEXT_TRACKING_MODE ContextTrackingMode;
     BOOLEAN EffectiveOnly;
 } SECURITY_QUALITY_OF_SERVICE;
+
+typedef struct _PRIVILEGE_SET {
+    DWORD PrivilegeCount;
+    DWORD Control;
+    LUID_AND_ATTRIBUTES Privilege[1];
+} PRIVILEGE_SET, *PPRIVILEGE_SET;

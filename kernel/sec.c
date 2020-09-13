@@ -1032,6 +1032,16 @@ end7:
     return Status;
 }
 
+NTSTATUS NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                              ULONG HandleAttributes, PHANDLE TokenHandle) {
+    printk(KERN_INFO "NtOpenProcessTokenEx(%lx, %x, %x, %px): stub\n", (uintptr_t)ProcessHandle,
+           DesiredAccess, HandleAttributes, TokenHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 static NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
                                    PHANDLE TokenHandle) {
     NTSTATUS Status;
@@ -1099,6 +1109,16 @@ NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess
         Status = STATUS_ACCESS_VIOLATION;
 
     return Status;
+}
+
+NTSTATUS NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess, BOOLEAN OpenAsSelf,
+                             ULONG HandleAttributes, PHANDLE TokenHandle) {
+    printk(KERN_INFO "NtOpenThreadTokenEx(%lx, %x, %x, %x, %px): stub\n", (uintptr_t)ThreadHandle,
+           DesiredAccess, OpenAsSelf, HandleAttributes, TokenHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 NTSTATUS NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
@@ -1731,6 +1751,17 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
     return Status;
 }
 
+NTSTATUS NtSetInformationToken(HANDLE TokenHandle, TOKEN_INFORMATION_CLASS TokenInformationClass,
+                               PVOID TokenInformation, ULONG TokenInformationLength) {
+    printk(KERN_INFO "NtSetInformationToken(%lx, %x, %px, %x): stub\n",
+           (uintptr_t)TokenHandle, TokenInformationClass, TokenInformation,
+           TokenInformationLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 static NTSTATUS NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                                       PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
                                       PULONG LengthNeeded) {
@@ -1878,6 +1909,16 @@ NTSTATUS user_NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION Security
         Status = STATUS_ACCESS_VIOLATION;
 
     return Status;
+}
+
+NTSTATUS NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                             PSECURITY_DESCRIPTOR SecurityDescriptor) {
+    printk(KERN_INFO "NtSetSecurityObject(%lx, %x, %px): stub\n", (uintptr_t)Handle,
+           SecurityInformation, SecurityDescriptor);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 token_object* muwine_get_current_token(void) {
@@ -2914,4 +2955,39 @@ NTSTATUS check_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len) {
     }
 
     return STATUS_SUCCESS;
+}
+
+NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
+                       ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
+                       PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
+                       PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus) {
+    printk(KERN_INFO "NtAccessCheck(%px, %lx, %x, %px, %px, %px, %px, %px): stub\n",
+           SecurityDescriptor, (uintptr_t)ClientToken, DesiredAccess, GenericMapping,
+           RequiredPrivilegesBuffer, BufferLength, GrantedAccess, AccessStatus);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtPrivilegeCheck(HANDLE TokenHandle, PPRIVILEGE_SET RequiredPrivileges,
+                          PBOOLEAN Result) {
+    printk(KERN_INFO "NtPrivilegeCheck(%lx, %px, %px): stub\n", (uintptr_t)TokenHandle,
+           RequiredPrivileges, Result);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtDuplicateToken(HANDLE ExistingTokenHandle, ACCESS_MASK DesiredAccess,
+                          POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN EffectiveOnly,
+                          TOKEN_TYPE TokenType, PHANDLE NewTokenHandle) {
+    printk(KERN_INFO "NtDuplicateToken(%lx, %x, %px, %x, %x, %px): stub\n",
+           (uintptr_t)ExistingTokenHandle, DesiredAccess, ObjectAttributes,
+           EffectiveOnly, TokenType, NewTokenHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
 }

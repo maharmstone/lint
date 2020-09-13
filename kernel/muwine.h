@@ -64,7 +64,7 @@ struct muwine_func {
 
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
-typedef int32_t NTSTATUS;
+typedef int32_t NTSTATUS, *PNTSTATUS;
 typedef char CHAR;
 typedef uint16_t WCHAR, *PWSTR;
 typedef void* HANDLE;
@@ -72,7 +72,7 @@ typedef HANDLE* PHANDLE;
 typedef uint32_t ULONG, *PULONG;
 typedef int32_t LONG, *PLONG;
 typedef ULONG DWORD;
-typedef DWORD ACCESS_MASK;
+typedef DWORD ACCESS_MASK, *PACCESS_MASK;
 typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef uint8_t UCHAR;
@@ -386,6 +386,8 @@ typedef struct _SECURITY_DESCRIPTOR_RELATIVE {
 } SECURITY_DESCRIPTOR_RELATIVE;
 
 typedef void* PSECURITY_DESCRIPTOR;
+typedef struct _GENERIC_MAPPING GENERIC_MAPPING, *PGENERIC_MAPPING;
+typedef struct _PRIVILEGE_SET PRIVILEGE_SET, *PPRIVILEGE_SET;
 
 NTSTATUS muwine_make_process_token(token_object** t);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* sdlen);
@@ -400,6 +402,8 @@ NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                             PTOKEN_DEFAULT_DACL TokenDefaultDacl, PTOKEN_SOURCE TokenSource);
 NTSTATUS user_NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
                                  PHANDLE TokenHandle);
+NTSTATUS NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                              ULONG HandleAttributes, PHANDLE TokenHandle);
 NTSTATUS user_NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPrivileges,
                                       PTOKEN_PRIVILEGES TokenPrivileges,
                                       ULONG PreviousPrivilegesLength,
@@ -415,9 +419,8 @@ NTSTATUS user_NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION Security
                                     PULONG LengthNeeded);
 NTSTATUS NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                            BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
-
-typedef struct _GENERIC_MAPPING GENERIC_MAPPING;
-
+NTSTATUS NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess, BOOLEAN OpenAsSelf,
+                             ULONG HandleAttributes, PHANDLE TokenHandle);
 NTSTATUS muwine_create_sd(object_header* parent, SECURITY_DESCRIPTOR_RELATIVE* creator,
                           token_object* token, GENERIC_MAPPING* generic_mapping,
                           unsigned int flags, bool is_container,
@@ -431,6 +434,19 @@ token_object* muwine_get_current_token(void);
 token_object* duplicate_token(token_object* tok);
 NTSTATUS copy_sd(SECURITY_DESCRIPTOR_RELATIVE* in, SECURITY_DESCRIPTOR_RELATIVE** out);
 NTSTATUS check_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len);
+NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
+                       ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
+                       PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
+                       PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus);
+NTSTATUS NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                             PSECURITY_DESCRIPTOR SecurityDescriptor);
+NTSTATUS NtPrivilegeCheck(HANDLE TokenHandle, PPRIVILEGE_SET RequiredPrivileges,
+                          PBOOLEAN Result);
+NTSTATUS NtDuplicateToken(HANDLE ExistingTokenHandle, ACCESS_MASK DesiredAccess,
+                          POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN EffectiveOnly,
+                          TOKEN_TYPE TokenType, PHANDLE NewTokenHandle);
+NTSTATUS NtSetInformationToken(HANDLE TokenHandle, TOKEN_INFORMATION_CLASS TokenInformationClass,
+                               PVOID TokenInformation, ULONG TokenInformationLength);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000
@@ -867,7 +883,7 @@ typedef struct _GENERIC_MAPPING {
     ACCESS_MASK GenericWrite;
     ACCESS_MASK GenericExecute;
     ACCESS_MASK GenericAll;
-} GENERIC_MAPPING;
+} GENERIC_MAPPING, *PGENERIC_MAPPING;
 
 typedef struct _type_object {
     object_header header;
