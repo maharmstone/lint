@@ -46,7 +46,11 @@ struct muwine_func {
 #define STATUS_MUTANT_NOT_OWNED             0xc0000046
 #define STATUS_SEMAPHORE_LIMIT_EXCEEDED     0xc0000047
 #define STATUS_DELETE_PENDING               0xc0000056
+#define STATUS_UNKNOWN_REVISION             0xc0000058
 #define STATUS_PRIVILEGE_NOT_HELD           0xc0000061
+#define STATUS_INVALID_ACL                  0xc0000077
+#define STATUS_INVALID_SID                  0xc0000078
+#define STATUS_INVALID_SECURITY_DESCR       0xc0000079
 #define STATUS_INSUFFICIENT_RESOURCES       0xc000009a
 #define STATUS_MEDIA_WRITE_PROTECTED        0xc00000a2
 #define STATUS_BAD_IMPERSONATION_LEVEL      0xc00000a5
@@ -426,7 +430,7 @@ NTSTATUS muwine_create_sd2(SECURITY_DESCRIPTOR_RELATIVE* parent_sd,
 token_object* muwine_get_current_token(void);
 token_object* duplicate_token(token_object* tok);
 NTSTATUS copy_sd(SECURITY_DESCRIPTOR_RELATIVE* in, SECURITY_DESCRIPTOR_RELATIVE** out);
-bool valid_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len);
+NTSTATUS check_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

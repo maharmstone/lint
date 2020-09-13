@@ -2854,64 +2854,64 @@ static bool valid_acl(ACL* acl, unsigned int len) {
     return true;
 }
 
-bool valid_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len) {
+NTSTATUS check_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len) {
     if (len < sizeof(SECURITY_DESCRIPTOR_RELATIVE))
-        return false;
+        return STATUS_INVALID_SECURITY_DESCR;
 
     if (sd->Revision != 1)
-        return false;
+        return STATUS_UNKNOWN_REVISION;
 
     if (sd->Sbz1 != 0)
-        return false;
+        return STATUS_INVALID_SECURITY_DESCR;
 
     if (!(sd->Control & SE_SELF_RELATIVE))
-        return false;
+        return STATUS_INVALID_SECURITY_DESCR;
 
     if (sd->Owner != 0) {
         SID* owner = sd_get_owner(sd);
 
         if (sd->Owner + offsetof(SID, SubAuthority) > len)
-            return false;
+            return STATUS_INVALID_SID;
 
         if (owner->Revision != 1)
-            return false;
+            return STATUS_INVALID_SID;
 
         if (sd->Owner + sid_length(owner) > len)
-            return false;
+            return STATUS_INVALID_SID;
     }
 
     if (sd->Group != 0) {
         SID* group = sd_get_group(sd);
 
         if (sd->Group + offsetof(SID, SubAuthority) > len)
-            return false;
+            return STATUS_INVALID_SID;
 
         if (group->Revision != 1)
-            return false;
+            return STATUS_INVALID_SID;
 
         if (sd->Group + sid_length(group) > len)
-            return false;
+            return STATUS_INVALID_SID;
     }
 
     if (sd->Sacl != 0) {
         ACL* sacl = sd_get_sacl(sd);
 
         if (sd->Sacl + sizeof(ACL) > len)
-            return false;
+            return STATUS_INVALID_ACL;
 
         if (!valid_acl(sacl, len - sd->Sacl))
-            return false;
+            return STATUS_INVALID_ACL;
     }
 
     if (sd->Dacl != 0) {
         ACL* dacl = sd_get_dacl(sd);
 
         if (sd->Dacl + sizeof(ACL) > len)
-            return false;
+            return STATUS_INVALID_ACL;
 
         if (!valid_acl(dacl, len - sd->Dacl))
-            return false;
+            return STATUS_INVALID_ACL;
     }
 
-    return true;
+    return STATUS_SUCCESS;
 }

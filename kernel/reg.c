@@ -784,8 +784,12 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                 else
                     sk = (CM_KEY_SECURITY*)((uint8_t*)h->bins + nk->Security + sizeof(int32_t));
 
-                if (sk->Signature != CM_KEY_SECURITY_SIGNATURE ||
-                    !valid_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength)) {
+                if (sk->Signature != CM_KEY_SECURITY_SIGNATURE)
+                    Status = STATUS_REGISTRY_CORRUPT;
+                else
+                    Status = check_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength);
+
+                if (!NT_SUCCESS(Status)) {
                     up_read(&h->sem);
                     up_read(&hive_list_sem);
 
@@ -795,7 +799,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
                     if (oa_us_alloc)
                         kfree(oa_us_alloc);
 
-                    return STATUS_REGISTRY_CORRUPT;
+                    return Status;
                 }
 
                 sd = kmalloc(sk->DescriptorLength, GFP_KERNEL);
@@ -2847,8 +2851,9 @@ static NTSTATUS allocate_inherited_sk(hive* h, uint32_t parent_off, uint32_t* of
     if (sk->Signature != CM_KEY_SECURITY_SIGNATURE || size < offsetof(CM_KEY_SECURITY, Descriptor) + sk->DescriptorLength)
         return STATUS_REGISTRY_CORRUPT;
 
-    if (!valid_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength))
-        return STATUS_REGISTRY_CORRUPT;
+    Status = check_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     Status = muwine_create_sd2((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor,
                                provided_sd, tok, &key_type->generic_mapping, 0,
