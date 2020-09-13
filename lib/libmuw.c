@@ -1636,7 +1636,7 @@ NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle,
 }
 
 NTSTATUS __stdcall NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
-                                         POBJECT_ATTRIBUTES ObjectAttributes) {
+                                         const OBJECT_ATTRIBUTES* ObjectAttributes) {
     long ret;
 
     uintptr_t args[] = {

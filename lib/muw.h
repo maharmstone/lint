@@ -886,7 +886,7 @@ NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle,
                                           THREADINFOCLASS ThreadInformationClass,
                                           PVOID ThreadInformation, ULONG ThreadInformationLength);
 NTSTATUS __stdcall NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
-                                         POBJECT_ATTRIBUTES ObjectAttributes);
+                                         const OBJECT_ATTRIBUTES* ObjectAttributes);
 NTSTATUS __stdcall NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
                                  ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
                                  PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
