@@ -1652,3 +1652,146 @@ NTSTATUS __stdcall NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK De
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
+                                 ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
+                                 PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
+                                 PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus) {
+    long ret;
+
+    uintptr_t args[] = {
+        8,
+        (uintptr_t)SecurityDescriptor,
+        (uintptr_t)ClientToken,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)GenericMapping,
+        (uintptr_t)RequiredPrivilegesBuffer,
+        (uintptr_t)BufferLength,
+        (uintptr_t)GrantedAccess,
+        (uintptr_t)AccessStatus
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTACCESSCHECK, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                                       PSECURITY_DESCRIPTOR SecurityDescriptor) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)Handle,
+        (uintptr_t)SecurityInformation,
+        (uintptr_t)SecurityDescriptor
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETSECURITYOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtPrivilegeCheck(HANDLE TokenHandle, PPRIVILEGE_SET RequiredPrivileges,
+                                    PBOOLEAN Result) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)TokenHandle,
+        (uintptr_t)RequiredPrivileges,
+        (uintptr_t)Result
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTPRIVILEGECHECK, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtDuplicateToken(HANDLE ExistingTokenHandle, ACCESS_MASK DesiredAccess,
+                                    POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN EffectiveOnly,
+                                    TOKEN_TYPE TokenType, PHANDLE NewTokenHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)ExistingTokenHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)EffectiveOnly,
+        (uintptr_t)TokenType,
+        (uintptr_t)NewTokenHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTDUPLICATETOKEN, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSetInformationToken(HANDLE TokenHandle,
+                                         TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                         PVOID TokenInformation, ULONG TokenInformationLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)TokenHandle,
+        (uintptr_t)TokenInformationClass,
+        (uintptr_t)TokenInformation,
+        (uintptr_t)TokenInformationLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETINFORMATIONTOKEN, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                       BOOLEAN OpenAsSelf, ULONG HandleAttributes,
+                                       PHANDLE TokenHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)OpenAsSelf,
+        (uintptr_t)HandleAttributes,
+        (uintptr_t)TokenHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENTHREADTOKENEX, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                        ULONG HandleAttributes, PHANDLE TokenHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)HandleAttributes,
+        (uintptr_t)TokenHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENPROCESSTOKENEX, args, ret);
+
+    return (NTSTATUS)ret;
+}

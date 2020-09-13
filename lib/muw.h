@@ -20,14 +20,14 @@ extern "C" {
 static_assert(sizeof(wchar_t) == 2, "wchar_t is not 2 bytes. Make sure you pass -fshort-wchar to gcc.");
 #endif
 
-typedef int32_t NTSTATUS;
+typedef int32_t NTSTATUS, *PNTSTATUS;
 typedef void* HANDLE, *PHANDLE;
 typedef uint32_t ULONG, *PULONG;
 typedef int32_t LONG, *PLONG;
 typedef void* PVOID;
 typedef uint16_t USHORT;
 typedef ULONG DWORD;
-typedef DWORD ACCESS_MASK;
+typedef DWORD ACCESS_MASK, *PACCESS_MASK;
 typedef char CHAR;
 typedef wchar_t WCHAR;
 typedef WCHAR *NWPSTR, *LPWSTR, *PWSTR;
@@ -688,6 +688,19 @@ typedef enum {
     MaxThreadInfoClass
 } THREADINFOCLASS;
 
+typedef struct _PRIVILEGE_SET {
+    DWORD PrivilegeCount;
+    DWORD Control;
+    LUID_AND_ATTRIBUTES Privilege[1];
+} PRIVILEGE_SET, *PPRIVILEGE_SET;
+
+typedef struct _GENERIC_MAPPING {
+    ACCESS_MASK GenericRead;
+    ACCESS_MASK GenericWrite;
+    ACCESS_MASK GenericExecute;
+    ACCESS_MASK GenericAll;
+} GENERIC_MAPPING, *PGENERIC_MAPPING;
+
 #endif
 
 void close_muwine();
@@ -874,6 +887,25 @@ NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle,
                                           PVOID ThreadInformation, ULONG ThreadInformationLength);
 NTSTATUS __stdcall NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
                                          POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS __stdcall NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
+                                 ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
+                                 PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
+                                 PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus);
+NTSTATUS __stdcall NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
+                                       PSECURITY_DESCRIPTOR SecurityDescriptor);
+NTSTATUS __stdcall NtPrivilegeCheck(HANDLE TokenHandle, PPRIVILEGE_SET RequiredPrivileges,
+                                    PBOOLEAN Result);
+NTSTATUS __stdcall NtDuplicateToken(HANDLE ExistingTokenHandle, ACCESS_MASK DesiredAccess,
+                                    POBJECT_ATTRIBUTES ObjectAttributes, BOOLEAN EffectiveOnly,
+                                    TOKEN_TYPE TokenType, PHANDLE NewTokenHandle);
+NTSTATUS __stdcall NtSetInformationToken(HANDLE TokenHandle,
+                                         TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                         PVOID TokenInformation, ULONG TokenInformationLength);
+NTSTATUS __stdcall NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                       BOOLEAN OpenAsSelf, ULONG HandleAttributes,
+                                       PHANDLE TokenHandle);
+NTSTATUS __stdcall NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                        ULONG HandleAttributes, PHANDLE TokenHandle);
 
 #ifdef __cplusplus
 }
