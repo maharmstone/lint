@@ -1617,7 +1617,8 @@ NTSTATUS __stdcall NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAcc
 
 NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle,
                                           THREADINFOCLASS ThreadInformationClass,
-                                          PVOID ThreadInformation, ULONG ThreadInformationLength) {
+                                          const void* ThreadInformation,
+                                          ULONG ThreadInformationLength) {
     long ret;
 
     uintptr_t args[] = {

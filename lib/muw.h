@@ -884,7 +884,8 @@ NTSTATUS __stdcall NtOpenThreadToken(HANDLE ThreadHandle, ACCESS_MASK DesiredAcc
                                      BOOLEAN OpenAsSelf, PHANDLE TokenHandle);
 NTSTATUS __stdcall NtSetInformationThread(HANDLE ThreadHandle,
                                           THREADINFOCLASS ThreadInformationClass,
-                                          PVOID ThreadInformation, ULONG ThreadInformationLength);
+                                          const void* ThreadInformation,
+                                          ULONG ThreadInformationLength);
 NTSTATUS __stdcall NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAccess,
                                          const OBJECT_ATTRIBUTES* ObjectAttributes);
 NTSTATUS __stdcall NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
