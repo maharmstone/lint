@@ -95,7 +95,7 @@ static struct muwine_func funcs[] = {
     { NtOpenThreadToken, 4 },
     { NtSetInformationThread, 4 },
     { user_NtOpenDirectoryObject, 3 },
-    { NtAccessCheck, 8 },
+    { user_NtAccessCheck, 8 },
     { NtSetSecurityObject, 3 },
     { NtPrivilegeCheck, 3 },
     { NtDuplicateToken, 6 },

@@ -2957,10 +2957,10 @@ NTSTATUS check_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len) {
     return STATUS_SUCCESS;
 }
 
-NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
-                       ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
-                       PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
-                       PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus) {
+static NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
+                              ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
+                              PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
+                              PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus) {
     printk(KERN_INFO "NtAccessCheck(%px, %lx, %x, %px, %px, %px, %px, %px): stub\n",
            SecurityDescriptor, (uintptr_t)ClientToken, DesiredAccess, GenericMapping,
            RequiredPrivilegesBuffer, BufferLength, GrantedAccess, AccessStatus);
@@ -2968,6 +2968,299 @@ NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientTok
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static bool get_user_security_descriptor(SECURITY_DESCRIPTOR_RELATIVE** ks,
+                                         const __user PSECURITY_DESCRIPTOR us) {
+    SECURITY_DESCRIPTOR_CONTROL control;
+    SECURITY_DESCRIPTOR_RELATIVE base;
+    SID* owner = NULL;
+    SID* group = NULL;
+    ACL* sacl = NULL;
+    ACL* dacl = NULL;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    size_t size;
+    DWORD off;
+
+    if (get_user(control, &((SECURITY_DESCRIPTOR_RELATIVE*)us)->Control) < 0)
+        return false;
+
+    // FIXME - support absolute SDs
+    if (!(control & SE_SELF_RELATIVE))
+        return false;
+
+    if (copy_from_user(&base, us, sizeof(SECURITY_DESCRIPTOR_RELATIVE)) != 0)
+        return false;
+
+    if (base.Owner != 0) {
+        SID* us_owner = (SID*)((uint8_t*)us + base.Owner);
+        uint8_t subauth_count;
+        size_t len;
+
+        if (get_user(subauth_count, &us_owner->SubAuthorityCount) < 0)
+            return false;
+
+        len = offsetof(SID, SubAuthority[0]) + (subauth_count * sizeof(uint32_t));
+
+        owner = kmalloc(len, GFP_KERNEL);
+        if (!owner)
+            return false;
+
+        if (copy_from_user(owner, us_owner, len) != 0) {
+            kfree(owner);
+            return false;
+        }
+    }
+
+    if (base.Group != 0) {
+        SID* us_group = (SID*)((uint8_t*)us + base.Group);
+        uint8_t subauth_count;
+        size_t len;
+
+        if (get_user(subauth_count, &us_group->SubAuthorityCount) < 0) {
+            if (owner)
+                kfree(owner);
+
+            return false;
+        }
+
+        len = offsetof(SID, SubAuthority[0]) + (subauth_count * sizeof(uint32_t));
+
+        group = kmalloc(len, GFP_KERNEL);
+        if (!group) {
+            if (owner)
+                kfree(owner);
+
+            return false;
+        }
+
+        if (copy_from_user(group, us_group, len) != 0) {
+            if (owner)
+                kfree(owner);
+
+            kfree(group);
+            return false;
+        }
+    }
+
+    if (base.Sacl != 0) {
+        ACL* us_sacl = (ACL*)((uint8_t*)us + base.Sacl);
+        uint16_t len;
+
+        if (get_user(len, &us_sacl->AclSize) < 0 || len == 0) {
+            if (owner)
+                kfree(owner);
+
+            if (group)
+                kfree(group);
+
+            return false;
+        }
+
+        sacl = kmalloc(len, GFP_KERNEL);
+        if (!sacl) {
+            if (owner)
+                kfree(owner);
+
+            if (group)
+                kfree(group);
+
+            return false;
+        }
+
+        if (copy_from_user(sacl, us_sacl, len) != 0) {
+            if (owner)
+                kfree(owner);
+
+            if (group)
+                kfree(group);
+
+            return false;
+        }
+    }
+
+    if (base.Dacl != 0) {
+        ACL* us_dacl = (ACL*)((uint8_t*)us + base.Dacl);
+        uint16_t len;
+
+        if (get_user(len, &us_dacl->AclSize) < 0 || len == 0) {
+            if (owner)
+                kfree(owner);
+
+            if (group)
+                kfree(group);
+
+            if (sacl)
+                kfree(sacl);
+
+            return false;
+        }
+
+        dacl = kmalloc(len, GFP_KERNEL);
+        if (!dacl) {
+            if (owner)
+                kfree(owner);
+
+            if (group)
+                kfree(group);
+
+            if (sacl)
+                kfree(sacl);
+
+            return false;
+        }
+
+        if (copy_from_user(dacl, us_dacl, len) != 0) {
+            if (owner)
+                kfree(owner);
+
+            if (group)
+                kfree(group);
+
+            if (sacl)
+                kfree(sacl);
+
+            return false;
+        }
+    }
+
+    // assemble
+
+    size = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    if (owner)
+        size += sid_length(owner);
+
+    if (group)
+        size += sid_length(group);
+
+    if (sacl)
+        size += sacl->AclSize;
+
+    if (dacl)
+        size += dacl->AclSize;
+
+    sd = kmalloc(size, GFP_KERNEL);
+    if (!sd) {
+        if (owner)
+            kfree(owner);
+
+        if (group)
+            kfree(group);
+
+        if (sacl)
+            kfree(sacl);
+
+        if (dacl)
+            kfree(dacl);
+
+        return false;
+    }
+
+    memcpy(sd, &base, sizeof(SECURITY_DESCRIPTOR_RELATIVE));
+
+    base.Control |= SE_SELF_RELATIVE;
+
+    off = sizeof(SECURITY_DESCRIPTOR_RELATIVE);
+
+    if (owner) {
+        sd->Owner = off;
+        memcpy(sd_get_owner(sd), owner, sid_length(owner));
+        off += sid_length(owner);
+        kfree(owner);
+    }
+
+    if (group) {
+        sd->Group = off;
+        memcpy(sd_get_group(sd), group, sid_length(group));
+        off += sid_length(group);
+        kfree(group);
+    }
+
+    if (sacl) {
+        sd->Sacl = off;
+        memcpy(sd_get_sacl(sd), sacl, sacl->AclSize);
+        off += sacl->AclSize;
+        kfree(sacl);
+    }
+
+    if (dacl) {
+        sd->Dacl = off;
+        memcpy(sd_get_dacl(sd), dacl, dacl->AclSize);
+        kfree(dacl);
+    }
+
+    *ks = sd;
+
+    return true;
+}
+
+NTSTATUS user_NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
+                            ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
+                            PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
+                            PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus) {
+    NTSTATUS Status, access_status;
+    GENERIC_MAPPING mapping;
+    ULONG privbuflen, origlen;
+    PRIVILEGE_SET* privs;
+    ACCESS_MASK granted;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+
+    if (!SecurityDescriptor || !RequiredPrivilegesBuffer || !BufferLength ||
+        !GrantedAccess || !AccessStatus) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if ((uintptr_t)ClientToken & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (GenericMapping && copy_from_user(&mapping, GenericMapping, sizeof(GENERIC_MAPPING)) != 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (get_user(privbuflen, BufferLength) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (!get_user_security_descriptor(&sd, SecurityDescriptor))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (privbuflen > 0) {
+        privs = kmalloc(privbuflen, GFP_KERNEL);
+        if (!privs) {
+            kfree(sd);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    } else
+        privs = NULL;
+
+    origlen = privbuflen;
+
+    Status = NtAccessCheck(sd, ClientToken, DesiredAccess, GenericMapping ? &mapping : NULL,
+                           privs, &privbuflen, &granted, &access_status);
+
+    kfree(sd);
+
+    if (privs) {
+        ULONG to_copy = privbuflen;
+
+        if (to_copy > origlen)
+            to_copy = origlen;
+
+        if (copy_to_user(RequiredPrivilegesBuffer, privs, to_copy) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(privs);
+    }
+
+    if (put_user(privbuflen, BufferLength) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (put_user(granted, GrantedAccess) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    if (put_user(access_status, AccessStatus) < 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtPrivilegeCheck(HANDLE TokenHandle, PPRIVILEGE_SET RequiredPrivileges,

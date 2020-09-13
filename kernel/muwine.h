@@ -434,10 +434,10 @@ token_object* muwine_get_current_token(void);
 token_object* duplicate_token(token_object* tok);
 NTSTATUS copy_sd(SECURITY_DESCRIPTOR_RELATIVE* in, SECURITY_DESCRIPTOR_RELATIVE** out);
 NTSTATUS check_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len);
-NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
-                       ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
-                       PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
-                       PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus);
+NTSTATUS user_NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
+                            ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
+                            PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
+                            PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus);
 NTSTATUS NtSetSecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                              PSECURITY_DESCRIPTOR SecurityDescriptor);
 NTSTATUS NtPrivilegeCheck(HANDLE TokenHandle, PPRIVILEGE_SET RequiredPrivileges,
