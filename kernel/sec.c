@@ -594,10 +594,26 @@ static bool __inline sid_equal(PSID sid1, PSID sid2) {
     return !memcmp(sid1, sid2, size1);
 }
 
+static bool check_privilege_token(token_object* tok, DWORD priv) {
+    unsigned int i;
+
+    if (!tok->privs)
+        return false;
+
+    for (i = 0; i < tok->privs->PrivilegeCount; i++) {
+        if (tok->privs->Privileges[i].Attributes & SE_PRIVILEGE_ENABLED &&
+            tok->privs->Privileges[i].Luid.HighPart == 0 &&
+            tok->privs->Privileges[i].Luid.LowPart == priv) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static bool check_privilege(DWORD priv) {
     process_object* proc;
     token_object* tok;
-    unsigned int i;
     bool found = false;
 
     proc = muwine_current_process_object();
@@ -614,14 +630,7 @@ static bool check_privilege(DWORD priv) {
 
     down_read(&tok->sem);
 
-    for (i = 0; i < tok->privs->PrivilegeCount; i++) {
-        if (tok->privs->Privileges[i].Attributes & SE_PRIVILEGE_ENABLED &&
-            tok->privs->Privileges[i].Luid.HighPart == 0 &&
-            tok->privs->Privileges[i].Luid.LowPart == priv) {
-            found = true;
-            break;
-        }
-    }
+    found = check_privilege_token(tok, priv);
 
     up_read(&tok->sem);
 
@@ -2957,17 +2966,237 @@ NTSTATUS check_sd(SECURITY_DESCRIPTOR_RELATIVE* sd, unsigned int len) {
     return STATUS_SUCCESS;
 }
 
+static bool sid_in_token(token_object* tok, SID* sid, bool denying) {
+    unsigned int i;
+    size_t sidlen = sid_length(sid);
+
+    if (tok->user && !memcmp(tok->user, sid, sidlen))
+        return true;
+
+    if (!tok->groups)
+        return false;
+
+    for (i = 0; i < tok->groups->GroupCount; i++) {
+        if (denying || !(tok->groups->Groups[i].Attributes & SE_GROUP_USE_FOR_DENY_ONLY)) {
+            if (!memcmp(tok->groups->Groups[i].Sid, sid, sidlen))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd,
+                             ACCESS_MASK desired, PGENERIC_MAPPING mapping,
+                             PPRIVILEGE_SET privs_required, PULONG privreqlen,
+                             ACCESS_MASK* granted) {
+    NTSTATUS Status;
+    ACCESS_MASK remaining, denied;
+    bool max_allowed;
+    ACL* dacl;
+    ACE_HEADER* ace;
+    unsigned int i;
+
+    // See [MS-DTYP] 2.5.3.2
+
+    if (desired & GENERIC_READ) {
+        desired |= mapping->GenericRead;
+        desired &= ~GENERIC_READ;
+    }
+
+    if (desired & GENERIC_WRITE) {
+        desired |= mapping->GenericWrite;
+        desired &= ~GENERIC_WRITE;
+    }
+
+    if (desired & GENERIC_EXECUTE) {
+        desired |= mapping->GenericExecute;
+        desired &= ~GENERIC_EXECUTE;
+    }
+
+    if (desired & GENERIC_ALL) {
+        desired |= mapping->GenericAll;
+        desired &= ~GENERIC_ALL;
+    }
+
+    remaining = desired;
+    denied = 0;
+    *granted = 0;
+
+    down_read(&tok->sem);
+
+    if (remaining & ACCESS_SYSTEM_SECURITY) {
+        if (check_privilege_token(tok, SE_SECURITY_PRIVILEGE)) {
+            remaining &= ~ACCESS_SYSTEM_SECURITY;
+            *granted |= ACCESS_SYSTEM_SECURITY;
+
+            if (remaining == 0) {
+                Status = STATUS_SUCCESS;
+                goto end;
+            }
+        } else {
+            if (privs_required) {
+                // assuming there will only ever be one privilege required
+
+                if (*privreqlen < sizeof(PRIVILEGE_SET)) {
+                    *privreqlen = sizeof(PRIVILEGE_SET);
+                    Status = STATUS_BUFFER_TOO_SMALL;
+                    goto end;
+                }
+
+                *privreqlen = sizeof(PRIVILEGE_SET);
+
+                privs_required->PrivilegeCount = 1;
+                privs_required->Control = 0;
+                privs_required->Privilege[0].Luid.LowPart = SE_SECURITY_PRIVILEGE;
+                privs_required->Privilege[0].Luid.HighPart = 0;
+                privs_required->Privilege[0].Attributes = 0;
+            }
+
+            *granted = 0;
+            Status = STATUS_PRIVILEGE_NOT_HELD;
+            goto end;
+        }
+    }
+
+    if (remaining & WRITE_OWNER) {
+        if (check_privilege_token(tok, SE_TAKE_OWNERSHIP_PRIVILEGE)) {
+            remaining &= ~WRITE_OWNER;
+            *granted |= WRITE_OWNER;
+        }
+    }
+
+    // owner always granted READ_CONTROL and WRITE_DAC
+    if (sd->Owner != 0 && sid_in_token(tok, sd_get_owner(sd), false)) {
+        remaining &= ~(READ_CONTROL | WRITE_DAC);
+        *granted |= READ_CONTROL | WRITE_DAC;
+
+        if (remaining == 0) {
+            Status = STATUS_SUCCESS;
+            goto end;
+        }
+    }
+
+    if (sd->Dacl == 0) {
+        *granted |= remaining;
+        Status = STATUS_SUCCESS;
+        goto end;
+    }
+
+    max_allowed = remaining & MAXIMUM_ALLOWED;
+
+    dacl = sd_get_dacl(sd);
+    ace = (ACE_HEADER*)&dacl[1];
+
+    for (i = 0; i < dacl->AceCount; i++) {
+        if (ace->AceFlags & INHERIT_ONLY_ACE) {
+            ace = (ACE_HEADER*)((uint8_t*)ace + ace->AceSize);
+            continue;
+        }
+
+        switch (ace->AceType) {
+            case ACCESS_ALLOWED_ACE_TYPE: {
+                ACCESS_ALLOWED_ACE* aaa = (ACCESS_ALLOWED_ACE*)ace;
+
+                if (sid_in_token(tok, (SID*)&aaa->SidStart, false)) {
+                    if (max_allowed)
+                        *granted |= aaa->Mask;
+                    else {
+                        *granted |= remaining & aaa->Mask;
+                        remaining &= ~aaa->Mask;
+
+                        if (remaining == 0) {
+                            Status = STATUS_SUCCESS;
+                            goto end;
+                        }
+                    }
+                }
+
+                break;
+            }
+
+            case ACCESS_DENIED_ACE_TYPE: {
+                ACCESS_DENIED_ACE* ada = (ACCESS_DENIED_ACE*)ace;
+
+                if (sid_in_token(tok, (SID*)&ada->SidStart, true)) {
+                    if (max_allowed)
+                        denied |= ada->Mask;
+                    else {
+                        if (remaining & ada->Mask) {
+                            *granted = 0;
+                            Status = STATUS_ACCESS_DENIED;
+                            goto end;
+                        }
+                    }
+                }
+
+                break;
+            }
+        }
+
+        ace = (ACE_HEADER*)((uint8_t*)ace + ace->AceSize);
+    }
+
+    if (max_allowed) {
+        *granted &= ~denied;
+
+        if (granted == 0)
+            Status = STATUS_ACCESS_DENIED;
+        else
+            Status = STATUS_SUCCESS;
+
+        goto end;
+    }
+
+    if (remaining == 0)
+        Status = STATUS_SUCCESS;
+    else
+        Status = STATUS_ACCESS_DENIED;
+
+end:
+    up_read(&tok->sem);
+
+    return Status;
+}
+
 static NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
                               ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
                               PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
                               PACCESS_MASK GrantedAccess, PNTSTATUS AccessStatus) {
-    printk(KERN_INFO "NtAccessCheck(%px, %lx, %x, %px, %px, %px, %px, %px): stub\n",
-           SecurityDescriptor, (uintptr_t)ClientToken, DesiredAccess, GenericMapping,
-           RequiredPrivilegesBuffer, BufferLength, GrantedAccess, AccessStatus);
+    NTSTATUS Status;
+    token_object* tok;
+    ACCESS_MASK access;
 
-    // FIXME
+    // FIXME - check SD is valid(?)
 
-    return STATUS_NOT_IMPLEMENTED;
+    tok = (token_object*)get_object_from_handle(ClientToken, &access);
+    if (!tok)
+        return STATUS_INVALID_HANDLE;
+
+    if (tok->header.type != token_type) {
+        dec_obj_refcount(&tok->header);
+        return STATUS_INVALID_HANDLE;
+    }
+
+    if (!(access & TOKEN_QUERY)) {
+        dec_obj_refcount(&tok->header);
+        return STATUS_ACCESS_DENIED;
+    }
+
+    Status = access_check(tok, SecurityDescriptor, DesiredAccess, GenericMapping,
+                          RequiredPrivilegesBuffer, BufferLength, GrantedAccess);
+
+    if (Status != STATUS_INVALID_SECURITY_DESCR && Status != STATUS_BUFFER_TOO_SMALL) {
+        *AccessStatus = Status;
+        Status = STATUS_SUCCESS;
+    } else if (Status == STATUS_PRIVILEGE_NOT_HELD) {
+        *AccessStatus = Status;
+        Status = STATUS_ACCESS_DENIED;
+    }
+
+    dec_obj_refcount(&tok->header);
+
+    return Status;
 }
 
 static bool get_user_security_descriptor(SECURITY_DESCRIPTOR_RELATIVE** ks,
