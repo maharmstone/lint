@@ -2218,7 +2218,10 @@ static NTSTATUS NtSetValueKey(HANDLE KeyHandle, PUNICODE_STRING ValueName, ULONG
         goto end2;
     }
 
-    // FIXME - check for KEY_SET_VALUE in access mask
+    if (!(access & KEY_SET_VALUE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end2;
+    }
 
     down_write(&key->h->sem);
 
