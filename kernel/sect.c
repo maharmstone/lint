@@ -261,7 +261,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     section_object* obj;
     struct file* anon_file = NULL;
     uint64_t file_size = 0;
-    ACCESS_MASK file_access;
+    ACCESS_MASK access;
     SECURITY_DESCRIPTOR_RELATIVE* sd;
     object_header* parent = NULL;
     token_object* token;
@@ -269,9 +269,14 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     if (AllocationAttributes & SEC_IMAGE && !FileHandle)
         return STATUS_INVALID_PARAMETER;
 
+    Status = access_check2(NULL, section_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
     if (FileHandle) {
         FILE_STANDARD_INFORMATION fsi;
         IO_STATUS_BLOCK iosb;
+        ACCESS_MASK file_access;
 
         file = (file_object*)get_object_from_handle(FileHandle, &file_access);
 
@@ -385,7 +390,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
         goto end;
 
     Status = muwine_add_handle(&obj->header, SectionHandle,
-                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, 0);
+                               ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false, access);
 
 end:
     if (!NT_SUCCESS(Status))

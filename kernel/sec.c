@@ -3068,7 +3068,7 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
     }
 
     // owner always granted READ_CONTROL and WRITE_DAC
-    if (sd->Owner != 0 && sid_in_token(tok, sd_get_owner(sd), false)) {
+    if (!sd || (sd->Owner != 0 && sid_in_token(tok, sd_get_owner(sd), false))) {
         remaining &= ~(READ_CONTROL | WRITE_DAC);
         *granted |= READ_CONTROL | WRITE_DAC;
 
@@ -3078,7 +3078,7 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
         }
     }
 
-    if (sd->Dacl == 0) {
+    if (!sd || sd->Dacl == 0) {
         *granted |= remaining;
         Status = STATUS_SUCCESS;
         goto end;
@@ -3156,6 +3156,22 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
 
 end:
     up_read(&tok->sem);
+
+    return Status;
+}
+
+NTSTATUS access_check2(SECURITY_DESCRIPTOR_RELATIVE* sd, type_object* type, ACCESS_MASK desired,
+                       ACCESS_MASK* granted) {
+    NTSTATUS Status;
+    token_object* tok;
+
+    tok = muwine_get_current_token();
+    if (!tok)
+        return STATUS_INTERNAL_ERROR;
+
+    Status = access_check(tok, sd, desired, &type->generic_mapping, NULL, NULL, granted);
+
+    dec_obj_refcount(&tok->header);
 
     return Status;
 }
