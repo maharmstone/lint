@@ -86,6 +86,7 @@ typedef uint64_t ULONGLONG;
 typedef int64_t LONGLONG;
 typedef uint16_t WORD;
 typedef uint8_t BYTE;
+typedef DWORD EXECUTION_STATE;
 
 #ifdef __amd64 // FIXME - also aarch64
 #define KERNEL_HANDLE_MASK 0x8000000000000000
@@ -204,6 +205,7 @@ typedef enum _KEY_VALUE_INFORMATION_CLASS {
 #define KEY_NOTIFY              0x00000010
 #define KEY_CREATE_LINK         0x00000020
 
+typedef NTSTATUS (*muwine_func0arg)(void);
 typedef NTSTATUS (*muwine_func1arg)(uintptr_t arg1);
 typedef NTSTATUS (*muwine_func2arg)(uintptr_t arg1, uintptr_t arg2);
 typedef NTSTATUS (*muwine_func3arg)(uintptr_t arg1, uintptr_t arg2, uintptr_t arg3);
@@ -1126,6 +1128,17 @@ typedef enum {
     MaxThreadInfoClass
 } THREADINFOCLASS;
 
+#define EXCEPTION_MAXIMUM_PARAMETERS 15
+
+typedef struct _EXCEPTION_RECORD {
+    DWORD ExceptionCode;
+    DWORD ExceptionFlags;
+    struct _EXCEPTION_RECORD* ExceptionRecord;
+    PVOID ExceptionAddress;
+    DWORD NumberParameters;
+    ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+} EXCEPTION_RECORD, *PEXCEPTION_RECORD;
+
 NTSTATUS muwine_init_threads(void);
 NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                              POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
@@ -1135,6 +1148,29 @@ NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 NTSTATUS NtSetInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInformationClass,
                                 PVOID ThreadInformation, ULONG ThreadInformationLength);
 int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
+NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                          POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                          PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
+                          ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
+                          PVOID AttributeList);
+NTSTATUS NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval);
+ULONG NtGetCurrentProcessorNumber(void);
+NTSTATUS NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                      POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
+NTSTATUS NtQueryInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInformationClass,
+                                  PVOID ThreadInformation, ULONG ThreadInformationLength,
+                                  PULONG ReturnLength);
+NTSTATUS NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRoutine, PVOID ApcRoutineContext,
+                          PIO_STATUS_BLOCK ApcStatusBlock, ULONG ApcReserved);
+NTSTATUS NtRaiseException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT ThreadContext,
+                          BOOLEAN HandleException);
+NTSTATUS NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
+NTSTATUS NtSetContextThread(HANDLE ThreadHandle, PCONTEXT Context);
+NTSTATUS NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high, ULONG selector2,
+                         ULONG entry2_low, ULONG entry2_high);
+NTSTATUS NtSetThreadExecutionState(EXECUTION_STATE NewFlags, EXECUTION_STATE* PreviousFlags);
+NTSTATUS NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
+NTSTATUS NtYieldExecution(void);
 
 // proc.c
 typedef struct _thread_object thread_object;

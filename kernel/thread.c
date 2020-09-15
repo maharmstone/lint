@@ -512,3 +512,124 @@ thread_object* muwine_current_thread_object(void) {
 
     return obj;
 }
+
+NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                          POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                          PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
+                          ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
+                          PVOID AttributeList) {
+    printk(KERN_INFO "NtCreateThreadEx(%px, %x, %px, %lx, %px, %px, %x, %lx, %lx, %lx, %px): stub\n",
+           ThreadHandle, DesiredAccess, ObjectAttributes, (uintptr_t)ProcessHandle,
+           StartRoutine, Argument, CreateFlags, ZeroBits, StackSize, MaximumStackSize,
+           AttributeList);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval) {
+    printk(KERN_INFO "NtDelayExecution(%x, %px): stub\n", Alertable, DelayInterval);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+ULONG NtGetCurrentProcessorNumber(void) {
+    printk(KERN_INFO "NtGetCurrentProcessorNumber(): stub\n");
+
+    return 1;
+}
+
+NTSTATUS NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                      POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
+    printk(KERN_INFO "NtOpenThread(%px, %x, %px, %px): stub\n", ThreadHandle, DesiredAccess,
+           ObjectAttributes, ClientId);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQueryInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInformationClass,
+                                  PVOID ThreadInformation, ULONG ThreadInformationLength,
+                                  PULONG ReturnLength) {
+    printk(KERN_INFO "NtQueryInformationThread(%lx, %x, %px, %x, %px): stub\n", (uintptr_t)ThreadHandle,
+           ThreadInformationClass, ThreadInformation, ThreadInformationLength, ReturnLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRoutine, PVOID ApcRoutineContext,
+                          PIO_STATUS_BLOCK ApcStatusBlock, ULONG ApcReserved) {
+    printk(KERN_INFO "NtQueueApcThread(%lx, %px, %px, %px, %x): stub\n", (uintptr_t)ThreadHandle,
+           ApcRoutine, ApcRoutineContext, ApcStatusBlock, ApcReserved);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtRaiseException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT ThreadContext,
+                          BOOLEAN HandleException) {
+    printk(KERN_INFO "NtRaiseException(%px, %px, %x): stub\n", ExceptionRecord, ThreadContext,
+           HandleException);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount) {
+    printk(KERN_INFO "NtResumeThread(%lx, %px): stub\n", (uintptr_t)ThreadHandle, SuspendCount);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSetContextThread(HANDLE ThreadHandle, PCONTEXT Context) {
+    printk(KERN_INFO "NtSetContextThread(%lx, %px): stub\n", (uintptr_t)ThreadHandle, Context);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high, ULONG selector2,
+                         ULONG entry2_low, ULONG entry2_high) {
+    printk(KERN_INFO "NtSetLdtEntries(%x, %x, %x, %x, %x, %x): stub\n", selector1, entry1_low,
+           entry1_high, selector2, entry2_low, entry2_high);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSetThreadExecutionState(EXECUTION_STATE NewFlags, EXECUTION_STATE* PreviousFlags) {
+    printk(KERN_INFO "NtSetThreadExecutionState(%x, %px): stub\n", NewFlags, PreviousFlags);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount) {
+    printk(KERN_INFO "NtSuspendThread(%lx, %px): stub\n", (uintptr_t)ThreadHandle,
+           PreviousSuspendCount);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtYieldExecution(void) {
+    printk(KERN_INFO "NtYieldExecution(): stub\n");
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

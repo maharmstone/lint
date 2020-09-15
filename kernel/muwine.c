@@ -102,6 +102,19 @@ static struct muwine_func funcs[] = {
     { NtSetInformationToken, 4 },
     { NtOpenProcessTokenEx, 4 },
     { NtOpenThreadTokenEx, 5 },
+    { NtCreateThreadEx, 11 },
+    { NtDelayExecution, 2 },
+    { NtGetCurrentProcessorNumber, 0 },
+    { NtOpenThread, 4 },
+    { NtQueryInformationThread, 5 },
+    { NtQueueApcThread, 5 },
+    { NtRaiseException, 3 },
+    { NtResumeThread, 2 },
+    { NtSetContextThread, 2 },
+    { NtSetLdtEntries, 6 },
+    { NtSetThreadExecutionState, 2 },
+    { NtSuspendThread, 2 },
+    { NtYieldExecution, 0 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)
@@ -560,7 +573,9 @@ static long muwine_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (num_args == 1) {
+    if (num_args == 0)
+        return ((muwine_func0arg)funcs[cmd].func)();
+    else if (num_args == 1) {
         uintptr_t arg1;
 
         if (get_user(arg1, temp) < 0)
