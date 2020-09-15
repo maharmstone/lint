@@ -854,9 +854,14 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess,
     SECURITY_DESCRIPTOR_RELATIVE* sd;
     object_header* parent;
     token_object* token;
+    ACCESS_MASK access;
 
     if (!ObjectAttributes || !ObjectAttributes->ObjectName || !DestinationName || DestinationName->Length < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
+
+    Status = access_check2(NULL, symlink_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
     if (!NT_SUCCESS(Status))
@@ -960,7 +965,8 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess,
     if (us_alloc)
         kfree(us.Buffer);
 
-    Status = muwine_add_handle(&obj->header, pHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
+    Status = muwine_add_handle(&obj->header, pHandle,
+                               ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
 
     if (!NT_SUCCESS(Status)) {
         dec_obj_refcount(&obj->header);
