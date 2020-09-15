@@ -647,13 +647,15 @@ static NTSTATUS resolve_reg_symlinks(UNICODE_STRING* us, bool* done_alloc) {
 }
 
 static NTSTATUS open_key(PHANDLE KeyHandle, UNICODE_STRING* us, hive* h,
-                         POBJECT_ATTRIBUTES ObjectAttributes, const UNICODE_STRING* orig_us) {
+                         POBJECT_ATTRIBUTES ObjectAttributes, const UNICODE_STRING* orig_us,
+                         ACCESS_MASK DesiredAccess) {
     NTSTATUS Status;
     key_object* k;
     bool is_volatile, parent_is_volatile;
     CM_KEY_NODE* nk;
     SECURITY_DESCRIPTOR_RELATIVE* sd = NULL;
     uint32_t offset;
+    ACCESS_MASK access;
 
     static const WCHAR prefix[] = L"\\Registry\\";
 
@@ -717,8 +719,7 @@ static NTSTATUS open_key(PHANDLE KeyHandle, UNICODE_STRING* us, hive* h,
     k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
     if (!k->header.path.Buffer) {
-        dec_obj_refcount(&key_type->header);
-        kfree(k);
+        dec_obj_refcount(&k->header);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -731,12 +732,16 @@ static NTSTATUS open_key(PHANDLE KeyHandle, UNICODE_STRING* us, hive* h,
     k->is_volatile = is_volatile;
     k->parent_is_volatile = parent_is_volatile;
 
-    Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
-
+    Status = access_check_object(&k->header, DesiredAccess, &access);
     if (!NT_SUCCESS(Status)) {
-        dec_obj_refcount(&key_type->header);
-        kfree(k);
+        dec_obj_refcount(&k->header);
+        return Status;
     }
+
+    Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
+
+    if (!NT_SUCCESS(Status))
+        dec_obj_refcount(&k->header);
 
     return Status;
 }
@@ -836,7 +841,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         }
 
         if (h->depth == 0 || !wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
-            Status = open_key(KeyHandle, &us, h, ObjectAttributes, &orig_us);
+            Status = open_key(KeyHandle, &us, h, ObjectAttributes, &orig_us, DesiredAccess);
             goto end;
         }
 
@@ -921,7 +926,8 @@ NTSTATUS user_NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_
 static void key_object_close(object_header* obj) {
     key_object* key = (key_object*)obj;
 
-    __sync_sub_and_fetch(&key->h->refcount, 1);
+    if (key->h)
+        __sync_sub_and_fetch(&key->h->refcount, 1);
 }
 
 static NTSTATUS get_key_item_by_index(hive* h, CM_KEY_NODE* kn, unsigned int index, uint32_t* cell_offset, bool is_volatile) {
