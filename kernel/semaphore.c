@@ -155,12 +155,11 @@ static NTSTATUS NtOpenSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAcce
         goto end;
     }
 
-    access = sanitize_access_mask(DesiredAccess, sem_type);
-
-    // FIXME - check against SD
-
-    if (access == MAXIMUM_ALLOWED)
-        access = SEMAPHORE_ALL_ACCESS; // FIXME - should only be what SD allows
+    Status = access_check_object(&sem->header.h, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&sem->header.h);
+        goto end;
+    }
 
     Status = muwine_add_handle(&sem->header.h, SemaphoreHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
 
