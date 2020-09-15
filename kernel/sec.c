@@ -662,7 +662,7 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     if (TokenType != TokenPrimary && TokenType != TokenImpersonation)
         return STATUS_INVALID_PARAMETER;
 
-    Status = access_check2(NULL, token_type, DesiredAccess, &access);
+    Status = access_check_type(token_type, DesiredAccess, &access);
     if (!NT_SUCCESS(Status))
         return Status;
 
@@ -3159,8 +3159,7 @@ end:
     return Status;
 }
 
-NTSTATUS access_check2(SECURITY_DESCRIPTOR_RELATIVE* sd, type_object* type, ACCESS_MASK desired,
-                       ACCESS_MASK* granted) {
+NTSTATUS access_check_type(type_object* type, ACCESS_MASK desired, ACCESS_MASK* granted) {
     NTSTATUS Status;
     token_object* tok;
 
@@ -3168,7 +3167,7 @@ NTSTATUS access_check2(SECURITY_DESCRIPTOR_RELATIVE* sd, type_object* type, ACCE
     if (!tok)
         return STATUS_INTERNAL_ERROR;
 
-    Status = access_check(tok, sd, desired, &type->generic_mapping, NULL, NULL, granted);
+    Status = access_check(tok, NULL, desired, &type->generic_mapping, NULL, NULL, granted);
 
     dec_obj_refcount(&tok->header);
 

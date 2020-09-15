@@ -269,7 +269,7 @@ static NTSTATUS NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess
     if (AllocationAttributes & SEC_IMAGE && !FileHandle)
         return STATUS_INVALID_PARAMETER;
 
-    Status = access_check2(NULL, section_type, DesiredAccess, &access);
+    Status = access_check_type(section_type, DesiredAccess, &access);
     if (!NT_SUCCESS(Status))
         return Status;
 

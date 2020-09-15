@@ -580,7 +580,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
     if (!ObjectAttributes || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
 
-    Status = access_check2(NULL, dir_type, DesiredAccess, &access);
+    Status = access_check_type(dir_type, DesiredAccess, &access);
     if (!NT_SUCCESS(Status))
         return Status;
 
@@ -859,7 +859,7 @@ NTSTATUS NtCreateSymbolicLinkObject(PHANDLE pHandle, ACCESS_MASK DesiredAccess,
     if (!ObjectAttributes || !ObjectAttributes->ObjectName || !DestinationName || DestinationName->Length < sizeof(WCHAR))
         return STATUS_INVALID_PARAMETER;
 
-    Status = access_check2(NULL, symlink_type, DesiredAccess, &access);
+    Status = access_check_type(symlink_type, DesiredAccess, &access);
     if (!NT_SUCCESS(Status))
         return Status;
 

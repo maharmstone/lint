@@ -120,7 +120,7 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    Status = access_check2(NULL, thread_type, DesiredAccess, &access);
+    Status = access_check_type(thread_type, DesiredAccess, &access);
     if (!NT_SUCCESS(Status))
         return Status;
 

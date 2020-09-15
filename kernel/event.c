@@ -13,7 +13,7 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
     object_header* parent = NULL;
     token_object* token;
 
-    Status = access_check2(NULL, event_type, DesiredAccess, &access);
+    Status = access_check_type(event_type, DesiredAccess, &access);
     if (!NT_SUCCESS(Status))
         return Status;
 

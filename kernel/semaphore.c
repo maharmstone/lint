@@ -13,7 +13,7 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
     object_header* parent = NULL;
     token_object* token;
 
-    Status = access_check2(NULL, sem_type, DesiredAccess, &access);
+    Status = access_check_type(sem_type, DesiredAccess, &access);
     if (!NT_SUCCESS(Status))
         return Status;
 

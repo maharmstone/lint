@@ -25,7 +25,7 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
     object_header* parent = NULL;
     token_object* token;
 
-    Status = access_check2(NULL, timer_type, DesiredAccess, &access);
+    Status = access_check_type(timer_type, DesiredAccess, &access);
     if (!NT_SUCCESS(Status))
         return Status;
 
