@@ -16,10 +16,9 @@ static NTSTATUS NtCreateMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
     object_header* parent = NULL;
     token_object* token;
 
-    access = sanitize_access_mask(DesiredAccess, mutant_type);
-
-    if (access == MAXIMUM_ALLOWED)
-        access = MUTANT_ALL_ACCESS;
+    Status = access_check2(NULL, mutant_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     // create object
 
