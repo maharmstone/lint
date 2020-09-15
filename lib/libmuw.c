@@ -1967,27 +1967,6 @@ NTSTATUS __stdcall NtSetContextThread(HANDLE ThreadHandle, const CONTEXT* Contex
     return (NTSTATUS)ret;
 }
 
-NTSTATUS __stdcall NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high,
-                                   ULONG selector2, ULONG entry2_low, ULONG entry2_high) {
-    long ret;
-
-    uintptr_t args[] = {
-        6,
-        (uintptr_t)selector1,
-        (uintptr_t)entry1_low,
-        (uintptr_t)entry1_high,
-        (uintptr_t)selector2,
-        (uintptr_t)entry2_low,
-        (uintptr_t)entry2_high
-    };
-
-    init_muwine();
-
-    do_ioctl(MUWINE_IOCTL_NTSETLDTENTRIES, args, ret);
-
-    return (NTSTATUS)ret;
-}
-
 NTSTATUS __stdcall NtSetThreadExecutionState(EXECUTION_STATE NewFlags,
                                              EXECUTION_STATE* PreviousFlags) {
     long ret;
