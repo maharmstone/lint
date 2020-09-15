@@ -709,12 +709,11 @@ static NTSTATUS NtOpenDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK Desir
         goto end;
     }
 
-    access = sanitize_access_mask(DesiredAccess, dir_type);
-
-    // FIXME - check against SD
-
-    if (access == MAXIMUM_ALLOWED)
-        access = DIRECTORY_ALL_ACCESS; // FIXME - should only be what SD allows
+    Status = access_check_object(&dir->header, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&dir->header);
+        goto end;
+    }
 
     Status = muwine_add_handle(&dir->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
 
