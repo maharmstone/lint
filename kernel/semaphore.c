@@ -13,10 +13,9 @@ static NTSTATUS NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAc
     object_header* parent = NULL;
     token_object* token;
 
-    access = sanitize_access_mask(DesiredAccess, sem_type);
-
-    if (access == MAXIMUM_ALLOWED)
-        access = SEMAPHORE_ALL_ACCESS;
+    Status = access_check2(NULL, sem_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     if (MaximumCount <= 0 || InitialCount > MaximumCount)
         return STATUS_INVALID_PARAMETER;
