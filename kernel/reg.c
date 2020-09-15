@@ -3958,7 +3958,10 @@ NTSTATUS NtDeleteKey(HANDLE KeyHandle) {
         goto end2;
     }
 
-    // FIXME - check access mask has DELETE permission
+    if (!(access & DELETE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end2;
+    }
 
     down_write(&key->h->sem);
 
