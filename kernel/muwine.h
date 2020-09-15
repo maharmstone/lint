@@ -1139,8 +1139,24 @@ typedef struct _EXCEPTION_RECORD {
     ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
 } EXCEPTION_RECORD, *PEXCEPTION_RECORD;
 
+typedef struct {
+    ULONG Attribute;
+    SIZE_T Size;
+    union {
+        ULONG Value;
+        PVOID ValuePtr;
+    };
+    PSIZE_T ReturnLength;
+} PS_ATTRIBUTE, *PPS_ATTRIBUTE;
+
+typedef struct {
+    SIZE_T TotalLength;
+    PS_ATTRIBUTE Attributes[1];
+} PS_ATTRIBUTE_LIST, *PPS_ATTRIBUTE_LIST;
+
 typedef struct _thread_object thread_object;
 typedef void (*PNTAPCFUNC)(ULONG_PTR, ULONG_PTR, ULONG_PTR);
+typedef void (*PRTL_THREAD_START_ROUTINE)(void*);
 
 NTSTATUS muwine_init_threads(void);
 NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
@@ -1153,9 +1169,9 @@ NTSTATUS NtSetInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInfor
 int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
 NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                           POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
-                          PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
-                          ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
-                          PVOID AttributeList);
+                          PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
+                          ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
+                          SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList);
 NTSTATUS NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval);
 ULONG NtGetCurrentProcessorNumber(void);
 NTSTATUS NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,

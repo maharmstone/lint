@@ -515,9 +515,9 @@ thread_object* muwine_current_thread_object(void) {
 
 NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                           POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
-                          PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
-                          ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
-                          PVOID AttributeList) {
+                          PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
+                          ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
+                          SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList) {
     printk(KERN_INFO "NtCreateThreadEx(%px, %x, %px, %lx, %px, %px, %x, %lx, %lx, %lx, %px): stub\n",
            ThreadHandle, DesiredAccess, ObjectAttributes, (uintptr_t)ProcessHandle,
            StartRoutine, Argument, CreateFlags, ZeroBits, StackSize, MaximumStackSize,
