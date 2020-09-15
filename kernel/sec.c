@@ -662,6 +662,10 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
     if (TokenType != TokenPrimary && TokenType != TokenImpersonation)
         return STATUS_INVALID_PARAMETER;
 
+    Status = access_check2(NULL, token_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
     if (TokenType == TokenImpersonation) {
         SECURITY_QUALITY_OF_SERVICE* qos;
 
@@ -769,11 +773,6 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
         tok->impersonation_level = impersonation_level;
 
     // add handle
-
-    access = sanitize_access_mask(DesiredAccess, token_type);
-
-    if (access == MAXIMUM_ALLOWED)
-        access = TOKEN_ALL_ACCESS;
 
     Status = muwine_add_handle(&tok->header, TokenHandle,
                                ObjectAttributes ? ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE : false,
