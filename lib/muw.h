@@ -768,7 +768,23 @@ typedef enum {
     MaxProcessInfoClass
 } PROCESS_INFORMATION_CLASS;
 
+typedef struct {
+    ULONG Attribute;
+    SIZE_T Size;
+    union {
+        ULONG Value;
+        PVOID ValuePtr;
+    };
+    PSIZE_T ReturnLength;
+} PS_ATTRIBUTE, *PPS_ATTRIBUTE;
+
+typedef struct {
+    SIZE_T TotalLength;
+    PS_ATTRIBUTE Attributes[1];
+} PS_ATTRIBUTE_LIST, *PPS_ATTRIBUTE_LIST;
+
 typedef void (__stdcall *PNTAPCFUNC)(ULONG_PTR, ULONG_PTR, ULONG_PTR);
+typedef void (__stdcall *PRTL_THREAD_START_ROUTINE)(void*);
 
 #endif
 
@@ -978,9 +994,9 @@ NTSTATUS __stdcall NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK Desire
                                         ULONG HandleAttributes, PHANDLE TokenHandle);
 NTSTATUS __stdcall NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                                     POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
-                                    PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
-                                    ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
-                                    PVOID AttributeList);
+                                    PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
+                                    ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
+                                    SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList);
 NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, const LARGE_INTEGER* DelayInterval);
 ULONG __stdcall NtGetCurrentProcessorNumber(void);
 NTSTATUS __stdcall NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,

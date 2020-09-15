@@ -1799,9 +1799,9 @@ NTSTATUS __stdcall NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK Desire
 
 NTSTATUS __stdcall NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                                     POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
-                                    PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
-                                    ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
-                                    PVOID AttributeList) {
+                                    PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
+                                    ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
+                                    SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList) {
     long ret;
 
     uintptr_t args[] = {
