@@ -2080,3 +2080,112 @@ NTSTATUS __stdcall NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert) {
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK AccessMask,
+                                 POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)AccessMask,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)ClientId
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENPROCESS, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQueryInformationProcess(HANDLE ProcessHandle,
+                                             PROCESS_INFORMATION_CLASS ProcessInformationClass,
+                                             PVOID ProcessInformation,
+                                             ULONG ProcessInformationLength,
+                                             PULONG ReturnLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)ProcessInformationClass,
+        (uintptr_t)ProcessInformation,
+        (uintptr_t)ProcessInformationLength,
+        (uintptr_t)ReturnLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYINFORMATIONPROCESS, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSetInformationProcess(HANDLE ProcessHandle,
+                                           PROCESS_INFORMATION_CLASS ProcessInformationClass,
+                                           PVOID ProcessInformation,
+                                           ULONG ProcessInformationLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)ProcessInformationClass,
+        (uintptr_t)ProcessInformation,
+        (uintptr_t)ProcessInformationLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETINFORMATIONPROCESS, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtTerminateProcess(HANDLE ProcessHandle, NTSTATUS ExitStatus) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)ExitStatus
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTTERMINATEPROCESS, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSuspendProcess(HANDLE ProcessHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)ProcessHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSUSPENDPROCESS, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtResumeProcess(HANDLE ProcessHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)ProcessHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTRESUMEPROCESS, args, ret);
+
+    return (NTSTATUS)ret;
+}

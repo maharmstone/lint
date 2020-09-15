@@ -713,6 +713,61 @@ typedef struct _EXCEPTION_RECORD {
     ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
 } EXCEPTION_RECORD, *PEXCEPTION_RECORD;
 
+typedef enum {
+    ProcessBasicInformation,
+    ProcessQuotaLimits,
+    ProcessIoCounters,
+    ProcessVmCounters,
+    ProcessTimes,
+    ProcessBasePriority,
+    ProcessRaisePriority,
+    ProcessDebugPort,
+    ProcessExceptionPort,
+    ProcessAccessToken,
+    ProcessLdtInformation,
+    ProcessLdtSize,
+    ProcessDefaultHardErrorMode,
+    ProcessIoPortHandlers,
+    ProcessPooledUsageAndLimits,
+    ProcessWorkingSetWatch,
+    ProcessUserModeIOPL,
+    ProcessEnableAlignmentFaultFixup,
+    ProcessPriorityClass,
+    ProcessWx86Information,
+    ProcessHandleCount,
+    ProcessAffinityMask,
+    ProcessPriorityBoost,
+    ProcessDeviceMap,
+    ProcessSessionInformation,
+    ProcessForegroundInformation,
+    ProcessWow64Information,
+    ProcessImageFileName,
+    ProcessLUIDDeviceMapsEnabled,
+    ProcessBreakOnTermination,
+    ProcessDebugObjectHandle,
+    ProcessDebugFlags,
+    ProcessHandleTracing,
+    ProcessIoPriority,
+    ProcessExecuteFlags,
+    ProcessTlsInformation,
+    ProcessCookie,
+    ProcessImageInformation,
+    ProcessCycleTime,
+    ProcessPagePriority,
+    ProcessInstrumentationCallback,
+    ProcessThreadStackAllocation,
+    ProcessWorkingSetWatchEx,
+    ProcessImageFileNameWin32,
+    ProcessImageFileMapping,
+    ProcessAffinityUpdateMode,
+    ProcessMemoryAllocationMode,
+    ProcessGroupInformation,
+    ProcessTokenVirtualizationEnabled,
+    ProcessConsoleHostProcess,
+    ProcessWindowInformation,
+    MaxProcessInfoClass
+} PROCESS_INFORMATION_CLASS;
+
 #endif
 
 void close_muwine();
@@ -948,6 +1003,20 @@ NTSTATUS __stdcall NtYieldExecution();
 NTSTATUS __stdcall NtAlertResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
 NTSTATUS __stdcall NtAlertThread(HANDLE ThreadHandle);
 NTSTATUS __stdcall NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert);
+NTSTATUS __stdcall NtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK AccessMask,
+                                 POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
+NTSTATUS __stdcall NtQueryInformationProcess(HANDLE ProcessHandle,
+                                             PROCESS_INFORMATION_CLASS ProcessInformationClass,
+                                             PVOID ProcessInformation,
+                                             ULONG ProcessInformationLength,
+                                             PULONG ReturnLength);
+NTSTATUS __stdcall NtSetInformationProcess(HANDLE ProcessHandle,
+                                           PROCESS_INFORMATION_CLASS ProcessInformationClass,
+                                           PVOID ProcessInformation,
+                                           ULONG ProcessInformationLength);
+NTSTATUS __stdcall NtTerminateProcess(HANDLE ProcessHandle, NTSTATUS ExitStatus);
+NTSTATUS __stdcall NtSuspendProcess(HANDLE ProcessHandle);
+NTSTATUS __stdcall NtResumeProcess(HANDLE ProcessHandle);
 
 #ifdef __cplusplus
 }
