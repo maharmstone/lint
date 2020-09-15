@@ -3175,6 +3175,41 @@ NTSTATUS access_check2(SECURITY_DESCRIPTOR_RELATIVE* sd, type_object* type, ACCE
     return Status;
 }
 
+NTSTATUS access_check_object(object_header* obj, ACCESS_MASK desired, ACCESS_MASK* granted) {
+    NTSTATUS Status;
+    token_object* tok;
+    SECURITY_DESCRIPTOR_RELATIVE* sd;
+
+    // take a copy of the parent SD to avoid locking issues
+    spin_lock(&obj->header_lock);
+
+    if (obj->sd)
+        Status = copy_sd(obj->sd, &sd);
+    else {
+        sd = NULL;
+        Status = STATUS_SUCCESS;
+    }
+
+    spin_unlock(&obj->header_lock);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    tok = muwine_get_current_token();
+    if (!tok) {
+        kfree(sd);
+        return STATUS_INTERNAL_ERROR;
+    }
+
+    Status = access_check(tok, sd, desired, &obj->type->generic_mapping, NULL, NULL, granted);
+
+    dec_obj_refcount(&tok->header);
+
+    kfree(sd);
+
+    return Status;
+}
+
 static NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE ClientToken,
                               ACCESS_MASK DesiredAccess, PGENERIC_MAPPING GenericMapping,
                               PPRIVILEGE_SET RequiredPrivilegesBuffer, PULONG BufferLength,
