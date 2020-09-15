@@ -646,11 +646,105 @@ static NTSTATUS resolve_reg_symlinks(UNICODE_STRING* us, bool* done_alloc) {
     return STATUS_SUCCESS;
 }
 
+static NTSTATUS open_key(PHANDLE KeyHandle, UNICODE_STRING* us, hive* h,
+                         POBJECT_ATTRIBUTES ObjectAttributes, const UNICODE_STRING* orig_us) {
+    NTSTATUS Status;
+    key_object* k;
+    bool is_volatile, parent_is_volatile;
+    CM_KEY_NODE* nk;
+    SECURITY_DESCRIPTOR_RELATIVE* sd = NULL;
+    uint32_t offset;
+
+    static const WCHAR prefix[] = L"\\Registry\\";
+
+    us->Buffer += h->path.Length / sizeof(WCHAR);
+    us->Length -= h->path.Length;
+
+    while (us->Length >= sizeof(WCHAR) && us->Buffer[0] == '\\') {
+        us->Buffer++;
+        us->Length -= sizeof(WCHAR);
+    }
+
+    down_read(&h->sem);
+
+    Status = open_key_in_hive(h, us, &offset, false, &is_volatile, &parent_is_volatile);
+    if (!NT_SUCCESS(Status)) {
+        up_read(&h->sem);
+        return Status;
+    }
+
+    if (is_volatile)
+        nk = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
+    else
+        nk = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
+
+    if (nk->Security != 0) {
+        CM_KEY_SECURITY* sk;
+
+        if (is_volatile)
+            sk = (CM_KEY_SECURITY*)((uint8_t*)h->volatile_bins + nk->Security + sizeof(int32_t));
+        else
+            sk = (CM_KEY_SECURITY*)((uint8_t*)h->bins + nk->Security + sizeof(int32_t));
+
+        if (sk->Signature != CM_KEY_SECURITY_SIGNATURE)
+            Status = STATUS_REGISTRY_CORRUPT;
+        else
+            Status = check_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength);
+
+        if (!NT_SUCCESS(Status)) {
+            up_read(&h->sem);
+            return Status;
+        }
+
+        sd = kmalloc(sk->DescriptorLength, GFP_KERNEL);
+        if (!sd) {
+            up_read(&h->sem);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        memcpy(sd, sk->Descriptor, sk->DescriptorLength);
+    }
+
+    up_read(&h->sem);
+
+    // create key object and return handle
+
+    k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type, sd);
+    if (!k)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    k->header.path.Length = k->header.path.MaximumLength = orig_us->Length + sizeof(prefix) - sizeof(WCHAR);
+    k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
+
+    if (!k->header.path.Buffer) {
+        dec_obj_refcount(&key_type->header);
+        kfree(k);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
+    memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], orig_us->Buffer, orig_us->Length);
+
+    k->h = h;
+    __sync_add_and_fetch(&h->refcount, 1);
+    k->offset = offset;
+    k->is_volatile = is_volatile;
+    k->parent_is_volatile = parent_is_volatile;
+
+    Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
+
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&key_type->header);
+        kfree(k);
+    }
+
+    return Status;
+}
+
 static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                             ULONG OpenOptions) {
     NTSTATUS Status;
     UNICODE_STRING us;
-    uint32_t offset;
     struct list_head* le;
     bool us_alloc = false;
     UNICODE_STRING orig_us;
@@ -742,152 +836,16 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
         }
 
         if (h->depth == 0 || !wcsnicmp(us.Buffer, h->path.Buffer, h->path.Length / sizeof(WCHAR))) {
-            key_object* k;
-            bool is_volatile, parent_is_volatile;
-            CM_KEY_NODE* nk;
-            SECURITY_DESCRIPTOR_RELATIVE* sd = NULL;
-
-            us.Buffer += h->path.Length / sizeof(WCHAR);
-            us.Length -= h->path.Length;
-
-            while (us.Length >= sizeof(WCHAR) && us.Buffer[0] == '\\') {
-                us.Buffer++;
-                us.Length -= sizeof(WCHAR);
-            }
-
-            down_read(&h->sem);
-
-            Status = open_key_in_hive(h, &us, &offset, false, &is_volatile, &parent_is_volatile);
-            if (!NT_SUCCESS(Status)) {
-                up_read(&h->sem);
-                up_read(&hive_list_sem);
-
-                if (us_alloc)
-                    kfree(orig_us.Buffer);
-
-                if (oa_us_alloc)
-                    kfree(oa_us_alloc);
-
-                return Status;
-            }
-
-            if (is_volatile)
-                nk = (CM_KEY_NODE*)((uint8_t*)h->volatile_bins + offset + sizeof(int32_t));
-            else
-                nk = (CM_KEY_NODE*)((uint8_t*)h->bins + offset + sizeof(int32_t));
-
-            if (nk->Security != 0) {
-                CM_KEY_SECURITY* sk;
-
-                if (is_volatile)
-                    sk = (CM_KEY_SECURITY*)((uint8_t*)h->volatile_bins + nk->Security + sizeof(int32_t));
-                else
-                    sk = (CM_KEY_SECURITY*)((uint8_t*)h->bins + nk->Security + sizeof(int32_t));
-
-                if (sk->Signature != CM_KEY_SECURITY_SIGNATURE)
-                    Status = STATUS_REGISTRY_CORRUPT;
-                else
-                    Status = check_sd((SECURITY_DESCRIPTOR_RELATIVE*)sk->Descriptor, sk->DescriptorLength);
-
-                if (!NT_SUCCESS(Status)) {
-                    up_read(&h->sem);
-                    up_read(&hive_list_sem);
-
-                    if (us_alloc)
-                        kfree(orig_us.Buffer);
-
-                    if (oa_us_alloc)
-                        kfree(oa_us_alloc);
-
-                    return Status;
-                }
-
-                sd = kmalloc(sk->DescriptorLength, GFP_KERNEL);
-                if (!sd) {
-                    up_read(&h->sem);
-                    up_read(&hive_list_sem);
-
-                    if (us_alloc)
-                        kfree(orig_us.Buffer);
-
-                    if (oa_us_alloc)
-                        kfree(oa_us_alloc);
-
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                memcpy(sd, sk->Descriptor, sk->DescriptorLength);
-            }
-
-            up_read(&h->sem);
-
-            // FIXME - do SeAccessCheck
-            // FIXME - store access mask in handle
-
-            // create key object and return handle
-
-            k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type, sd);
-            if (!k) {
-                up_read(&hive_list_sem);
-
-                if (us_alloc)
-                    kfree(orig_us.Buffer);
-
-                if (oa_us_alloc)
-                    kfree(oa_us_alloc);
-
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            k->header.path.Length = k->header.path.MaximumLength = orig_us.Length + sizeof(prefix) - sizeof(WCHAR);
-            k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
-
-            if (!k->header.path.Buffer) {
-                up_read(&hive_list_sem);
-
-                if (us_alloc)
-                    kfree(orig_us.Buffer);
-
-                dec_obj_refcount(&key_type->header);
-
-                kfree(k);
-
-                if (oa_us_alloc)
-                    kfree(oa_us_alloc);
-
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-
-            memcpy(k->header.path.Buffer, prefix, sizeof(prefix) - sizeof(WCHAR));
-            memcpy(&k->header.path.Buffer[(sizeof(prefix) / sizeof(WCHAR)) - 1], orig_us.Buffer, orig_us.Length);
-
-            k->h = h;
-            __sync_add_and_fetch(&h->refcount, 1);
-            k->offset = offset;
-            k->is_volatile = is_volatile;
-            k->parent_is_volatile = parent_is_volatile;
-
-            up_read(&hive_list_sem);
-
-            Status = muwine_add_handle(&k->header, KeyHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
-
-            if (!NT_SUCCESS(Status)) {
-                dec_obj_refcount(&key_type->header);
-                kfree(k);
-            }
-
-            if (us_alloc)
-                kfree(orig_us.Buffer);
-
-            if (oa_us_alloc)
-                kfree(oa_us_alloc);
-
-            return Status;
+            Status = open_key(KeyHandle, &us, h, ObjectAttributes, &orig_us);
+            goto end;
         }
 
         le = le->next;
     }
 
+    Status = STATUS_OBJECT_PATH_INVALID;
+
+end:
     up_read(&hive_list_sem);
 
     if (us_alloc)
@@ -896,7 +854,7 @@ static NTSTATUS NtOpenKeyEx(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJEC
     if (oa_us_alloc)
         kfree(oa_us_alloc);
 
-    return STATUS_OBJECT_PATH_INVALID;
+    return Status;
 }
 
 NTSTATUS user_NtOpenKey(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes) {
