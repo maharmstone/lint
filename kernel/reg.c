@@ -4971,7 +4971,11 @@ static NTSTATUS NtQueryKey(HANDLE KeyHandle, KEY_INFORMATION_CLASS KeyInformatio
         goto end;
     }
 
-    // FIXME - check access mask of handle for KEY_QUERY_VALUE (unless KeyNameInformation or KeyHandleTagsInformation)
+    if (KeyInformationClass != KeyNameInformation && KeyInformationClass != KeyHandleTagsInformation &&
+        !(access & KEY_QUERY_VALUE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end;
+    }
 
     down_read(&key->h->sem);
 
