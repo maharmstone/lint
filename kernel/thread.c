@@ -120,9 +120,9 @@ static NTSTATUS NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
         return STATUS_NOT_IMPLEMENTED;
     }
 
-    access = sanitize_access_mask(DesiredAccess, thread_type);
-    if (access & MAXIMUM_ALLOWED)
-        access = thread_type->valid;
+    Status = access_check2(NULL, thread_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     ctx = kmalloc(sizeof(thread_start_context), GFP_KERNEL);
     if (!ctx)
