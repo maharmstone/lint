@@ -13,10 +13,9 @@ static NTSTATUS NtCreateEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
     object_header* parent = NULL;
     token_object* token;
 
-    access = sanitize_access_mask(DesiredAccess, event_type);
-
-    if (access == MAXIMUM_ALLOWED)
-        access = EVENT_ALL_ACCESS;
+    Status = access_check2(NULL, event_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     if (EventType != SynchronizationEvent && EventType != NotificationEvent)
         return STATUS_INVALID_PARAMETER;
