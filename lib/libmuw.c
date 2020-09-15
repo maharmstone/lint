@@ -1826,7 +1826,7 @@ NTSTATUS __stdcall NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAcc
     return (NTSTATUS)ret;
 }
 
-NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval) {
+NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, const LARGE_INTEGER* DelayInterval) {
     long ret;
 
     uintptr_t args[] = {

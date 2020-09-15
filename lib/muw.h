@@ -979,7 +979,7 @@ NTSTATUS __stdcall NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAcc
                                     PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
                                     ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
                                     PVOID AttributeList);
-NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval);
+NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, const LARGE_INTEGER* DelayInterval);
 ULONG __stdcall NtGetCurrentProcessorNumber(void);
 NTSTATUS __stdcall NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                                 POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
