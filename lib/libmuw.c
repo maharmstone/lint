@@ -1896,18 +1896,17 @@ NTSTATUS __stdcall NtQueryInformationThread(HANDLE ThreadHandle,
     return (NTSTATUS)ret;
 }
 
-NTSTATUS __stdcall NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRoutine,
-                                    PVOID ApcRoutineContext, PIO_STATUS_BLOCK ApcStatusBlock,
-                                    ULONG ApcReserved) {
+NTSTATUS __stdcall NtQueueApcThread(HANDLE handle, PNTAPCFUNC func, ULONG_PTR arg1,
+                                    ULONG_PTR arg2, ULONG_PTR arg3) {
     long ret;
 
     uintptr_t args[] = {
         5,
-        (uintptr_t)ThreadHandle,
-        (uintptr_t)ApcRoutine,
-        (uintptr_t)ApcRoutineContext,
-        (uintptr_t)ApcStatusBlock,
-        (uintptr_t)ApcReserved
+        (uintptr_t)handle,
+        (uintptr_t)func,
+        (uintptr_t)arg1,
+        (uintptr_t)arg2,
+        (uintptr_t)arg3
     };
 
     init_muwine();

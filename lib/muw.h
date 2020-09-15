@@ -768,6 +768,8 @@ typedef enum {
     MaxProcessInfoClass
 } PROCESS_INFORMATION_CLASS;
 
+typedef void (__stdcall *PNTAPCFUNC)(ULONG_PTR, ULONG_PTR, ULONG_PTR);
+
 #endif
 
 void close_muwine();
@@ -988,9 +990,8 @@ NTSTATUS __stdcall NtQueryInformationThread(HANDLE ThreadHandle,
                                             THREADINFOCLASS ThreadInformationClass,
                                             PVOID ThreadInformation, ULONG ThreadInformationLength,
                                             PULONG ReturnLength);
-NTSTATUS __stdcall NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRoutine,
-                                    PVOID ApcRoutineContext, PIO_STATUS_BLOCK ApcStatusBlock,
-                                    ULONG ApcReserved);
+NTSTATUS __stdcall NtQueueApcThread(HANDLE handle, PNTAPCFUNC func, ULONG_PTR arg1,
+                                    ULONG_PTR arg2, ULONG_PTR arg3);
 NTSTATUS __stdcall NtRaiseException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT ThreadContext,
                                     BOOLEAN HandleException);
 NTSTATUS __stdcall NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
