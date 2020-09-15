@@ -348,3 +348,63 @@ void muwine_free_proc(void) {
         wake_up_process(proc_reaper_thread);
     }
 }
+
+NTSTATUS NtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK AccessMask,
+                       POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
+    printk(KERN_INFO "NtOpenProcess(%px, %x, %px, %px): stub\n", ProcessHandle,
+           AccessMask, ObjectAttributes, ClientId);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQueryInformationProcess(HANDLE ProcessHandle,
+                                   PROCESS_INFORMATION_CLASS ProcessInformationClass,
+                                   PVOID ProcessInformation, ULONG ProcessInformationLength,
+                                   PULONG ReturnLength) {
+    printk(KERN_INFO "NtQueryInformationProcess(%lx, %x, %px, %x, %px): stub\n",
+           (uintptr_t)ProcessHandle, ProcessInformationClass, ProcessInformation,
+           ProcessInformationLength, ReturnLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSetInformationProcess(HANDLE ProcessHandle,
+                                 PROCESS_INFORMATION_CLASS ProcessInformationClass,
+                                 PVOID ProcessInformation, ULONG ProcessInformationLength) {
+    printk(KERN_INFO "NtSetInformationProcess(%lx, %x, %px, %x): stub\n",
+           (uintptr_t)ProcessHandle, ProcessInformationClass, ProcessInformation,
+           ProcessInformationLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtTerminateProcess(HANDLE ProcessHandle, NTSTATUS ExitStatus) {
+    printk(KERN_INFO "NtTerminateProcess(%lx, %x): stub\n", (uintptr_t)ProcessHandle,
+           ExitStatus);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtSuspendProcess(HANDLE ProcessHandle) {
+    printk(KERN_INFO "NtSuspendProcess(%lx): stub\n", (uintptr_t)ProcessHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtResumeProcess(HANDLE ProcessHandle) {
+    printk(KERN_INFO "NtResumeProcess(%lx): stub\n", (uintptr_t)ProcessHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

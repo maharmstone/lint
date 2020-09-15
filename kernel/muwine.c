@@ -118,6 +118,12 @@ static struct muwine_func funcs[] = {
     { NtAlertResumeThread, 2 },
     { NtAlertThread, 1 },
     { NtContinue, 2 },
+    { NtOpenProcess, 4 },
+    { NtQueryInformationProcess, 5 },
+    { NtSetInformationProcess, 4 },
+    { NtTerminateProcess, 2 },
+    { NtSuspendProcess, 1 },
+    { NtResumeProcess, 1 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)

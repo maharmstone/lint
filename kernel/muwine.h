@@ -1139,6 +1139,8 @@ typedef struct _EXCEPTION_RECORD {
     ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
 } EXCEPTION_RECORD, *PEXCEPTION_RECORD;
 
+typedef struct _thread_object thread_object;
+
 NTSTATUS muwine_init_threads(void);
 NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
                              POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
@@ -1174,16 +1176,81 @@ NTSTATUS NtYieldExecution(void);
 NTSTATUS NtAlertResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
 NTSTATUS NtAlertThread(HANDLE ThreadHandle);
 NTSTATUS NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert);
+thread_object* muwine_current_thread_object(void);
 
 // proc.c
-typedef struct _thread_object thread_object;
+typedef enum {
+    ProcessBasicInformation,
+    ProcessQuotaLimits,
+    ProcessIoCounters,
+    ProcessVmCounters,
+    ProcessTimes,
+    ProcessBasePriority,
+    ProcessRaisePriority,
+    ProcessDebugPort,
+    ProcessExceptionPort,
+    ProcessAccessToken,
+    ProcessLdtInformation,
+    ProcessLdtSize,
+    ProcessDefaultHardErrorMode,
+    ProcessIoPortHandlers,
+    ProcessPooledUsageAndLimits,
+    ProcessWorkingSetWatch,
+    ProcessUserModeIOPL,
+    ProcessEnableAlignmentFaultFixup,
+    ProcessPriorityClass,
+    ProcessWx86Information,
+    ProcessHandleCount,
+    ProcessAffinityMask,
+    ProcessPriorityBoost,
+    ProcessDeviceMap,
+    ProcessSessionInformation,
+    ProcessForegroundInformation,
+    ProcessWow64Information,
+    ProcessImageFileName,
+    ProcessLUIDDeviceMapsEnabled,
+    ProcessBreakOnTermination,
+    ProcessDebugObjectHandle,
+    ProcessDebugFlags,
+    ProcessHandleTracing,
+    ProcessIoPriority,
+    ProcessExecuteFlags,
+    ProcessTlsInformation,
+    ProcessCookie,
+    ProcessImageInformation,
+    ProcessCycleTime,
+    ProcessPagePriority,
+    ProcessInstrumentationCallback,
+    ProcessThreadStackAllocation,
+    ProcessWorkingSetWatchEx,
+    ProcessImageFileNameWin32,
+    ProcessImageFileMapping,
+    ProcessAffinityUpdateMode,
+    ProcessMemoryAllocationMode,
+    ProcessGroupInformation,
+    ProcessTokenVirtualizationEnabled,
+    ProcessConsoleHostProcess,
+    ProcessWindowInformation,
+    MaxProcessInfoClass
+} PROCESS_INFORMATION_CLASS;
 
 NTSTATUS muwine_init_processes(void);
 NTSTATUS muwine_add_current_process(void);
 process_object* muwine_current_process_object(void);
 int muwine_group_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
 int muwine_fork_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
-thread_object* muwine_current_thread_object(void) ;
+NTSTATUS NtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK AccessMask,
+                       POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
+NTSTATUS NtQueryInformationProcess(HANDLE ProcessHandle,
+                                   PROCESS_INFORMATION_CLASS ProcessInformationClass,
+                                   PVOID ProcessInformation, ULONG ProcessInformationLength,
+                                   PULONG ReturnLength);
+NTSTATUS NtSetInformationProcess(HANDLE ProcessHandle,
+                                 PROCESS_INFORMATION_CLASS ProcessInformationClass,
+                                 PVOID ProcessInformation, ULONG ProcessInformationLength);
+NTSTATUS NtTerminateProcess(HANDLE ProcessHandle, NTSTATUS ExitStatus);
+NTSTATUS NtSuspendProcess(HANDLE ProcessHandle);
+NTSTATUS NtResumeProcess(HANDLE ProcessHandle);
 
 // timer.c
 typedef void (*PTIMER_APC_ROUTINE)(PVOID TimerContext, ULONG TimerLowValue,
