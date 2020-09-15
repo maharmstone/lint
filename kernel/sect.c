@@ -764,6 +764,7 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
     WCHAR* oa_us_alloc = NULL;
     section_object* sect;
     bool after_alloc = false;
+    ACCESS_MASK access;
 
     if (!ObjectAttributes || ObjectAttributes->Length < sizeof(OBJECT_ATTRIBUTES) || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
@@ -814,7 +815,13 @@ static NTSTATUS NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, 
         goto end;
     }
 
-    Status = muwine_add_handle(&sect->header, SectionHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
+    Status = access_check_object(&sect->header, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&sect->header);
+        goto end;
+    }
+
+    Status = muwine_add_handle(&sect->header, SectionHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
 
     if (!NT_SUCCESS(Status)) {
         dec_obj_refcount(&sect->header);
