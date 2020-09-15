@@ -3669,8 +3669,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     k->header.path.Buffer = kmalloc(k->header.path.Length, GFP_KERNEL);
 
     if (!k->header.path.Buffer) {
-        dec_obj_refcount(&key_type->header);
-        kfree(k);
+        dec_obj_refcount(&k->header);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -3697,8 +3696,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
                                ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
 
     if (!NT_SUCCESS(Status)) {
-        dec_obj_refcount(&key_type->header);
-        kfree(k);
+        dec_obj_refcount(&k->header);
         return Status;
     }
 
