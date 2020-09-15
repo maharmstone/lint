@@ -1140,6 +1140,7 @@ typedef struct _EXCEPTION_RECORD {
 } EXCEPTION_RECORD, *PEXCEPTION_RECORD;
 
 typedef struct _thread_object thread_object;
+typedef void (*PNTAPCFUNC)(ULONG_PTR, ULONG_PTR, ULONG_PTR);
 
 NTSTATUS muwine_init_threads(void);
 NTSTATUS user_NtCreateThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
@@ -1162,8 +1163,8 @@ NTSTATUS NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
 NTSTATUS NtQueryInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInformationClass,
                                   PVOID ThreadInformation, ULONG ThreadInformationLength,
                                   PULONG ReturnLength);
-NTSTATUS NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRoutine, PVOID ApcRoutineContext,
-                          PIO_STATUS_BLOCK ApcStatusBlock, ULONG ApcReserved);
+NTSTATUS NtQueueApcThread(HANDLE handle, PNTAPCFUNC func, ULONG_PTR arg1,
+                          ULONG_PTR arg2, ULONG_PTR arg3);
 NTSTATUS NtRaiseException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT ThreadContext,
                           BOOLEAN HandleException);
 NTSTATUS NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);

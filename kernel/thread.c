@@ -563,10 +563,10 @@ NTSTATUS NtQueryInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInf
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRoutine, PVOID ApcRoutineContext,
-                          PIO_STATUS_BLOCK ApcStatusBlock, ULONG ApcReserved) {
-    printk(KERN_INFO "NtQueueApcThread(%lx, %px, %px, %px, %x): stub\n", (uintptr_t)ThreadHandle,
-           ApcRoutine, ApcRoutineContext, ApcStatusBlock, ApcReserved);
+NTSTATUS NtQueueApcThread(HANDLE handle, PNTAPCFUNC func, ULONG_PTR arg1,
+                          ULONG_PTR arg2, ULONG_PTR arg3) {
+    printk(KERN_INFO "NtQueueApcThread(%lx, %px, %lx, %lx, %lx): stub\n", (uintptr_t)handle,
+           func, arg1, arg2, arg3);
 
     // FIXME
 
