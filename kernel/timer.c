@@ -25,10 +25,9 @@ static NTSTATUS NtCreateTimer(PHANDLE TimerHandle, ACCESS_MASK DesiredAccess,
     object_header* parent = NULL;
     token_object* token;
 
-    access = sanitize_access_mask(DesiredAccess, timer_type);
-
-    if (access == MAXIMUM_ALLOWED)
-        access = TIMER_ALL_ACCESS;
+    Status = access_check2(NULL, timer_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     if (TimerType != SynchronizationTimer && TimerType != NotificationTimer)
         return STATUS_INVALID_PARAMETER;
