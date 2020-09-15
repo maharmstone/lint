@@ -945,6 +945,9 @@ NTSTATUS __stdcall NtSetThreadExecutionState(EXECUTION_STATE NewFlags,
                                              EXECUTION_STATE* PreviousFlags);
 NTSTATUS __stdcall NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
 NTSTATUS __stdcall NtYieldExecution();
+NTSTATUS __stdcall NtAlertResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
+NTSTATUS __stdcall NtAlertThread(HANDLE ThreadHandle);
+NTSTATUS __stdcall NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert);
 
 #ifdef __cplusplus
 }

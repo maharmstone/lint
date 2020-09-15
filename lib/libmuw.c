@@ -2033,3 +2033,50 @@ NTSTATUS __stdcall NtYieldExecution() {
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtAlertResumeThread(HANDLE ThreadHandle, PULONG SuspendCount) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)SuspendCount
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTALERTRESUMETHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtAlertThread(HANDLE ThreadHandle) {
+    long ret;
+
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)ThreadHandle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTALERTTHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)ThreadContext,
+        (uintptr_t)RaiseAlert
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCONTINUE, args, ret);
+
+    return (NTSTATUS)ret;
+}
