@@ -1086,12 +1086,11 @@ static NTSTATUS NtOpenProcessToken(HANDLE ProcessHandle, ACCESS_MASK DesiredAcce
         dec_obj_refcount(&proc->header.h);
     }
 
-    // FIXME - check DesiredAccess against token SD
-
-    access = sanitize_access_mask(DesiredAccess, token_type);
-
-    if (access == MAXIMUM_ALLOWED)
-        access = TOKEN_ALL_ACCESS;
+    Status = access_check_object(&tok->header, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&tok->header);
+        return Status;
+    }
 
     Status = muwine_add_handle(&tok->header, TokenHandle, false, access);
 
