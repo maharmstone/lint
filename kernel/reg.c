@@ -1589,7 +1589,10 @@ static NTSTATUS NtEnumerateValueKey(HANDLE KeyHandle, ULONG Index, KEY_VALUE_INF
         goto end2;
     }
 
-    // FIXME - check access mask of handle for KEY_QUERY_VALUE
+    if (!(access & KEY_QUERY_VALUE)) {
+        Status = STATUS_ACCESS_DENIED;
+        goto end2;
+    }
 
     down_read(&key->h->sem);
 
