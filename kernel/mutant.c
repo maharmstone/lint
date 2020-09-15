@@ -164,12 +164,11 @@ NTSTATUS NtOpenMutant(PHANDLE MutantHandle, ACCESS_MASK DesiredAccess,
         goto end;
     }
 
-    access = sanitize_access_mask(DesiredAccess, mutant_type);
-
-    // FIXME - check against SD
-
-    if (access == MAXIMUM_ALLOWED)
-        access = MUTANT_ALL_ACCESS; // FIXME - should only be what SD allows
+    Status = access_check_object(&mut->header.h, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&mut->header.h);
+        goto end;
+    }
 
     Status = muwine_add_handle(&mut->header.h, MutantHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
 
