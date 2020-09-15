@@ -575,9 +575,14 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
     SECURITY_DESCRIPTOR_RELATIVE* sd;
     object_header* parent;
     token_object* token;
+    ACCESS_MASK access;
 
     if (!ObjectAttributes || !ObjectAttributes->ObjectName)
         return STATUS_INVALID_PARAMETER;
+
+    Status = access_check2(NULL, dir_type, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status))
+        return Status;
 
     Status = muwine_open_object2(ObjectAttributes, &parent, NULL, NULL, true);
     if (!NT_SUCCESS(Status))
@@ -610,7 +615,7 @@ NTSTATUS NtCreateDirectoryObject(PHANDLE DirectoryHandle, ACCESS_MASK DesiredAcc
     if (!NT_SUCCESS(Status))
         goto end;
 
-    Status = muwine_add_handle(&obj->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, 0);
+    Status = muwine_add_handle(&obj->header, DirectoryHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
 
 end:
     if (!NT_SUCCESS(Status))
