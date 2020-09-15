@@ -42,6 +42,7 @@ typedef uint64_t ULONGLONG;
 typedef int64_t LONGLONG;
 typedef uint16_t WORD;
 typedef uint8_t BYTE;
+typedef DWORD EXECUTION_STATE;
 
 typedef struct {
     USHORT Length;
@@ -701,6 +702,17 @@ typedef struct _GENERIC_MAPPING {
     ACCESS_MASK GenericAll;
 } GENERIC_MAPPING, *PGENERIC_MAPPING;
 
+#define EXCEPTION_MAXIMUM_PARAMETERS 15
+
+typedef struct _EXCEPTION_RECORD {
+    DWORD ExceptionCode;
+    DWORD ExceptionFlags;
+    struct _EXCEPTION_RECORD* ExceptionRecord;
+    PVOID ExceptionAddress;
+    DWORD NumberParameters;
+    ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+} EXCEPTION_RECORD, *PEXCEPTION_RECORD;
+
 #endif
 
 void close_muwine();
@@ -907,6 +919,32 @@ NTSTATUS __stdcall NtOpenThreadTokenEx(HANDLE ThreadHandle, ACCESS_MASK DesiredA
                                        PHANDLE TokenHandle);
 NTSTATUS __stdcall NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
                                         ULONG HandleAttributes, PHANDLE TokenHandle);
+NTSTATUS __stdcall NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                    POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                                    PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
+                                    ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
+                                    PVOID AttributeList);
+NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval);
+ULONG __stdcall NtGetCurrentProcessorNumber(void);
+NTSTATUS __stdcall NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
+NTSTATUS __stdcall NtQueryInformationThread(HANDLE ThreadHandle,
+                                            THREADINFOCLASS ThreadInformationClass,
+                                            PVOID ThreadInformation, ULONG ThreadInformationLength,
+                                            PULONG ReturnLength);
+NTSTATUS __stdcall NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRoutine,
+                                    PVOID ApcRoutineContext, PIO_STATUS_BLOCK ApcStatusBlock,
+                                    ULONG ApcReserved);
+NTSTATUS __stdcall NtRaiseException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT ThreadContext,
+                                    BOOLEAN HandleException);
+NTSTATUS __stdcall NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
+NTSTATUS __stdcall NtSetContextThread(HANDLE ThreadHandle, PCONTEXT Context);
+NTSTATUS __stdcall NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high,
+                                   ULONG selector2, ULONG entry2_low, ULONG entry2_high);
+NTSTATUS __stdcall NtSetThreadExecutionState(EXECUTION_STATE NewFlags,
+                                             EXECUTION_STATE* PreviousFlags);
+NTSTATUS __stdcall NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
+NTSTATUS __stdcall NtYieldExecution();
 
 #ifdef __cplusplus
 }

@@ -20,14 +20,14 @@ int muwine_fd = 0;
 
 #define do_ioctl(num, args, ret) do { \
     __asm __volatile( \
-        "mov rax, %0\n\t" \
-        "mov rdi, %1\n\t" \
-        "mov rsi, %2\n\t" \
-        "mov rdx, %3\n\t" \
+        "mov rax, %1\n\t" \
+        "mov rdi, %2\n\t" \
+        "mov rsi, %3\n\t" \
+        "mov rdx, %4\n\t" \
         "syscall\n\t" \
-        "mov %4, rax\n\t" \
-        : \
-        : "r" ((uint64_t)SYS_ioctl), "r" ((uint64_t)muwine_fd), "r" ((uint64_t)num), "r" (args), "m" ((uint64_t)ret) \
+        "mov %0, rax\n\t" \
+        : "=m" ((uint64_t)ret) \
+        : "r" ((uint64_t)SYS_ioctl), "r" ((uint64_t)muwine_fd), "r" ((uint64_t)num), "r" (args) \
         : "rax", "rdi", "rsi", "rdx" \
     ); \
 } while (0)
@@ -1793,6 +1793,243 @@ NTSTATUS __stdcall NtOpenProcessTokenEx(HANDLE ProcessHandle, ACCESS_MASK Desire
     init_muwine();
 
     do_ioctl(MUWINE_IOCTL_NTOPENPROCESSTOKENEX, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                    POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                                    PVOID StartRoutine, PVOID Argument, ULONG CreateFlags,
+                                    ULONG_PTR ZeroBits, SIZE_T StackSize, SIZE_T MaximumStackSize,
+                                    PVOID AttributeList) {
+    long ret;
+
+    uintptr_t args[] = {
+        11,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)StartRoutine,
+        (uintptr_t)Argument,
+        (uintptr_t)CreateFlags,
+        (uintptr_t)ZeroBits,
+        (uintptr_t)StackSize,
+        (uintptr_t)MaximumStackSize,
+        (uintptr_t)AttributeList
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCREATETHREADEX, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)Alertable,
+        (uintptr_t)DelayInterval,
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTDELAYEXECUTION, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+ULONG __stdcall NtGetCurrentProcessorNumber(void) {
+    long ret;
+
+    uintptr_t args[] = {
+        0
+    };
+
+    do_ioctl(MUWINE_IOCTL_NTGETCURRENTPROCESSORNUMBER, args, ret);
+
+    return (ULONG)ret;
+}
+
+NTSTATUS __stdcall NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
+    long ret;
+
+    uintptr_t args[] = {
+        4,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes,
+        (uintptr_t)ClientId
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENTHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQueryInformationThread(HANDLE ThreadHandle,
+                                            THREADINFOCLASS ThreadInformationClass,
+                                            PVOID ThreadInformation, ULONG ThreadInformationLength,
+                                            PULONG ReturnLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)ThreadInformationClass,
+        (uintptr_t)ThreadInformation,
+        (uintptr_t)ThreadInformationLength,
+        (uintptr_t)ReturnLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYINFORMATIONTHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRoutine,
+                                    PVOID ApcRoutineContext, PIO_STATUS_BLOCK ApcStatusBlock,
+                                    ULONG ApcReserved) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)ApcRoutine,
+        (uintptr_t)ApcRoutineContext,
+        (uintptr_t)ApcStatusBlock,
+        (uintptr_t)ApcReserved
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUEUEAPCTHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtRaiseException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT ThreadContext,
+                                    BOOLEAN HandleException) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)ExceptionRecord,
+        (uintptr_t)ThreadContext,
+        (uintptr_t)HandleException
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTRAISEEXCEPTION, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)SuspendCount,
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTRESUMETHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSetContextThread(HANDLE ThreadHandle, PCONTEXT Context) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)Context
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETCONTEXTTHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high,
+                                   ULONG selector2, ULONG entry2_low, ULONG entry2_high) {
+    long ret;
+
+    uintptr_t args[] = {
+        6,
+        (uintptr_t)selector1,
+        (uintptr_t)entry1_low,
+        (uintptr_t)entry1_high,
+        (uintptr_t)selector2,
+        (uintptr_t)entry2_low,
+        (uintptr_t)entry2_high
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETLDTENTRIES, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSetThreadExecutionState(EXECUTION_STATE NewFlags,
+                                             EXECUTION_STATE* PreviousFlags) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)NewFlags,
+        (uintptr_t)PreviousFlags
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSETTHREADEXECUTIONSTATE, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount) {
+    long ret;
+
+    uintptr_t args[] = {
+        2,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)PreviousSuspendCount
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTSUSPENDTHREAD, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtYieldExecution() {
+    long ret;
+
+    uintptr_t args[] = {
+        0
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTYIELDEXECUTION, args, ret);
 
     return (NTSTATUS)ret;
 }
