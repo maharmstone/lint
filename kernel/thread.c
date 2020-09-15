@@ -599,16 +599,6 @@ NTSTATUS NtSetContextThread(HANDLE ThreadHandle, PCONTEXT Context) {
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high, ULONG selector2,
-                         ULONG entry2_low, ULONG entry2_high) {
-    printk(KERN_INFO "NtSetLdtEntries(%x, %x, %x, %x, %x, %x): stub\n", selector1, entry1_low,
-           entry1_high, selector2, entry2_low, entry2_high);
-
-    // FIXME
-
-    return STATUS_NOT_IMPLEMENTED;
-}
-
 NTSTATUS NtSetThreadExecutionState(EXECUTION_STATE NewFlags, EXECUTION_STATE* PreviousFlags) {
     printk(KERN_INFO "NtSetThreadExecutionState(%x, %px): stub\n", NewFlags, PreviousFlags);
 

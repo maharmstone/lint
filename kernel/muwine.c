@@ -111,7 +111,6 @@ static struct muwine_func funcs[] = {
     { NtRaiseException, 3 },
     { NtResumeThread, 2 },
     { NtSetContextThread, 2 },
-    { NtSetLdtEntries, 6 },
     { NtSetThreadExecutionState, 2 },
     { NtSuspendThread, 2 },
     { NtYieldExecution, 0 },

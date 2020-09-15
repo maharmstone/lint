@@ -1168,8 +1168,6 @@ NTSTATUS NtRaiseException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT ThreadCont
                           BOOLEAN HandleException);
 NTSTATUS NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
 NTSTATUS NtSetContextThread(HANDLE ThreadHandle, PCONTEXT Context);
-NTSTATUS NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high, ULONG selector2,
-                         ULONG entry2_low, ULONG entry2_high);
 NTSTATUS NtSetThreadExecutionState(EXECUTION_STATE NewFlags, EXECUTION_STATE* PreviousFlags);
 NTSTATUS NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
 NTSTATUS NtYieldExecution(void);
