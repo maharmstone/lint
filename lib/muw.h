@@ -982,7 +982,8 @@ NTSTATUS __stdcall NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAcc
 NTSTATUS __stdcall NtDelayExecution(BOOLEAN Alertable, const LARGE_INTEGER* DelayInterval);
 ULONG __stdcall NtGetCurrentProcessorNumber(void);
 NTSTATUS __stdcall NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
-                                POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
+                                const OBJECT_ATTRIBUTES* ObjectAttributes,
+                                const CLIENT_ID* ClientId);
 NTSTATUS __stdcall NtQueryInformationThread(HANDLE ThreadHandle,
                                             THREADINFOCLASS ThreadInformationClass,
                                             PVOID ThreadInformation, ULONG ThreadInformationLength,

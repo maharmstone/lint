@@ -1855,7 +1855,8 @@ ULONG __stdcall NtGetCurrentProcessorNumber(void) {
 }
 
 NTSTATUS __stdcall NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
-                                POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
+                                const OBJECT_ATTRIBUTES* ObjectAttributes,
+                                const CLIENT_ID* ClientId) {
     long ret;
 
     uintptr_t args[] = {
