@@ -158,12 +158,11 @@ static NTSTATUS NtOpenEvent(PHANDLE EventHandle, ACCESS_MASK DesiredAccess,
         goto end;
     }
 
-    access = sanitize_access_mask(DesiredAccess, event_type);
-
-    // FIXME - check against SD
-
-    if (access == MAXIMUM_ALLOWED)
-        access = EVENT_ALL_ACCESS; // FIXME - should only be what SD allows
+    Status = access_check_object(&ev->header.h, DesiredAccess, &access);
+    if (!NT_SUCCESS(Status)) {
+        dec_obj_refcount(&ev->header.h);
+        goto end;
+    }
 
     Status = muwine_add_handle(&ev->header.h, EventHandle, ObjectAttributes->Attributes & OBJ_KERNEL_HANDLE, access);
 
