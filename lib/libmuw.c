@@ -2082,7 +2082,8 @@ NTSTATUS __stdcall NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert) {
 }
 
 NTSTATUS __stdcall NtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK AccessMask,
-                                 POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId) {
+                                 const OBJECT_ATTRIBUTES* ObjectAttributes,
+                                 const CLIENT_ID* ClientId) {
     long ret;
 
     uintptr_t args[] = {

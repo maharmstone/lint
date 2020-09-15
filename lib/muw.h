@@ -1004,7 +1004,8 @@ NTSTATUS __stdcall NtAlertResumeThread(HANDLE ThreadHandle, PULONG SuspendCount)
 NTSTATUS __stdcall NtAlertThread(HANDLE ThreadHandle);
 NTSTATUS __stdcall NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert);
 NTSTATUS __stdcall NtOpenProcess(PHANDLE ProcessHandle, ACCESS_MASK AccessMask,
-                                 POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
+                                 const OBJECT_ATTRIBUTES* ObjectAttributes,
+                                 const CLIENT_ID* ClientId);
 NTSTATUS __stdcall NtQueryInformationProcess(HANDLE ProcessHandle,
                                              PROCESS_INFORMATION_CLASS ProcessInformationClass,
                                              PVOID ProcessInformation,
