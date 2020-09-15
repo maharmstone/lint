@@ -633,3 +633,28 @@ NTSTATUS NtYieldExecution(void) {
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS NtAlertResumeThread(HANDLE ThreadHandle, PULONG SuspendCount) {
+    printk(KERN_INFO "NtAlertResumeThread(%lx, %px): stub\n", (uintptr_t)ThreadHandle,
+           SuspendCount);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtAlertThread(HANDLE ThreadHandle) {
+    printk(KERN_INFO "NtAlertThread(%lx): stub\n", (uintptr_t)ThreadHandle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert) {
+    printk(KERN_INFO "NtContinue(%px, %x): stub\n", ThreadContext, RaiseAlert);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

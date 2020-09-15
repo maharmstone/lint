@@ -1171,6 +1171,9 @@ NTSTATUS NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high, U
 NTSTATUS NtSetThreadExecutionState(EXECUTION_STATE NewFlags, EXECUTION_STATE* PreviousFlags);
 NTSTATUS NtSuspendThread(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
 NTSTATUS NtYieldExecution(void);
+NTSTATUS NtAlertResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
+NTSTATUS NtAlertThread(HANDLE ThreadHandle);
+NTSTATUS NtContinue(PCONTEXT ThreadContext, BOOLEAN RaiseAlert);
 
 // proc.c
 typedef struct _thread_object thread_object;
