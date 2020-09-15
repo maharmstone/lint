@@ -994,7 +994,7 @@ NTSTATUS __stdcall NtQueueApcThread(HANDLE ThreadHandle, PIO_APC_ROUTINE ApcRout
 NTSTATUS __stdcall NtRaiseException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT ThreadContext,
                                     BOOLEAN HandleException);
 NTSTATUS __stdcall NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount);
-NTSTATUS __stdcall NtSetContextThread(HANDLE ThreadHandle, PCONTEXT Context);
+NTSTATUS __stdcall NtSetContextThread(HANDLE ThreadHandle, const CONTEXT* Context);
 NTSTATUS __stdcall NtSetLdtEntries(ULONG selector1, ULONG entry1_low, ULONG entry1_high,
                                    ULONG selector2, ULONG entry2_low, ULONG entry2_high);
 NTSTATUS __stdcall NtSetThreadExecutionState(EXECUTION_STATE NewFlags,

@@ -1951,7 +1951,7 @@ NTSTATUS __stdcall NtResumeThread(HANDLE ThreadHandle, PULONG SuspendCount) {
     return (NTSTATUS)ret;
 }
 
-NTSTATUS __stdcall NtSetContextThread(HANDLE ThreadHandle, PCONTEXT Context) {
+NTSTATUS __stdcall NtSetContextThread(HANDLE ThreadHandle, const CONTEXT* Context) {
     long ret;
 
     uintptr_t args[] = {
