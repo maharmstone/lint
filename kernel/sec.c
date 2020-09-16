@@ -3045,10 +3045,11 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
     denied = 0;
     *granted = 0;
 
-    down_read(&tok->sem);
+    if (tok)
+        down_read(&tok->sem);
 
     if (remaining & ACCESS_SYSTEM_SECURITY) {
-        if (check_privilege_token(tok, SE_SECURITY_PRIVILEGE)) {
+        if (!tok || check_privilege_token(tok, SE_SECURITY_PRIVILEGE)) {
             remaining &= ~ACCESS_SYSTEM_SECURITY;
             *granted |= ACCESS_SYSTEM_SECURITY;
 
@@ -3082,14 +3083,14 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
     }
 
     if (remaining & WRITE_OWNER) {
-        if (check_privilege_token(tok, SE_TAKE_OWNERSHIP_PRIVILEGE)) {
+        if (!tok || check_privilege_token(tok, SE_TAKE_OWNERSHIP_PRIVILEGE)) {
             remaining &= ~WRITE_OWNER;
             *granted |= WRITE_OWNER;
         }
     }
 
     // owner always granted READ_CONTROL and WRITE_DAC
-    if (!sd || (sd->Owner != 0 && sid_in_token(tok, sd_get_owner(sd), false))) {
+    if (!sd || !tok || (sd->Owner != 0 && sid_in_token(tok, sd_get_owner(sd), false))) {
         remaining &= ~(READ_CONTROL | WRITE_DAC);
         *granted |= READ_CONTROL | WRITE_DAC;
 
@@ -3099,7 +3100,7 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
         }
     }
 
-    if (!sd || sd->Dacl == 0) {
+    if (!sd || !tok || sd->Dacl == 0) {
         *granted |= remaining;
         Status = STATUS_SUCCESS;
         goto end;
@@ -3176,7 +3177,8 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
         Status = STATUS_ACCESS_DENIED;
 
 end:
-    up_read(&tok->sem);
+    if (tok)
+        up_read(&tok->sem);
 
     return Status;
 }
@@ -3186,12 +3188,11 @@ NTSTATUS access_check_type(type_object* type, ACCESS_MASK desired, ACCESS_MASK* 
     token_object* tok;
 
     tok = muwine_get_current_token();
-    if (!tok)
-        return STATUS_INTERNAL_ERROR;
 
     Status = access_check(tok, NULL, desired, &type->generic_mapping, NULL, NULL, granted);
 
-    dec_obj_refcount(&tok->header);
+    if (tok)
+        dec_obj_refcount(&tok->header);
 
     return Status;
 }
