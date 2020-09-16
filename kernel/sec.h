@@ -170,7 +170,7 @@ typedef enum {
 
 typedef struct _token_object {
     object_header header;
-    struct rw_semaphore sem;
+    spinlock_t lock;
     SID* user;
     SID* primary_group;
     SID* owner;

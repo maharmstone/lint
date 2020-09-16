@@ -364,7 +364,7 @@ NTSTATUS muwine_make_process_token(token_object** t) {
     if (!tok)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    init_rwsem(&tok->sem);
+    spin_lock_init(&tok->lock);
 
     uid_to_sid(&tok->user, current_euid());
 
@@ -667,11 +667,11 @@ static bool check_privilege(DWORD priv) {
 
     dec_obj_refcount(&proc->header.h);
 
-    down_read(&tok->sem);
+    spin_lock(&tok->lock);
 
     found = check_privilege_token(tok, priv);
 
-    up_read(&tok->sem);
+    spin_unlock(&tok->lock);
 
     dec_obj_refcount(&tok->header);
 
@@ -742,7 +742,7 @@ static NTSTATUS NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    init_rwsem(&tok->sem);
+    spin_lock_init(&tok->lock);
 
     tok->auth_id.LowPart = AuthenticationId->LowPart;
     tok->auth_id.HighPart = AuthenticationId->HighPart;
@@ -1211,7 +1211,7 @@ static NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPr
         goto end;
     }
 
-    down_write(&tok->sem);
+    spin_lock(&tok->lock);
 
     if (PreviousPrivileges) {
         unsigned int changed = 0;
@@ -1304,7 +1304,7 @@ static NTSTATUS NtAdjustPrivilegesToken(HANDLE TokenHandle, BOOLEAN DisableAllPr
     Status = not_all_assigned ? STATUS_NOT_ALL_ASSIGNED : STATUS_SUCCESS;
 
 end2:
-    up_write(&tok->sem);
+    spin_unlock(&tok->lock);
 
 end:
     dec_obj_refcount(&tok->header);
@@ -1374,7 +1374,7 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
         goto end;
     }
 
-    down_read(&tok->sem);
+    spin_lock(&tok->lock);
 
     switch (TokenInformationClass) {
         case TokenUser: {
@@ -1692,7 +1692,7 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
             break;
     }
 
-    up_read(&tok->sem);
+    spin_unlock(&tok->lock);
 
 end:
     dec_obj_refcount(&tok->header);
@@ -2637,7 +2637,7 @@ NTSTATUS muwine_create_sd2(SECURITY_DESCRIPTOR_RELATIVE* parent_sd,
     DWORD off;
 
     if (token)
-        down_read(&token->sem);
+        spin_lock(&token->lock);
 
     // owner
 
@@ -2670,7 +2670,7 @@ NTSTATUS muwine_create_sd2(SECURITY_DESCRIPTOR_RELATIVE* parent_sd,
                          generic_mapping, flags, is_container, &ctrl1, &dacl);
 
     if (token)
-        up_read(&token->sem);
+        spin_unlock(&token->lock);
 
     if (!NT_SUCCESS(Status))
         return Status;
@@ -2805,15 +2805,15 @@ token_object* duplicate_token(token_object* tok) {
         return NULL;
     }
 
-    init_rwsem(&obj->sem);
+    spin_lock_init(&obj->lock);
 
-    down_read(&tok->sem);
+    spin_lock(&tok->lock);
 
     if (tok->user) {
         obj->user = kmalloc(sid_length(tok->user), GFP_KERNEL);
         if (!obj->user) {
+            spin_unlock(&tok->lock);
             dec_obj_refcount(&obj->header);
-            up_read(&tok->sem);
             return NULL;
         }
 
@@ -2833,8 +2833,8 @@ token_object* duplicate_token(token_object* tok) {
 
         obj->privs = kmalloc(size, GFP_KERNEL);
         if (!obj->privs) {
+            spin_unlock(&tok->lock);
             dec_obj_refcount(&obj->header);
-            up_read(&tok->sem);
             return NULL;
         }
 
@@ -2852,8 +2852,8 @@ token_object* duplicate_token(token_object* tok) {
 
         obj->groups = kmalloc(size, GFP_KERNEL);
         if (!obj->groups) {
+            spin_unlock(&tok->lock);
             dec_obj_refcount(&obj->header);
-            up_read(&tok->sem);
             return NULL;
         }
 
@@ -2867,6 +2867,8 @@ token_object* duplicate_token(token_object* tok) {
             if (!obj->groups->Groups[i].Sid) {
                 unsigned int j;
 
+                spin_unlock(&tok->lock);
+
                 for (j = 0; j < i; j++) {
                     kfree(obj->groups->Groups[j].Sid);
                 }
@@ -2874,7 +2876,6 @@ token_object* duplicate_token(token_object* tok) {
                 obj->groups = NULL;
 
                 dec_obj_refcount(&obj->header);
-                up_read(&tok->sem);
                 return NULL;
             }
 
@@ -2893,8 +2894,8 @@ token_object* duplicate_token(token_object* tok) {
     if (tok->default_dacl) {
         obj->default_dacl = kmalloc(tok->default_dacl->AclSize, GFP_KERNEL);
         if (!obj->default_dacl) {
+            spin_unlock(&tok->lock);
             dec_obj_refcount(&obj->header);
-            up_read(&tok->sem);
             return NULL;
         }
 
@@ -2906,7 +2907,7 @@ token_object* duplicate_token(token_object* tok) {
     obj->token_id = tok->token_id;
     obj->modified_id = tok->modified_id;
 
-    up_read(&tok->sem);
+    spin_unlock(&tok->lock);
 
     return obj;
 }
@@ -3067,7 +3068,7 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
     *granted = 0;
 
     if (tok)
-        down_read(&tok->sem);
+        spin_lock(&tok->lock);
 
     if (remaining & ACCESS_SYSTEM_SECURITY) {
         if (!tok || check_privilege_token(tok, SE_SECURITY_PRIVILEGE)) {
@@ -3199,7 +3200,7 @@ static NTSTATUS access_check(token_object* tok, SECURITY_DESCRIPTOR_RELATIVE* sd
 
 end:
     if (tok)
-        up_read(&tok->sem);
+        spin_unlock(&tok->lock);
 
     return Status;
 }
