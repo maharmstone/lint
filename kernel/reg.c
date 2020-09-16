@@ -3591,7 +3591,7 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
     UNICODE_STRING part;
     unsigned int i;
     WCHAR* ptr;
-    SECURITY_DESCRIPTOR_RELATIVE* sd;
+    SECURITY_DESCRIPTOR_RELATIVE* sd = NULL;
     ACCESS_MASK access;
 
     static const WCHAR prefix[] = L"\\Registry\\";
@@ -3668,7 +3668,9 @@ static NTSTATUS create_key_in_hive(hive* h, const UNICODE_STRING* us, PHANDLE Ke
 
     k = (key_object*)muwine_alloc_object(sizeof(key_object), key_type, sd);
     if (!k) {
-        kfree(sd);
+        if (sd)
+            kfree(sd);
+
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
