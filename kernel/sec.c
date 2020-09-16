@@ -87,7 +87,17 @@ static void uid_to_sid(SID** sid, kuid_t uid) {
     SID* s;
 
     // FIXME - allow overrides in Registry
-    // FIXME - map root separately
+
+    if (uid.val == 0) { // map root to Local System
+        s = kmalloc(sizeof(sid_local_system), GFP_KERNEL);
+        // FIXME - handle malloc failure
+
+        memcpy(s, sid_local_system, sizeof(sid_local_system));
+
+        *sid = s;
+
+        return;
+    }
 
     // FIXME - create from machine SID
 
