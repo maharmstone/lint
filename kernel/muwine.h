@@ -434,6 +434,7 @@ NTSTATUS NtSetInformationToken(HANDLE TokenHandle, TOKEN_INFORMATION_CLASS Token
                                PVOID TokenInformation, ULONG TokenInformationLength);
 NTSTATUS access_check_type(type_object* type, ACCESS_MASK desired, ACCESS_MASK* granted);
 NTSTATUS access_check_object(object_header* obj, ACCESS_MASK desired, ACCESS_MASK* granted);
+void dump_sd(SECURITY_DESCRIPTOR_RELATIVE* sd);
 
 // file.c
 #define FILE_SUPERSEDE                    0x00000000

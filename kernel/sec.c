@@ -3601,3 +3601,104 @@ NTSTATUS NtDuplicateToken(HANDLE ExistingTokenHandle, ACCESS_MASK DesiredAccess,
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+static void sid_to_string(SID* sid, char* s) {
+    uint64_t auth;
+    unsigned int i;
+
+    static const char prefix[] = "S-1-";
+
+    memcpy(s, prefix, sizeof(prefix));
+
+    auth = ((uint64_t)sid->IdentifierAuthority[0] << 40) |
+        ((uint64_t)sid->IdentifierAuthority[1] << 32) |
+        ((uint64_t)sid->IdentifierAuthority[2] << 24) |
+        ((uint64_t)sid->IdentifierAuthority[3] << 16) |
+        ((uint64_t)sid->IdentifierAuthority[4] << 8) |
+        (uint64_t)sid->IdentifierAuthority[5];
+
+    sprintf(s, "%s%llu", s, auth);
+
+    for (i = 0; i < sid->SubAuthorityCount; i++) {
+        sprintf(s, "%s-%u", s, sid->SubAuthority[i]);
+    }
+}
+
+static void dump_acl(ACL* acl) {
+    ACE_HEADER* ace;
+    unsigned int i;
+
+    printk(KERN_INFO "    AclRevision: %x\n", acl->AclRevision);
+    printk(KERN_INFO "    Sbz1: %x\n", acl->Sbz1);
+    printk(KERN_INFO "    AclSize: %x\n", acl->AclSize);
+    printk(KERN_INFO "    AceCount: %x\n", acl->AceCount);
+    printk(KERN_INFO "    Sbz2: %x\n", acl->Sbz2);
+
+    ace = (ACE_HEADER*)&acl[1];
+
+    for (i = 0; i < acl->AceCount; i++) {
+        if (ace->AceType == ACCESS_ALLOWED_ACE_TYPE) {
+            ACCESS_ALLOWED_ACE* aaa = (ACCESS_ALLOWED_ACE*)ace;
+            char s[255];
+
+            sid_to_string((SID*)&aaa->SidStart, s);
+
+            printk(KERN_INFO "    ACE (flags = %u, size = %u): allow %s (mask = %x)\n",
+                   aaa->Header.AceFlags, aaa->Header.AceSize, s, aaa->Mask);
+        } else if (ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+            ACCESS_DENIED_ACE* ada = (ACCESS_DENIED_ACE*)ace;
+            char s[255];
+
+            sid_to_string((SID*)&ada->SidStart, s);
+
+            printk(KERN_INFO "    ACE (flags = %u, size = %u): deny %s (mask = %x)\n",
+                   ada->Header.AceFlags, ada->Header.AceSize, s, ada->Mask);
+        } else {
+            printk(KERN_INFO "    ACE (flags = %u, size = %u): unhandled type %u\n",
+                   ace->AceFlags, ace->AceSize, ace->AceType);
+        }
+
+        ace = (ACE_HEADER*)((uint8_t*)ace + ace->AceSize);
+    }
+}
+
+void dump_sd(SECURITY_DESCRIPTOR_RELATIVE* sd) {
+    SID* owner = sd->Owner != 0 ? sd_get_owner(sd) : NULL;
+    SID* group = sd->Group != 0 ? sd_get_group(sd) : NULL;
+    ACL* dacl = sd->Dacl != 0 ? sd_get_dacl(sd) : NULL;
+    ACL* sacl = sd->Sacl != 0 ? sd_get_sacl(sd) : NULL;
+
+    if (!owner)
+        printk(KERN_INFO "Owner: (none)\n");
+    else {
+        char s[255];
+
+        sid_to_string(owner, s);
+
+        printk(KERN_INFO "Owner: %s\n", s);
+    }
+
+    if (!group)
+        printk(KERN_INFO "Group: (none)\n");
+    else {
+        char s[255];
+
+        sid_to_string(group, s);
+
+        printk(KERN_INFO "Group: %s\n", s);
+    }
+
+    if (!dacl)
+        printk(KERN_INFO "DACL: (none)\n");
+    else {
+        printk(KERN_INFO "DACL:\n");
+        dump_acl(dacl);
+    }
+
+    if (!sacl)
+        printk(KERN_INFO "SACL: (none)\n");
+    else {
+        printk(KERN_INFO "SACL:\n");
+        dump_acl(sacl);
+    }
+}
