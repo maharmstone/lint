@@ -3649,7 +3649,7 @@ static void dump_acl(ACL* acl) {
 
             sid_to_string((SID*)&aaa->SidStart, s);
 
-            printk(KERN_INFO "    ACE (flags = %u, size = %u): allow %s (mask = %x)\n",
+            printk(KERN_INFO "    ACE (flags = %x, size = %u): allow %s (mask = %x)\n",
                    aaa->Header.AceFlags, aaa->Header.AceSize, s, aaa->Mask);
         } else if (ace->AceType == ACCESS_DENIED_ACE_TYPE) {
             ACCESS_DENIED_ACE* ada = (ACCESS_DENIED_ACE*)ace;
@@ -3657,10 +3657,10 @@ static void dump_acl(ACL* acl) {
 
             sid_to_string((SID*)&ada->SidStart, s);
 
-            printk(KERN_INFO "    ACE (flags = %u, size = %u): deny %s (mask = %x)\n",
+            printk(KERN_INFO "    ACE (flags = %x, size = %u): deny %s (mask = %x)\n",
                    ada->Header.AceFlags, ada->Header.AceSize, s, ada->Mask);
         } else {
-            printk(KERN_INFO "    ACE (flags = %u, size = %u): unhandled type %u\n",
+            printk(KERN_INFO "    ACE (flags = %x, size = %u): unhandled type %u\n",
                    ace->AceFlags, ace->AceSize, ace->AceType);
         }
 
