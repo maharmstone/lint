@@ -144,7 +144,7 @@ static void uid_to_sid(SID** sid, kuid_t uid) {
     *sid = s;
 }
 
-static void gid_to_sid(SID** sid, kgid_t gid) {
+static NTSTATUS gid_to_sid(SID** sid, kgid_t gid) {
     SID* s;
 
     // FIXME - allow overrides in Registry
@@ -152,7 +152,8 @@ static void gid_to_sid(SID** sid, kgid_t gid) {
     // use Samba's S-1-22-2 mappings
 
     s = kmalloc(offsetof(SID, SubAuthority) + (2 * sizeof(uint32_t)), GFP_KERNEL);
-    // FIXME - handle malloc failure
+    if (!s)
+        return STATUS_INSUFFICIENT_RESOURCES;
 
     s->Revision = 1;
     s->SubAuthorityCount = 2;
@@ -166,6 +167,8 @@ static void gid_to_sid(SID** sid, kgid_t gid) {
     s->SubAuthority[1] = (uint32_t)gid.val;
 
     *sid = s;
+
+    return STATUS_SUCCESS;
 }
 
 static SID* duplicate_sid(SID* in) {
@@ -188,6 +191,7 @@ static NTSTATUS get_current_process_groups(token_object* tok) {
     kgid_t primary_group;
     bool primary_group_in_list;
     unsigned int num_groups, i;
+    SID_AND_ATTRIBUTES* g;
 
     primary_group = current_egid();
 
@@ -208,6 +212,8 @@ static NTSTATUS get_current_process_groups(token_object* tok) {
     if (!primary_group_in_list)
         num_groups++;
 
+    num_groups++; // for Everyone SID
+
     tok->groups = kmalloc(offsetof(TOKEN_GROUPS, Groups) + (num_groups * sizeof(SID_AND_ATTRIBUTES)),
                           GFP_KERNEL);
     if (!tok->groups) {
@@ -215,24 +221,70 @@ static NTSTATUS get_current_process_groups(token_object* tok) {
         goto end;
     }
 
-    tok->groups->GroupCount = num_groups;
+    tok->groups->GroupCount = 0;
+    g = tok->groups->Groups;
 
     for (i = 0; i < groups->ngroups; i++) {
-        gid_to_sid(&tok->groups->Groups[i].Sid, groups->gid[i]);
-        tok->groups->Groups[i].Attributes =
-            SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
+        Status = gid_to_sid(&g->Sid, groups->gid[i]);
+
+        if (!NT_SUCCESS(Status)) {
+            unsigned int j;
+
+            for (j = 0; j < tok->groups->GroupCount; j++) {
+                kfree(tok->groups->Groups[j].Sid);
+            }
+
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        g->Attributes = SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
 
         if (groups->gid[i].val == primary_group.val)
-            tok->primary_group = tok->groups->Groups[i].Sid;
+            tok->primary_group = g->Sid;
+
+        g++;
+        tok->groups->GroupCount++;
     }
 
     if (!primary_group_in_list) {
-        gid_to_sid(&tok->groups->Groups[groups->ngroups].Sid, primary_group);
-        tok->groups->Groups[groups->ngroups].Attributes =
-            SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
+        Status = gid_to_sid(&g->Sid, primary_group);
 
-        tok->primary_group = tok->groups->Groups[groups->ngroups].Sid;
+        if (!NT_SUCCESS(Status)) {
+            unsigned int j;
+
+            for (j = 0; j < tok->groups->GroupCount; j++) {
+                kfree(tok->groups->Groups[j].Sid);
+            }
+
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            goto end;
+        }
+
+        g->Attributes = SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
+
+        tok->primary_group = g->Sid;
+
+        g++;
+        tok->groups->GroupCount++;
     }
+
+    g->Sid = kmalloc(sizeof(sid_everyone), GFP_KERNEL);
+    if (!g->Sid) {
+        unsigned int j;
+
+        for (j = 0; j < tok->groups->GroupCount; j++) {
+            kfree(tok->groups->Groups[j].Sid);
+        }
+
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    memcpy(g->Sid, sid_everyone, sizeof(sid_everyone));
+    g->Attributes = SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
+
+    tok->groups->GroupCount++;
 
     Status = STATUS_SUCCESS;
 
