@@ -556,35 +556,6 @@ void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* s
     *sdlen = len;
 }
 
-ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type) {
-    if (access & MAXIMUM_ALLOWED)
-        return MAXIMUM_ALLOWED;
-
-    if (access & GENERIC_READ) {
-        access &= ~GENERIC_READ;
-        access |= type->generic_mapping.GenericRead;
-    }
-
-    if (access & GENERIC_WRITE) {
-        access &= ~GENERIC_WRITE;
-        access |= type->generic_mapping.GenericWrite;
-    }
-
-    if (access & GENERIC_EXECUTE) {
-        access &= ~GENERIC_EXECUTE;
-        access |= type->generic_mapping.GenericExecute;
-    }
-
-    if (access & GENERIC_ALL) {
-        access &= ~GENERIC_ALL;
-        access |= type->generic_mapping.GenericAll;
-    }
-
-    access &= type->valid;
-
-    return access;
-}
-
 static bool __inline sid_equal(PSID sid1, PSID sid2) {
     size_t size1 = sid_length(sid1);
     size_t size2 = sid_length(sid2);

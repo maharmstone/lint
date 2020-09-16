@@ -377,7 +377,6 @@ typedef struct _PRIVILEGE_SET PRIVILEGE_SET, *PPRIVILEGE_SET;
 
 NTSTATUS muwine_make_process_token(token_object** t);
 void muwine_registry_root_sd(SECURITY_DESCRIPTOR_RELATIVE** out, unsigned int* sdlen);
-ACCESS_MASK sanitize_access_mask(ACCESS_MASK access, type_object* type);
 NTSTATUS muwine_init_tokens(void);
 NTSTATUS user_NtCreateToken(PHANDLE TokenHandle, ACCESS_MASK DesiredAccess,
                             POBJECT_ATTRIBUTES ObjectAttributes, TOKEN_TYPE TokenType,
