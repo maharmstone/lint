@@ -195,7 +195,8 @@ static void create_reg_symlink(const u16string_view& src, const u16string_view& 
     oa.SecurityDescriptor = NULL;
     oa.SecurityQualityOfService = NULL;
 
-    Status = NtCreateKey(&h, 0, &oa, 0, NULL, REG_OPTION_VOLATILE | REG_OPTION_CREATE_LINK, &dispos);
+    Status = NtCreateKey(&h, KEY_SET_VALUE, &oa, 0, NULL,
+                         REG_OPTION_VOLATILE | REG_OPTION_CREATE_LINK, &dispos);
     if (!NT_SUCCESS(Status))
         throw formatted_error("NtCreateKey returned {:08x}.", (uint32_t)Status);
 
