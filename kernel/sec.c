@@ -414,8 +414,9 @@ NTSTATUS muwine_make_process_token(token_object** t) {
     dacl_size = sizeof(ACL);
     dacl_size += 2 * offsetof(ACCESS_ALLOWED_ACE, SidStart);
     dacl_size += sid_length(tok->owner);
-    dacl_size += sizeof(sid_local_system);
-    // FIXME - don't duplicate ACE if owner is same as sid_local_system
+
+    if (memcmp(tok->owner, sid_local_system, sizeof(sid_local_system)))
+        dacl_size += sizeof(sid_local_system);
 
     tok->default_dacl = kmalloc(dacl_size, GFP_KERNEL);
     if (!tok->default_dacl) {
@@ -428,7 +429,7 @@ NTSTATUS muwine_make_process_token(token_object** t) {
     tok->default_dacl->AclRevision = 2;
     tok->default_dacl->Sbz1 = 0;
     tok->default_dacl->AclSize = dacl_size;
-    tok->default_dacl->AceCount = 2;
+    tok->default_dacl->AceCount = 0;
     tok->default_dacl->Sbz2 = 0;
 
     aaa = (ACCESS_ALLOWED_ACE*)&tok->default_dacl[1];
@@ -437,13 +438,17 @@ NTSTATUS muwine_make_process_token(token_object** t) {
     aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sid_length(tok->owner);
     aaa->Mask = GENERIC_ALL;
     memcpy(&aaa->SidStart, tok->owner, sid_length(tok->owner));
+    tok->default_dacl->AceCount++;
 
-    aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)aaa + aaa->Header.AceSize);
-    aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
-    aaa->Header.AceFlags = 0;
-    aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_local_system);
-    aaa->Mask = GENERIC_ALL;
-    memcpy(&aaa->SidStart, sid_local_system, sizeof(sid_local_system));
+    if (memcmp(tok->owner, sid_local_system, sizeof(sid_local_system))) {
+        aaa = (ACCESS_ALLOWED_ACE*)((uint8_t*)aaa + aaa->Header.AceSize);
+        aaa->Header.AceType = ACCESS_ALLOWED_ACE_TYPE;
+        aaa->Header.AceFlags = 0;
+        aaa->Header.AceSize = offsetof(ACCESS_ALLOWED_ACE, SidStart) + sizeof(sid_local_system);
+        aaa->Mask = GENERIC_ALL;
+        memcpy(&aaa->SidStart, sid_local_system, sizeof(sid_local_system));
+        tok->default_dacl->AceCount++;
+    }
 
     alloc_luid(&tok->token_id);
     alloc_luid(&tok->modified_id);
