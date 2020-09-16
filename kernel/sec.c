@@ -2319,6 +2319,12 @@ static NTSTATUS compute_inherited_acl_from_parent(ACL* parent, bool is_container
                 memcpy(dest_ace, src_ace, src_ace->AceSize);
                 dest_ace->AceFlags = INHERITED_ACE;
 
+                // not in [MS-DTYP] 2.5.3.4.4 - is this correct?
+                if (is_container) {
+                    dest_ace->AceFlags |= src_ace->AceFlags | CONTAINER_INHERIT_ACE;
+                    dest_ace->AceFlags |= src_ace->AceFlags | OBJECT_INHERIT_ACE;
+                }
+
                 acl->AceCount++;
                 dest_ace = (ACE_HEADER*)((uint8_t*)dest_ace + dest_ace->AceSize);
             }
