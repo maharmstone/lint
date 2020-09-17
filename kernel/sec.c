@@ -203,7 +203,7 @@ static NTSTATUS get_current_process_groups(token_object* tok) {
     unsigned int num_groups, i;
     SID_AND_ATTRIBUTES* g;
 
-    primary_group = current_egid();
+    primary_group = current_gid();
 
     groups = get_current_groups();
     primary_group_in_list = false;
@@ -366,7 +366,7 @@ NTSTATUS muwine_make_process_token(token_object** t) {
 
     spin_lock_init(&tok->lock);
 
-    uid_to_sid(&tok->user, current_euid());
+    uid_to_sid(&tok->user, current_uid());
 
     Status = get_current_process_groups(tok);
     if (!NT_SUCCESS(Status)) {
@@ -376,7 +376,7 @@ NTSTATUS muwine_make_process_token(token_object** t) {
 
     tok->owner = tok->user;
 
-    if (current_euid().val == 0) { // root
+    if (current_uid().val == 0) { // root
         priv_count = sizeof(def_root_privs) / sizeof(default_privilege);
         def_privs = def_root_privs;
     } else {
