@@ -11,6 +11,7 @@ static const uint8_t sid_creator_owner[] = { 1, 1, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0 
 static const uint8_t sid_creator_group[] = { 1, 1, 0, 0, 0, 0, 0, 3, 1, 0, 0, 0 }; // S-1-3-1
 static const uint8_t sid_everyone[] = { 1, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0 }; // S-1-1-0
 static const uint8_t sid_restricted[] = { 1, 1, 0, 0, 0, 0, 0, 5, 12, 0, 0, 0 }; // S-1-5-12
+static const uint8_t sid_auth_users[] = { 1, 1, 0, 0, 0, 0, 0, 5, 11, 0, 0, 0 }; // S-1-5-11
 
 typedef struct {
     unsigned int num;
@@ -222,7 +223,7 @@ static NTSTATUS get_current_process_groups(token_object* tok) {
     if (!primary_group_in_list)
         num_groups++;
 
-    num_groups++; // for Everyone SID
+    num_groups += 3; // for Everyone, Users, and Authenticated Users SIDs
 
     tok->groups = kmalloc(offsetof(TOKEN_GROUPS, Groups) + (num_groups * sizeof(SID_AND_ATTRIBUTES)),
                           GFP_KERNEL);
@@ -292,6 +293,43 @@ static NTSTATUS get_current_process_groups(token_object* tok) {
     }
 
     memcpy(g->Sid, sid_everyone, sizeof(sid_everyone));
+    g->Attributes = SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
+
+    g++;
+    tok->groups->GroupCount++;
+
+    // FIXME - map to Linux "users" group?
+    g->Sid = kmalloc(sizeof(sid_users), GFP_KERNEL);
+    if (!g->Sid) {
+        unsigned int j;
+
+        for (j = 0; j < tok->groups->GroupCount; j++) {
+            kfree(tok->groups->Groups[j].Sid);
+        }
+
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    memcpy(g->Sid, sid_users, sizeof(sid_users));
+    g->Attributes = SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
+
+    g++;
+    tok->groups->GroupCount++;
+
+    g->Sid = kmalloc(sizeof(sid_auth_users), GFP_KERNEL);
+    if (!g->Sid) {
+        unsigned int j;
+
+        for (j = 0; j < tok->groups->GroupCount; j++) {
+            kfree(tok->groups->Groups[j].Sid);
+        }
+
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+        goto end;
+    }
+
+    memcpy(g->Sid, sid_auth_users, sizeof(sid_auth_users));
     g->Attributes = SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
 
     tok->groups->GroupCount++;
