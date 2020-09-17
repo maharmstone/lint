@@ -143,3 +143,21 @@ endif()
 if(NOT MSVC)
 	target_compile_options(tokentest PUBLIC -Wall -Werror=cast-function-type -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra -Wconversion -Werror=implicit-function-declaration)
 endif()
+
+# --------------------
+
+add_executable(sdtest sdtest.c)
+
+if(WIN32)
+    target_link_libraries(sdtest ntdll)
+else()
+    target_link_libraries(sdtest muwstatic)
+endif()
+
+if(NOT WIN32)
+    target_compile_options(sdtest PUBLIC -fshort-wchar)
+endif()
+
+if(NOT MSVC)
+	target_compile_options(sdtest PUBLIC -Wall -Werror=cast-function-type -Wno-expansion-to-defined -Wunused-parameter -Wtype-limits -Wextra -Wconversion -Werror=implicit-function-declaration)
+endif()
