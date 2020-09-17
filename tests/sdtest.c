@@ -1,8 +1,13 @@
+#ifdef _WIN32
 #include <winternl.h>
+#else
+#include <muw.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 static const uint8_t test_sid[] = { 1, 2, 0, 0, 0, 0, 0, 22, 1, 0, 0, 0, 1, 0, 0, 0 }; // S-1-22-1-1
 
@@ -21,10 +26,89 @@ NTSTATUS __stdcall NtQueryInformationToken(HANDLE TokenHandle,
 NTSTATUS __stdcall NtQuerySecurityObject(HANDLE Handle, SECURITY_INFORMATION SecurityInformation,
                                          PSECURITY_DESCRIPTOR SecurityDescriptor, ULONG Length,
                                          PULONG LengthNeeded);
+#else
+
+typedef struct {
+    BYTE Value[6];
+} SID_IDENTIFIER_AUTHORITY;
+
+typedef struct {
+    BYTE Revision;
+    BYTE SubAuthorityCount;
+    SID_IDENTIFIER_AUTHORITY IdentifierAuthority;
+    DWORD SubAuthority[1];
+} SID;
+
+typedef WORD SECURITY_DESCRIPTOR_CONTROL;
+
+typedef struct _SECURITY_DESCRIPTOR_RELATIVE {
+    BYTE Revision;
+    BYTE Sbz1;
+    SECURITY_DESCRIPTOR_CONTROL Control;
+    DWORD Owner;
+    DWORD Group;
+    DWORD Sacl;
+    DWORD Dacl;
+} SECURITY_DESCRIPTOR_RELATIVE;
+
+typedef struct {
+    uint8_t AceType;
+    uint8_t AceFlags;
+    uint16_t AceSize;
+} ACE_HEADER;
+
+typedef struct {
+    ACE_HEADER Header;
+    ACCESS_MASK Mask;
+    DWORD SidStart;
+} ACCESS_ALLOWED_ACE;
+
+typedef struct {
+    BOOLEAN DoDeleteFile;
+} FILE_DISPOSITION_INFORMATION;
+
+#define OBJECT_INHERIT_ACE          0x01
+#define CONTAINER_INHERIT_ACE       0x02
+#define NO_PROPAGATE_INHERIT_ACE    0x04
+#define INHERIT_ONLY_ACE            0x08
+#define INHERITED_ACE               0x10
+
+#define TOKEN_QUERY                 0x0008
+
+#define ACCESS_ALLOWED_ACE_TYPE     0x0
+
+#define SE_DACL_PRESENT             0x0004
+#define SE_SELF_RELATIVE            0x8000
+
+#define FILE_READ_DATA                    0x0001
+#define FILE_LIST_DIRECTORY               0x0001
+#define FILE_WRITE_DATA                   0x0002
+#define FILE_ADD_FILE                     0x0002
+#define FILE_APPEND_DATA                  0x0004
+#define FILE_ADD_SUBDIRECTORY             0x0004
+#define FILE_CREATE_PIPE_INSTANCE         0x0004
+#define FILE_READ_EA                      0x0008
+#define FILE_WRITE_EA                     0x0010
+#define FILE_EXECUTE                      0x0020
+#define FILE_TRAVERSE                     0x0020
+#define FILE_DELETE_CHILD                 0x0040
+#define FILE_READ_ATTRIBUTES              0x0080
+#define FILE_WRITE_ATTRIBUTES             0x0100
+
+#define FILE_ALL_ACCESS FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | \
+                        FILE_READ_EA | FILE_WRITE_EA | FILE_EXECUTE | \
+                        FILE_DELETE_CHILD | FILE_READ_ATTRIBUTES | \
+                        FILE_WRITE_ATTRIBUTES | DELETE | READ_CONTROL | \
+                        WRITE_DAC | WRITE_OWNER
+
+#define DACL_SECURITY_INFORMATION   0x00000004
+
+#define FILE_CREATE                       0x00000002
+
 #endif
 
 SID* self_sid;
-unsigned int self_sid_length;
+size_t self_sid_length;
 
 static void sid_to_string(SID* sid, char* s) {
     uint64_t auth;
@@ -333,12 +417,6 @@ static bool get_self_sid() {
 }
 
 int main() {
-//     #define OBJECT_INHERIT_ACE          0x01
-//     #define CONTAINER_INHERIT_ACE       0x02
-//     #define NO_PROPAGATE_INHERIT_ACE    0x04
-//     #define INHERIT_ONLY_ACE            0x08
-//     #define INHERITED_ACE               0x10
-
     get_self_sid();
 
     // FIXME - get current directory?
