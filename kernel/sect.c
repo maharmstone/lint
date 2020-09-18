@@ -1363,11 +1363,14 @@ static NTSTATUS init_user_shared_data(void) {
     LARGE_INTEGER size;
     UNICODE_STRING us;
     OBJECT_ATTRIBUTES oa;
+    section_object* sect;
+    ACCESS_MASK access;
+    KSHARED_USER_DATA* usd;
 
-    static const WCHAR usd[] = L"\\KernelObjects\\__wine_user_shared_data";
+    static const WCHAR usd_name[] = L"\\KernelObjects\\__wine_user_shared_data";
 
-    us.Buffer = (WCHAR*)usd;
-    us.Length = us.MaximumLength = sizeof(usd) - sizeof(WCHAR);
+    us.Buffer = (WCHAR*)usd_name;
+    us.Length = us.MaximumLength = sizeof(usd_name) - sizeof(WCHAR);
 
     oa.Length = sizeof(oa);
     oa.RootDirectory = NULL;
@@ -1376,17 +1379,44 @@ static NTSTATUS init_user_shared_data(void) {
     oa.SecurityDescriptor = NULL;
     oa.SecurityQualityOfService = NULL;
 
-    size.QuadPart = PAGE_SIZE; // FIXME - should be size of KUSER_SHARED_DATA struct
+    size.QuadPart = PAGE_ALIGN(sizeof(KSHARED_USER_DATA));
 
     Status = NtCreateSection(&h, SECTION_MAP_WRITE, &oa, &size, NT_PAGE_READWRITE, SEC_COMMIT, NULL);
-    if (!NT_SUCCESS(Status))
+    if (!NT_SUCCESS(Status)) {
+        printk(KERN_INFO "NtCreateSection returned %08x when creating __wine_user_shared_data\n", Status);
         return Status;
+    }
+
+    // set usd->SystemCall to 1, which is needed for Wine's ntdll calls to work
+
+    sect = (section_object*)get_object_from_handle(h, &access);
+
+    usd = (void*)vm_mmap(sect->anon_file, 0, size.QuadPart, PROT_READ | PROT_WRITE, MAP_SHARED, 0);
+    if (IS_ERR(usd)) {
+        Status = muwine_error_to_ntstatus((uintptr_t)usd);
+        goto end;
+    }
+
+    if (put_user(1, &usd->SystemCall) < 0) {
+        printk(KERN_INFO "Failed to set usd->SystemCall value.");
+        vm_munmap((uintptr_t)usd, size.QuadPart);
+        Status = STATUS_INTERNAL_ERROR;
+        goto end;
+    }
+
+    vm_munmap((uintptr_t)usd, size.QuadPart);
+
+    Status = STATUS_SUCCESS;
+
+    // FIXME - set OS information etc.
+    // FIXME - spawn thread updating time every second
+
+end:
+    dec_obj_refcount(&sect->header);
 
     NtClose(h);
 
-    // FIXME - spawn thread updating time every second
-
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 NTSTATUS muwine_init_sections(void) {

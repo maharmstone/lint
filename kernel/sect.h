@@ -194,3 +194,147 @@ typedef struct {
     };
 } IMAGE_NT_HEADERS;
 
+typedef struct {
+    ULONG LowPart;
+    LONG High1Time;
+    LONG High2Time;
+} KSYSTEM_TIME;
+
+typedef enum {
+    NtProductWinNt = 1,
+    NtProductLanManNt,
+    NtProductServer
+} NT_PRODUCT_TYPE;
+
+#define PROCESSOR_FEATURE_MAX 64
+
+typedef enum {
+    StandardDesign,
+    NEC98x86,
+    EndAlternatives
+} ALTERNATIVE_ARCHITECTURE_TYPE;
+
+#define MAXIMUM_XSTATE_FEATURES             64
+
+typedef struct {
+    ULONG Offset;
+    ULONG Size;
+} XSTATE_FEATURE;
+
+typedef struct {
+    ULONG64 EnabledFeatures;
+    ULONG64 EnabledVolatileFeatures;
+    ULONG Size;
+    ULONG OptimizedSave : 1;
+    ULONG CompactionEnabled : 1;
+    XSTATE_FEATURE Features[MAXIMUM_XSTATE_FEATURES];
+    ULONG64 EnabledSupervisorFeatures;
+    ULONG64 AlignedFeatures;
+    ULONG AllFeatureSize;
+    ULONG AllFeatures[MAXIMUM_XSTATE_FEATURES];
+    ULONG64 EnabledUserVisibleSupervisorFeatures;
+} XSTATE_CONFIGURATION;
+
+typedef struct {
+    ULONG TickCountLowDeprecated;
+    ULONG TickCountMultiplier;
+    volatile KSYSTEM_TIME InterruptTime;
+    volatile KSYSTEM_TIME SystemTime;
+    volatile KSYSTEM_TIME TimeZoneBias;
+    USHORT ImageNumberLow;
+    USHORT ImageNumberHigh;
+    WCHAR NtSystemRoot[260];
+    ULONG MaxStackTraceDepth;
+    ULONG CryptoExponent;
+    ULONG TimeZoneId;
+    ULONG LargePageMinimum;
+    ULONG AitSamplingValue;
+    ULONG AppCompatFlag;
+    ULONGLONG RNGSeedVersion;
+    ULONG GlobalValidationRunLevel;
+    volatile ULONG TimeZoneBiasStamp;
+    ULONG NtBuildNumber;
+    NT_PRODUCT_TYPE NtProductType;
+    BOOLEAN ProductTypeIsValid;
+    USHORT NativeProcessorArchitecture;
+    ULONG NtMajorVersion;
+    ULONG NtMinorVersion;
+    BOOLEAN ProcessorFeatures[PROCESSOR_FEATURE_MAX];
+    ULONG Reserved1;
+    ULONG Reserved3;
+    volatile ULONG TimeSlip;
+    ALTERNATIVE_ARCHITECTURE_TYPE AlternativeArchitecture;
+    ULONG BootId;
+    LARGE_INTEGER SystemExpirationDate;
+    ULONG SuiteMask;
+    BOOLEAN KdDebuggerEnabled;
+    UCHAR NXSupportPolicy;
+    USHORT CyclesPerYield;
+    volatile ULONG ActiveConsoleId;
+    volatile ULONG DismountCount;
+    ULONG ComPlusPackage;
+    ULONG LastSystemRITEventTickCount;
+    ULONG NumberOfPhysicalPages;
+    BOOLEAN SafeBootMode;
+    UCHAR VirtualizationFlags;
+    union {
+        ULONG SharedDataFlags;
+        struct {
+            ULONG DbgErrorPortPresent       : 1;
+            ULONG DbgElevationEnabed        : 1;
+            ULONG DbgVirtEnabled            : 1;
+            ULONG DbgInstallerDetectEnabled : 1;
+            ULONG DbgLkgEnabled             : 1;
+            ULONG DbgDynProcessorEnabled    : 1;
+            ULONG DbgConsoleBrokerEnabled   : 1;
+            ULONG DbgSecureBootEnabled      : 1;
+            ULONG DbgMultiSessionSku        : 1;
+            ULONG DbgMultiUsersInSessionSku : 1;
+            ULONG DbgStateSeparationEnabled : 1;
+            ULONG SpareBits                 : 21;
+        } DUMMYSTRUCTNAME2;
+    } DUMMYUNIONNAME2;
+    ULONG DataFlagsPad[1];
+    ULONGLONG TestRetInstruction;
+    LONGLONG QpcFrequency;
+    ULONG SystemCall;
+    union {
+        ULONG AllFlags;
+        struct {
+            ULONG Win32Process            : 1;
+            ULONG Sgx2Enclave             : 1;
+            ULONG VbsBasicEnclave         : 1;
+            ULONG SpareBits               : 29;
+        } DUMMYSTRUCTNAME;
+    } UserCetAvailableEnvironments;
+    ULONGLONG SystemCallPad[2];
+    union {
+        volatile KSYSTEM_TIME TickCount;
+        volatile ULONG64 TickCountQuad;
+    } DUMMYUNIONNAME;
+    ULONG Cookie;
+    ULONG CookiePad[1];
+    LONGLONG ConsoleSessionForegroundProcessId;
+    ULONGLONG TimeUpdateLock;
+    ULONGLONG BaselineSystemTimeQpc;
+    ULONGLONG BaselineInterruptTimeQpc;
+    ULONGLONG QpcSystemTimeIncrement;
+    ULONGLONG QpcInterruptTimeIncrement;
+    UCHAR QpcSystemTimeIncrementShift;
+    UCHAR QpcInterruptTimeIncrementShift;
+    USHORT UnparkedProcessorCount;
+    ULONG EnclaveFeatureMask[4];
+    ULONG TelemetryCoverageRound;
+    USHORT UserModeGlobalLogger[16];
+    ULONG ImageFileExecutionOptions;
+    ULONG LangGenerationCount;
+    ULONG ActiveProcessorAffinity;
+    volatile ULONGLONG InterruptTimeBias;
+    volatile ULONGLONG QpcBias;
+    ULONG ActiveProcessorCount;
+    volatile UCHAR ActiveGroupCount;
+    USHORT QpcData;
+    LARGE_INTEGER TimeZoneBiasEffectiveStart;
+    LARGE_INTEGER TimeZoneBiasEffectiveEnd;
+    XSTATE_CONFIGURATION XState;
+} KSHARED_USER_DATA;

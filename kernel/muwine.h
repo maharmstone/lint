@@ -87,6 +87,7 @@ typedef int64_t LONGLONG;
 typedef uint16_t WORD;
 typedef uint8_t BYTE;
 typedef DWORD EXECUTION_STATE;
+typedef uint64_t ULONG64;
 
 #ifdef __amd64 // FIXME - also aarch64
 #define KERNEL_HANDLE_MASK 0x8000000000000000
