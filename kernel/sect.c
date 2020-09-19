@@ -871,12 +871,40 @@ NTSTATUS user_NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, PO
 static NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
                                PVOID InformationBuffer, ULONG InformationBufferSize,
                                PULONG ResultLength) {
-    printk(KERN_INFO "NtQuerySection(%lx, %x, %px, %x, %px): stub\n", (uintptr_t)SectionHandle, InformationClass,
-           InformationBuffer, InformationBufferSize, ResultLength);
+    NTSTATUS Status;
+    ACCESS_MASK access;
+    section_object* sect;
 
-    // FIXME
+    sect = (section_object*)get_object_from_handle(SectionHandle, &access);
+    if (!sect)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (sect->header.type != section_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    switch (InformationClass) {
+        case SectionBasicInformation:
+            printk(KERN_INFO "NtQuerySection: FIXME - SectionBasicInformation\n");
+            Status = STATUS_NOT_IMPLEMENTED;
+            break;
+
+        case SectionImageInformation:
+            printk(KERN_INFO "NtQuerySection: FIXME - SectionImageInformation\n");
+            Status = STATUS_NOT_IMPLEMENTED;
+            break;
+
+        default:
+            printk(KERN_INFO "NtQuerySection: unhandled class %u\n", InformationClass);
+            Status = STATUS_INVALID_INFO_CLASS;
+            break;
+    }
+
+end:
+    dec_obj_refcount(&sect->header);
+
+    return Status;
 }
 
 NTSTATUS user_NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
