@@ -44,7 +44,7 @@ static struct muwine_func funcs[] = {
     { user_NtUnmapViewOfSection, 2 },
     { NtExtendSection, 2 },
     { user_NtOpenSection, 3 },
-    { NtQuerySection, 5 },
+    { user_NtQuerySection, 5 },
     { user_NtProtectVirtualMemory, 5 },
     { user_NtAllocateVirtualMemory, 6 },
     { user_NtQueryVolumeInformationFile, 5 },

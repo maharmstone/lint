@@ -868,14 +868,50 @@ NTSTATUS user_NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, PO
     return Status;
 }
 
-NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass, PVOID InformationBuffer,
-                        ULONG InformationBufferSize, PULONG ResultLength) {
+static NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
+                               PVOID InformationBuffer, ULONG InformationBufferSize,
+                               PULONG ResultLength) {
     printk(KERN_INFO "NtQuerySection(%lx, %x, %px, %x, %px): stub\n", (uintptr_t)SectionHandle, InformationClass,
            InformationBuffer, InformationBufferSize, ResultLength);
 
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
+                             PVOID InformationBuffer, ULONG InformationBufferSize,
+                             PULONG ResultLength) {
+    NTSTATUS Status;
+    ULONG reslen = 0;
+    void* buf;
+
+    if ((uintptr_t)SectionHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (InformationBufferSize > 0) {
+        buf = kmalloc(InformationBufferSize, GFP_KERNEL);
+        if (!buf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    } else
+        buf = NULL;
+
+    Status = NtQuerySection(SectionHandle, InformationClass, buf, InformationBufferSize,
+                            &reslen);
+
+    if (buf) {
+        if (copy_to_user(InformationBuffer, buf, min(InformationBufferSize, reslen)) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(buf);
+    }
+
+    if (ResultLength) {
+        if (put_user(reslen, ResultLength) < 0)
+            Status = STATUS_ACCESS_VIOLATION;
+    }
+
+    return Status;
 }
 
 static NTSTATUS NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
