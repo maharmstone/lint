@@ -2171,8 +2171,8 @@ NTSTATUS __stdcall NtResumeProcess(HANDLE ProcessHandle) {
 }
 
 NTSTATUS __stdcall NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
-                                  PVOID InformationBuffer, ULONG InformationBufferSize,
-                                  PULONG ResultLength) {
+                                  PVOID InformationBuffer, SIZE_T InformationBufferSize,
+                                  PSIZE_T ResultLength) {
     long ret;
 
     uintptr_t args[] = {

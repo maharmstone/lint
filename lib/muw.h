@@ -1042,8 +1042,8 @@ NTSTATUS __stdcall NtTerminateProcess(HANDLE ProcessHandle, NTSTATUS ExitStatus)
 NTSTATUS __stdcall NtSuspendProcess(HANDLE ProcessHandle);
 NTSTATUS __stdcall NtResumeProcess(HANDLE ProcessHandle);
 NTSTATUS __stdcall NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
-                                  PVOID InformationBuffer, ULONG InformationBufferSize,
-                                  PULONG ResultLength);
+                                  PVOID InformationBuffer, SIZE_T InformationBufferSize,
+                                  PSIZE_T ResultLength);
 
 #ifdef __cplusplus
 }
