@@ -110,6 +110,10 @@
 
 #define ACL_REVISION        2
 
+#define PSEUDOHANDLE_PROCESS_TOKEN (HANDLE)((uintptr_t)-4)
+#define PSEUDOHANDLE_THREAD_TOKEN (HANDLE)((uintptr_t)-5)
+#define PSEUDOHANDLE_EFFECTIVE_TOKEN (HANDLE)((uintptr_t)-6)
+
 typedef struct _LUID {
     DWORD LowPart;
     LONG HighPart;

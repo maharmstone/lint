@@ -1403,13 +1403,41 @@ static NTSTATUS NtQueryInformationToken(HANDLE TokenHandle,
     token_object* tok;
     ACCESS_MASK access;
 
-    tok = (token_object*)get_object_from_handle(TokenHandle, &access);
-    if (!tok)
-        return STATUS_INVALID_HANDLE;
+    if (TokenHandle == PSEUDOHANDLE_PROCESS_TOKEN) {
+        process_object* proc;
 
-    if (tok->header.type != token_type) {
-        Status = STATUS_INVALID_HANDLE;
-        goto end;
+        proc = muwine_current_process_object();
+        if (!proc)
+            return STATUS_INTERNAL_ERROR;
+
+        if (!proc->token) {
+            dec_obj_refcount(&proc->header.h);
+            return STATUS_INVALID_HANDLE;
+        }
+
+        tok = proc->token;
+        inc_obj_refcount(&tok->header);
+
+        dec_obj_refcount(&proc->header.h);
+
+        access = TOKEN_ALL_ACCESS;
+    } else if (TokenHandle == PSEUDOHANDLE_THREAD_TOKEN) {
+        // FIXME
+    } else if (TokenHandle == PSEUDOHANDLE_EFFECTIVE_TOKEN) {
+        tok = muwine_get_current_token();
+        if (!tok)
+            return STATUS_INVALID_HANDLE;
+
+        access = TOKEN_ALL_ACCESS;
+    } else {
+        tok = (token_object*)get_object_from_handle(TokenHandle, &access);
+        if (!tok)
+            return STATUS_INVALID_HANDLE;
+
+        if (tok->header.type != token_type) {
+            Status = STATUS_INVALID_HANDLE;
+            goto end;
+        }
     }
 
     spin_lock(&tok->lock);
@@ -1749,8 +1777,10 @@ NTSTATUS user_NtQueryInformationToken(HANDLE TokenHandle,
     if (!ReturnLength)
         return STATUS_INVALID_PARAMETER;
 
-    if ((uintptr_t)TokenHandle & KERNEL_HANDLE_MASK)
+    if ((uintptr_t)TokenHandle & KERNEL_HANDLE_MASK && TokenHandle != PSEUDOHANDLE_PROCESS_TOKEN &&
+        TokenHandle != PSEUDOHANDLE_THREAD_TOKEN && TokenHandle != PSEUDOHANDLE_EFFECTIVE_TOKEN) {
         return STATUS_INVALID_HANDLE;
+    }
 
     if (TokenInformationLength > 0) {
         buf = kmalloc(TokenInformationLength, GFP_KERNEL);
