@@ -782,6 +782,8 @@ static NTSTATUS NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE
         goto end;
     }
 
+    IoStatusBlock->Information = 0;
+
     Status = obj->dev->fsctl(obj, Event, ApcRoutine, ApcContext, IoStatusBlock,
                              IoControlCode, InputBuffer, InputBufferLength,
                              OutputBuffer, OutputBufferLength);
@@ -845,6 +847,7 @@ NTSTATUS user_NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE A
         kfree(inbuf);
 
     if (outbuf) {
+        // FIXME - should be using iosb.Information for length?
         if (copy_to_user(OutputBuffer, outbuf, OutputBufferLength) != 0)
             Status = STATUS_ACCESS_VIOLATION;
 

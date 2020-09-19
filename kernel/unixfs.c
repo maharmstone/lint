@@ -1669,14 +1669,33 @@ static NTSTATUS unixfs_fsctl(file_object* obj, HANDLE Event, PIO_APC_ROUTINE Apc
                              PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
                              PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
                              ULONG OutputBufferLength) {
-    printk(KERN_INFO "unixfs_fsctl(%px, %lx, %px, %px, %px, %x, %px, %x, %px, %x): stub\n",
-           obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
-           IoControlCode, InputBuffer, InputBufferLength, OutputBuffer,
-           OutputBufferLength);
+    unixfs_file_object* ufo = (unixfs_file_object*)obj;
 
-    // FIXME
+    switch (IoControlCode) {
+        case FSCTL_GET_OBJECT_ID: {
+            FILE_OBJECTID_BUFFER* fob = OutputBuffer;
+            uint64_t inode, dev;
 
-    return STATUS_NOT_IMPLEMENTED;
+            if (OutputBufferLength < sizeof(FILE_OBJECTID_BUFFER))
+                return STATUS_BUFFER_TOO_SMALL;
+
+            memset(fob, 0, sizeof(FILE_OBJECTID_BUFFER));
+
+            inode = ufo->inode->inode->i_ino;
+            dev = ufo->inode->inode->i_sb->s_dev;
+
+            memcpy(fob->ObjectId, &dev, sizeof(uint64_t));
+            memcpy(&fob->ObjectId[sizeof(uint64_t)], &inode, sizeof(uint64_t));
+
+            IoStatusBlock->Information = sizeof(FILE_OBJECTID_BUFFER);
+
+            return STATUS_SUCCESS;
+        }
+
+        default:
+            printk(KERN_INFO "unixfs_fsctl: unhandled fsctl %x\n", IoControlCode);
+            return STATUS_NOT_IMPLEMENTED;
+    }
 }
 
 static struct file* unixfs_get_filp(file_object* obj) {

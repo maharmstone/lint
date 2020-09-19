@@ -50,3 +50,31 @@ typedef struct _device {
     muwine_fsctl fsctl;
     muwine_get_filp get_filp;
 } device;
+
+#define CTL_CODE(DeviceType,Function,Method,Access) (((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method))
+
+#define FILE_DEVICE_DISK_FILE_SYSTEM 0x00000008
+#define FILE_DEVICE_FILE_SYSTEM      0x00000009
+
+#define METHOD_BUFFERED                 0
+#define METHOD_IN_DIRECT                1
+#define METHOD_OUT_DIRECT               2
+#define METHOD_NEITHER                  3
+
+#define FILE_ANY_ACCESS                 0
+#define FILE_READ_ACCESS                FILE_READ_DATA
+#define FILE_WRITE_ACCESS               FILE_WRITE_DATA
+
+#define FSCTL_GET_OBJECT_ID CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 39, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+typedef struct  {
+    BYTE ObjectId[16];
+    union {
+        struct {
+            BYTE BirthVolumeId[16];
+            BYTE BirthObjectId[16];
+            BYTE DomainId[16];
+        };
+        BYTE ExtendedInfo[48];
+    };
+} FILE_OBJECTID_BUFFER;

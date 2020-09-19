@@ -712,8 +712,6 @@ typedef struct {
     ULONG BytesPerSector;
 } FILE_FS_SIZE_INFORMATION;
 
-#define FILE_DEVICE_DISK_FILE_SYSTEM 0x00000008
-
 #define FILE_DEVICE_IS_MOUNTED 0x00000020
 
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
