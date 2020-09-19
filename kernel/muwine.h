@@ -762,10 +762,10 @@ NTSTATUS NtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE 
                                PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
                                PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
                                ULONG OutputBufferLength);
-NTSTATUS NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
-                         PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
-                         PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
-                         ULONG OutputBufferLength);
+NTSTATUS user_NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                              PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                              PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                              ULONG OutputBufferLength);
 NTSTATUS NtSetVolumeInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr, ULONG len,
                                     FILE_INFORMATION_CLASS FileInformationClass);
 NTSTATUS NtLockFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,

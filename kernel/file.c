@@ -760,10 +760,10 @@ NTSTATUS NtDeviceIoControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE 
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
-                         PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
-                         PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
-                         ULONG OutputBufferLength) {
+static NTSTATUS NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                                PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                                PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                                ULONG OutputBufferLength) {
     printk(KERN_INFO "NtFsControlFile(%lx, %lx, %px, %px, %px, %x, %px, %x, %px, %x): stub\n",
            (uintptr_t)FileHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
            IoControlCode, InputBuffer, InputBufferLength, OutputBuffer,
@@ -772,6 +772,69 @@ NTSTATUS NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRou
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS user_NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                              PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                              PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                              ULONG OutputBufferLength) {
+    NTSTATUS Status;
+    IO_STATUS_BLOCK iosb;
+    void* inbuf = NULL;
+    void* outbuf = NULL;
+
+    if ((uintptr_t)FileHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if ((uintptr_t)Event & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (!IoStatusBlock)
+        return STATUS_INVALID_PARAMETER;
+
+    if (InputBufferLength > 0) {
+        if (!InputBuffer)
+            return STATUS_INVALID_PARAMETER;
+
+        inbuf = kmalloc(InputBufferLength, GFP_KERNEL);
+        if (!inbuf)
+            return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    if (OutputBufferLength > 0) {
+        if (!OutputBuffer) {
+            if (inbuf)
+                kfree(inbuf);
+
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        outbuf = kmalloc(OutputBufferLength, GFP_KERNEL);
+        if (!outbuf)  {
+            if (inbuf)
+                kfree(inbuf);
+
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+
+    Status = NtFsControlFile(FileHandle, Event, ApcRoutine, ApcContext, &iosb,  IoControlCode,
+                             inbuf, InputBufferLength, outbuf, OutputBufferLength);
+
+    if (inbuf)
+        kfree(inbuf);
+
+    if (outbuf) {
+        if (copy_to_user(OutputBuffer, outbuf, OutputBufferLength) != 0)
+            Status = STATUS_ACCESS_VIOLATION;
+
+        kfree(outbuf);
+    }
+
+    if (copy_to_user(IoStatusBlock, &iosb, sizeof(IO_STATUS_BLOCK)) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtSetVolumeInformationFile(HANDLE hFile, PIO_STATUS_BLOCK io, PVOID ptr, ULONG len,

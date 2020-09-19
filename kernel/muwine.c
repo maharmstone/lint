@@ -50,7 +50,7 @@ static struct muwine_func funcs[] = {
     { user_NtQueryVolumeInformationFile, 5 },
     { user_NtFreeVirtualMemory, 4 },
     { NtDeviceIoControlFile, 10 },
-    { NtFsControlFile, 10 },
+    { user_NtFsControlFile, 10 },
     { NtSetVolumeInformationFile, 5 },
     { NtLockFile, 10 },
     { NtQueryQuotaInformationFile, 9 },
