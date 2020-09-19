@@ -7,6 +7,7 @@
 #include "reg.h"
 #include "sec.h"
 #include "proc.h"
+#include "file.h"
 
 #define REG_FLUSH_INTERVAL 30 // seconds
 

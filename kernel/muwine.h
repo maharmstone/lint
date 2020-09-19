@@ -440,94 +440,6 @@ NTSTATUS access_check_object(object_header* obj, ACCESS_MASK desired, ACCESS_MAS
 void dump_sd(SECURITY_DESCRIPTOR_RELATIVE* sd);
 
 // file.c
-#define FILE_SUPERSEDE                    0x00000000
-#define FILE_OPEN                         0x00000001
-#define FILE_CREATE                       0x00000002
-#define FILE_OPEN_IF                      0x00000003
-#define FILE_OVERWRITE                    0x00000004
-#define FILE_OVERWRITE_IF                 0x00000005
-
-#define FILE_READ_DATA                    0x0001
-#define FILE_LIST_DIRECTORY               0x0001
-#define FILE_WRITE_DATA                   0x0002
-#define FILE_ADD_FILE                     0x0002
-#define FILE_APPEND_DATA                  0x0004
-#define FILE_ADD_SUBDIRECTORY             0x0004
-#define FILE_CREATE_PIPE_INSTANCE         0x0004
-#define FILE_READ_EA                      0x0008
-#define FILE_WRITE_EA                     0x0010
-#define FILE_EXECUTE                      0x0020
-#define FILE_TRAVERSE                     0x0020
-#define FILE_DELETE_CHILD                 0x0040
-#define FILE_READ_ATTRIBUTES              0x0080
-#define FILE_WRITE_ATTRIBUTES             0x0100
-
-// FIXME - these should all have SYNCHRONIZE as well
-#define FILE_GENERIC_READ FILE_READ_DATA | FILE_READ_EA | FILE_READ_ATTRIBUTES | \
-                          READ_CONTROL
-#define FILE_GENERIC_WRITE FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_EA | \
-                           FILE_WRITE_ATTRIBUTES | READ_CONTROL
-#define FILE_GENERIC_EXECUTE FILE_EXECUTE | FILE_READ_ATTRIBUTES | READ_CONTROL
-#define FILE_ALL_ACCESS FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | \
-                        FILE_READ_EA | FILE_WRITE_EA | FILE_EXECUTE | \
-                        FILE_DELETE_CHILD | FILE_READ_ATTRIBUTES | \
-                        FILE_WRITE_ATTRIBUTES | DELETE | READ_CONTROL | \
-                        WRITE_DAC | WRITE_OWNER
-
-#define FILE_DIRECTORY_FILE               0x00000001
-#define FILE_WRITE_THROUGH                0x00000002
-#define FILE_SEQUENTIAL_ONLY              0x00000004
-#define FILE_NO_INTERMEDIATE_BUFFERING    0x00000008
-#define FILE_SYNCHRONOUS_IO_ALERT         0x00000010
-#define FILE_SYNCHRONOUS_IO_NONALERT      0x00000020
-#define FILE_NON_DIRECTORY_FILE           0x00000040
-#define FILE_CREATE_TREE_CONNECTION       0x00000080
-#define FILE_COMPLETE_IF_OPLOCKED         0x00000100
-#define FILE_NO_EA_KNOWLEDGE              0x00000200
-#define FILE_OPEN_REMOTE_INSTANCE         0x00000400
-#define FILE_RANDOM_ACCESS                0x00000800
-#define FILE_DELETE_ON_CLOSE              0x00001000
-#define FILE_OPEN_BY_FILE_ID              0x00002000
-#define FILE_OPEN_FOR_BACKUP_INTENT       0x00004000
-#define FILE_NO_COMPRESSION               0x00008000
-#define FILE_OPEN_REQUIRING_OPLOCK        0x00010000
-#define FILE_DISALLOW_EXCLUSIVE           0x00020000
-#define FILE_RESERVE_OPFILTER             0x00100000
-#define FILE_OPEN_REPARSE_POINT           0x00200000
-#define FILE_OPEN_NO_RECALL               0x00400000
-#define FILE_OPEN_FOR_FREE_SPACE_QUERY    0x00800000
-
-#define FILE_USE_FILE_POINTER_POSITION    0xfffffffe
-
-#define FILE_ATTRIBUTE_READONLY             0x00000001
-#define FILE_ATTRIBUTE_HIDDEN               0x00000002
-#define FILE_ATTRIBUTE_SYSTEM               0x00000004
-#define FILE_ATTRIBUTE_DIRECTORY            0x00000010
-#define FILE_ATTRIBUTE_ARCHIVE              0x00000020
-#define FILE_ATTRIBUTE_DEVICE               0x00000040
-#define FILE_ATTRIBUTE_NORMAL               0x00000080
-#define FILE_ATTRIBUTE_TEMPORARY            0x00000100
-#define FILE_ATTRIBUTE_SPARSE_FILE          0x00000200
-#define FILE_ATTRIBUTE_REPARSE_POINT        0x00000400
-#define FILE_ATTRIBUTE_COMPRESSED           0x00000800
-#define FILE_ATTRIBUTE_OFFLINE              0x00001000
-#define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED  0x00002000
-#define FILE_ATTRIBUTE_ENCRYPTED            0x00004000
-#define FILE_ATTRIBUTE_VIRTUAL              0x00010000
-
-#define FILE_SUPERSEDED         0x00000000
-#define FILE_OPENED             0x00000001
-#define FILE_CREATED            0x00000002
-#define FILE_OVERWRITTEN        0x00000003
-#define FILE_EXISTS             0x00000004
-#define FILE_DOES_NOT_EXIST     0x00000005
-
-#define FILE_BYTE_ALIGNMENT             0x00000000
-
-#define FILE_SHARE_READ         0x00000001
-#define FILE_SHARE_WRITE        0x00000002
-#define FILE_SHARE_DELETE       0x00000004
-
 typedef enum {
     FileDirectoryInformation = 1,
     FileFullDirectoryInformation,
@@ -587,105 +499,6 @@ typedef enum {
     FileMaximumInformation
 } FILE_INFORMATION_CLASS;
 
-typedef struct {
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    ULONG FileAttributes;
-} FILE_BASIC_INFORMATION;
-
-typedef struct {
-    LARGE_INTEGER AllocationSize;
-    LARGE_INTEGER EndOfFile;
-    ULONG NumberOfLinks;
-    BOOLEAN DeletePending;
-    BOOLEAN Directory;
-} FILE_STANDARD_INFORMATION;
-
-typedef struct {
-    ULONG FileNameLength;
-    WCHAR FileName[1];
-} FILE_NAME_INFORMATION;
-
-typedef struct {
-    LARGE_INTEGER IndexNumber;
-} FILE_INTERNAL_INFORMATION;
-
-typedef struct {
-    ULONG EaSize;
-} FILE_EA_INFORMATION;
-
-typedef struct {
-    LARGE_INTEGER CurrentByteOffset;
-} FILE_POSITION_INFORMATION;
-
-typedef struct {
-    BOOLEAN ReplaceIfExists;
-    HANDLE RootDirectory;
-    ULONG FileNameLength;
-    WCHAR FileName[1];
-} FILE_RENAME_INFORMATION;
-
-typedef struct {
-    LARGE_INTEGER EndOfFile;
-} FILE_END_OF_FILE_INFORMATION;
-
-typedef struct {
-    ACCESS_MASK AccessFlags;
-} FILE_ACCESS_INFORMATION;
-
-typedef struct {
-    ULONG Mode;
-} FILE_MODE_INFORMATION;
-
-typedef struct {
-    ULONG AlignmentRequirement;
-} FILE_ALIGNMENT_INFORMATION;
-
-typedef struct {
-    FILE_BASIC_INFORMATION BasicInformation;
-    FILE_STANDARD_INFORMATION StandardInformation;
-    FILE_INTERNAL_INFORMATION InternalInformation;
-    FILE_EA_INFORMATION EaInformation;
-    FILE_ACCESS_INFORMATION AccessInformation;
-    FILE_POSITION_INFORMATION PositionInformation;
-    FILE_MODE_INFORMATION ModeInformation;
-    FILE_ALIGNMENT_INFORMATION AlignmentInformation;
-    FILE_NAME_INFORMATION NameInformation;
-} FILE_ALL_INFORMATION;
-
-typedef struct {
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    LARGE_INTEGER AllocationSize;
-    LARGE_INTEGER EndOfFile;
-    ULONG FileAttributes;
-} FILE_NETWORK_OPEN_INFORMATION;
-
-typedef struct {
-    BOOLEAN DeleteFile;
-} FILE_DISPOSITION_INFORMATION;
-
-typedef struct {
-    ULONG NextEntryOffset;
-    ULONG FileIndex;
-    LARGE_INTEGER CreationTime;
-    LARGE_INTEGER LastAccessTime;
-    LARGE_INTEGER LastWriteTime;
-    LARGE_INTEGER ChangeTime;
-    LARGE_INTEGER EndOfFile;
-    LARGE_INTEGER AllocationSize;
-    ULONG FileAttributes;
-    ULONG FileNameLength;
-    ULONG EaSize;
-    CCHAR ShortNameLength;
-    WCHAR ShortName[12];
-    WCHAR FileName[1];
-} FILE_BOTH_DIR_INFORMATION;
-
 typedef enum {
     FileFsVolumeInformation = 1,
     FileFsLabelInformation,
@@ -700,19 +513,8 @@ typedef enum {
     FileFsMaximumInformation
 } FS_INFORMATION_CLASS;
 
-typedef struct {
-    DEVICE_TYPE DeviceType;
-    ULONG Characteristics;
-} FILE_FS_DEVICE_INFORMATION;
-
-typedef struct {
-    LARGE_INTEGER TotalAllocationUnits;
-    LARGE_INTEGER AvailableAllocationUnits;
-    ULONG SectorsPerAllocationUnit;
-    ULONG BytesPerSector;
-} FILE_FS_SIZE_INFORMATION;
-
-#define FILE_DEVICE_IS_MOUNTED 0x00000020
+typedef struct _FILE_BASIC_INFORMATION FILE_BASIC_INFORMATION;
+typedef struct _FILE_NETWORK_OPEN_INFORMATION FILE_NETWORK_OPEN_INFORMATION;
 
 NTSTATUS NtCreateFile(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
                       PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
