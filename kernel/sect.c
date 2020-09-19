@@ -95,7 +95,7 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     NTSTATUS Status;
     IO_STATUS_BLOCK iosb;
     LARGE_INTEGER off;
-    IMAGE_DOS_HEADER dos_header;
+    IMAGE_DOS_HEADER2 dos_header;
     IMAGE_NT_HEADERS nt_header;
     uint32_t image_size, header_size;
     uint8_t* buf;
@@ -107,6 +107,9 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     section_object* sect;
     char* sect_name;
 
+    static const char builtin_signature[] = "Wine builtin DLL";
+    static const char fakedll_signature[] = "Wine placeholder DLL";
+
     // FIXME - check error codes are right
 
     if (file_size < sizeof(IMAGE_DOS_HEADER))
@@ -114,21 +117,21 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
 
     off.QuadPart = 0;
 
-    Status = NtReadFile(file_handle, NULL, NULL, NULL, &iosb, &dos_header, sizeof(IMAGE_DOS_HEADER),
+    Status = NtReadFile(file_handle, NULL, NULL, NULL, &iosb, &dos_header, sizeof(IMAGE_DOS_HEADER2),
                         &off, NULL);
     if (!NT_SUCCESS(Status))
         return Status;
 
-    if (iosb.Information < sizeof(IMAGE_DOS_HEADER))
+    if (iosb.Information < sizeof(IMAGE_DOS_HEADER2))
         return STATUS_INVALID_PARAMETER;
 
-    if (dos_header.e_magic != IMAGE_DOS_SIGNATURE)
+    if (dos_header.header.e_magic != IMAGE_DOS_SIGNATURE)
         return STATUS_INVALID_PARAMETER;
 
-    if (file_size < dos_header.e_lfanew + sizeof(IMAGE_NT_HEADERS))
+    if (file_size < dos_header.header.e_lfanew + sizeof(IMAGE_NT_HEADERS))
         return STATUS_INVALID_PARAMETER;
 
-    off.QuadPart = dos_header.e_lfanew;
+    off.QuadPart = dos_header.header.e_lfanew;
 
     Status = NtReadFile(file_handle, NULL, NULL, NULL, &iosb, &nt_header, sizeof(IMAGE_NT_HEADERS),
                         &off, NULL);
@@ -167,7 +170,7 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
         return Status;
     }
 
-    sections = (IMAGE_SECTION_HEADER*)(buf + dos_header.e_lfanew +
+    sections = (IMAGE_SECTION_HEADER*)(buf + dos_header.header.e_lfanew +
                 offsetof(IMAGE_NT_HEADERS, OptionalHeader32) +
                 nt_header.FileHeader.SizeOfOptionalHeader);
 
@@ -301,6 +304,11 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     sect->image_info.Machine = nt_header.FileHeader.Machine;
 
     // FIXME - CLR and ImageFlags
+
+    if (!memcmp(&dos_header.buffer, builtin_signature, sizeof(builtin_signature)))
+        sect->image_info.ImageFlags |= IMAGE_FLAGS_WineBuiltin;
+    else if (!memcmp(&dos_header.buffer, fakedll_signature, sizeof(fakedll_signature)))
+        sect->image_info.ImageFlags |= IMAGE_FLAGS_WineFakeDll;
 
     vfree(buf);
 

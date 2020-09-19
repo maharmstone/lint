@@ -6,6 +6,12 @@
 #define IMAGE_NT_OPTIONAL_HDR32_MAGIC   0x10b
 #define IMAGE_NT_OPTIONAL_HDR64_MAGIC   0x20b
 
+#define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE   0x0040
+
+// Wine extensions
+#define IMAGE_FLAGS_WineBuiltin               0x40
+#define IMAGE_FLAGS_WineFakeDll               0x80
+
 #define SECTION_QUERY           0x0001
 #define SECTION_MAP_WRITE       0x0002
 #define SECTION_MAP_READ        0x0004
@@ -137,6 +143,11 @@ typedef struct {
     uint16_t e_res2[10];
     uint32_t e_lfanew;
 } IMAGE_DOS_HEADER;
+
+typedef struct {
+    IMAGE_DOS_HEADER header;
+    uint8_t buffer[32];
+} IMAGE_DOS_HEADER2;
 
 typedef struct {
     uint16_t Machine;
