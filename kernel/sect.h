@@ -33,6 +33,40 @@ typedef struct {
 } IMAGE_SECTION_HEADER;
 
 typedef struct {
+    PVOID TransferAddress;
+    ULONG ZeroBits;
+    SIZE_T MaximumStackSize;
+    SIZE_T CommittedStackSize;
+    ULONG SubSystemType;
+    union {
+        struct {
+            USHORT SubSystemMinorVersion;
+            USHORT SubSystemMajorVersion;
+        };
+        ULONG SubSystemVersion;
+    };
+    ULONG GpValue;
+    USHORT ImageCharacteristics;
+    USHORT DllCharacteristics;
+    USHORT Machine;
+    BOOLEAN ImageContainsCode;
+    union {
+        UCHAR ImageFlags;
+        struct {
+            UCHAR ComPlusNativeReady : 1;
+            UCHAR ComPlusILOnly : 1;
+            UCHAR ImageDynamicallyRelocated : 1;
+            UCHAR ImageMappedFlat : 1;
+            UCHAR BaseBelow4gb : 1;
+            UCHAR Reserved : 3;
+        };
+    };
+    ULONG LoaderFlags;
+    ULONG ImageFileSize;
+    ULONG CheckSum;
+} SECTION_IMAGE_INFORMATION;
+
+typedef struct {
     object_header header;
     uint64_t max_size;
     ULONG page_protection;
@@ -41,6 +75,7 @@ typedef struct {
     struct file* anon_file;
     void* preferred_base;
     bool fixed_base;
+    SECTION_IMAGE_INFORMATION image_info;
     unsigned int num_sections;
     IMAGE_SECTION_HEADER sections[1];
 } section_object;

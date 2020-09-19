@@ -246,6 +246,62 @@ static NTSTATUS load_image(HANDLE file_handle, uint64_t file_size, struct file**
     sect->num_sections = nt_header.FileHeader.NumberOfSections;
     memcpy(sect->sections, sections, sect->num_sections * sizeof(IMAGE_SECTION_HEADER));
 
+    sect->image_info.ZeroBits = 0;
+
+    if (nt_header.OptionalHeader32.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
+        sect->image_info.TransferAddress = (void*)(uintptr_t)(nt_header.OptionalHeader64.ImageBase + nt_header.OptionalHeader64.AddressOfEntryPoint);
+        sect->image_info.MaximumStackSize = nt_header.OptionalHeader64.SizeOfStackReserve;
+        sect->image_info.CommittedStackSize = nt_header.OptionalHeader64.SizeOfStackCommit;
+        sect->image_info.SubSystemType = nt_header.OptionalHeader64.Subsystem;
+        sect->image_info.SubSystemMinorVersion = nt_header.OptionalHeader64.MinorSubsystemVersion;
+        sect->image_info.SubSystemMajorVersion = nt_header.OptionalHeader64.MajorSubsystemVersion;
+        sect->image_info.DllCharacteristics = nt_header.OptionalHeader64.DllCharacteristics;
+        sect->image_info.ImageContainsCode = nt_header.OptionalHeader64.SizeOfCode != 0 ||
+                                             nt_header.OptionalHeader64.AddressOfEntryPoint != 0 ||
+                                             nt_header.OptionalHeader64.SectionAlignment & (PAGE_SIZE - 1);
+        sect->image_info.CheckSum = nt_header.OptionalHeader64.CheckSum;
+        sect->image_info.ImageFileSize = nt_header.OptionalHeader64.SizeOfImage;
+        sect->image_info.LoaderFlags = nt_header.OptionalHeader64.LoaderFlags;
+
+        if (nt_header.OptionalHeader64.SectionAlignment & (PAGE_SIZE - 1))
+            sect->image_info.ImageMappedFlat = 1;
+
+        // FIXME - not if CLR
+        if ((nt_header.OptionalHeader64.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) &&
+            sect->image_info.ImageContainsCode) {
+            sect->image_info.ImageDynamicallyRelocated = 1;
+        }
+    } else {
+        sect->image_info.TransferAddress = (void*)(uintptr_t)(nt_header.OptionalHeader32.ImageBase + nt_header.OptionalHeader32.AddressOfEntryPoint);
+        sect->image_info.MaximumStackSize = nt_header.OptionalHeader32.SizeOfStackReserve;
+        sect->image_info.CommittedStackSize = nt_header.OptionalHeader32.SizeOfStackCommit;
+        sect->image_info.SubSystemType = nt_header.OptionalHeader32.Subsystem;
+        sect->image_info.SubSystemMinorVersion = nt_header.OptionalHeader32.MinorSubsystemVersion;
+        sect->image_info.SubSystemMajorVersion = nt_header.OptionalHeader32.MajorSubsystemVersion;
+        sect->image_info.DllCharacteristics = nt_header.OptionalHeader32.DllCharacteristics;
+        sect->image_info.ImageContainsCode = nt_header.OptionalHeader32.SizeOfCode != 0 ||
+                                             nt_header.OptionalHeader32.AddressOfEntryPoint != 0 ||
+                                             nt_header.OptionalHeader32.SectionAlignment & (PAGE_SIZE - 1);
+        sect->image_info.CheckSum = nt_header.OptionalHeader32.CheckSum;
+        sect->image_info.ImageFileSize = nt_header.OptionalHeader32.SizeOfImage;
+        sect->image_info.LoaderFlags = nt_header.OptionalHeader32.LoaderFlags;
+
+        if (nt_header.OptionalHeader32.SectionAlignment & (PAGE_SIZE - 1))
+            sect->image_info.ImageMappedFlat = 1;
+
+        // FIXME - not if CLR
+        if ((nt_header.OptionalHeader32.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) &&
+            sect->image_info.ImageContainsCode) {
+            sect->image_info.ImageDynamicallyRelocated = 1;
+        }
+    }
+
+    sect->image_info.GpValue = 0;
+    sect->image_info.ImageCharacteristics = nt_header.FileHeader.Characteristics;
+    sect->image_info.Machine = nt_header.FileHeader.Machine;
+
+    // FIXME - CLR and ImageFlags
+
     vfree(buf);
 
     *obj = sect;
@@ -898,8 +954,6 @@ static NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS I
                 goto end;
             }
 
-            printk(KERN_INFO "NtQuerySection: FIXME - SectionBasicInformation\n");
-
             sbi->BaseAddress = NULL;
             sbi->AllocationAttributes = sect->alloc_attributes;
             sbi->MaximumSize.QuadPart = sect->max_size;
@@ -911,10 +965,25 @@ static NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS I
             break;
         }
 
-        case SectionImageInformation:
-            printk(KERN_INFO "NtQuerySection: FIXME - SectionImageInformation\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+        case SectionImageInformation: {
+            if (InformationBufferSize < sizeof(SECTION_IMAGE_INFORMATION)) {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                goto end;
+            }
+
+            if (!(sect->alloc_attributes & SEC_IMAGE)) {
+                Status = STATUS_SECTION_NOT_IMAGE;
+                goto end;
+            }
+
+            memcpy(InformationBuffer, &sect->image_info, sizeof(SECTION_IMAGE_INFORMATION));
+
+            if (ResultLength)
+                *ResultLength = sizeof(SECTION_IMAGE_INFORMATION);
+
+            Status = STATUS_SUCCESS;
             break;
+        }
 
         default:
             printk(KERN_INFO "NtQuerySection: unhandled class %u\n", InformationClass);
@@ -946,7 +1015,7 @@ NTSTATUS user_NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS Inf
         buf = NULL;
 
     Status = NtQuerySection(SectionHandle, InformationClass, buf, InformationBufferSize,
-                            ResultLength ? &reslen : NULL);
+                            &reslen);
 
     if (buf) {
         if (copy_to_user(InformationBuffer, buf, min(InformationBufferSize, reslen)) != 0)
