@@ -313,6 +313,8 @@ NTSTATUS NtQueryInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBloc
     Status = obj->dev->query_information(obj, access, IoStatusBlock, FileInformation,
                                          Length, FileInformationClass);
 
+    IoStatusBlock->Status = Status;
+
 end:
     dec_obj_refcount(&obj->header);
 
