@@ -933,8 +933,8 @@ NTSTATUS user_NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, PO
 }
 
 static NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
-                               PVOID InformationBuffer, ULONG InformationBufferSize,
-                               PULONG ResultLength) {
+                               PVOID InformationBuffer, SIZE_T InformationBufferSize,
+                               PSIZE_T ResultLength) {
     NTSTATUS Status;
     ACCESS_MASK access;
     section_object* sect;
@@ -1006,10 +1006,10 @@ end:
 }
 
 NTSTATUS user_NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
-                             PVOID InformationBuffer, ULONG InformationBufferSize,
-                             PULONG ResultLength) {
+                             PVOID InformationBuffer, SIZE_T InformationBufferSize,
+                             PSIZE_T ResultLength) {
     NTSTATUS Status;
-    ULONG reslen = 0;
+    SIZE_T reslen = 0;
     void* buf;
 
     if ((uintptr_t)SectionHandle & KERNEL_HANDLE_MASK)

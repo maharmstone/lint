@@ -956,8 +956,8 @@ NTSTATUS user_NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
 NTSTATUS NtExtendSection(HANDLE SectionHandle, PLARGE_INTEGER NewSectionSize);
 NTSTATUS user_NtOpenSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes);
 NTSTATUS user_NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
-                             PVOID InformationBuffer, ULONG InformationBufferSize,
-                             PULONG ResultLength);
+                             PVOID InformationBuffer, SIZE_T InformationBufferSize,
+                             PSIZE_T ResultLength);
 NTSTATUS user_NtProtectVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, SIZE_T* NumberOfBytesToProtect,
                                      ULONG NewAccessProtection, PULONG OldAccessProtection);
 NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits,
