@@ -884,11 +884,32 @@ static NTSTATUS NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS I
         goto end;
     }
 
+    if (!(access & SECTION_QUERY)) {
+        Status = STATUS_ACCESS_VIOLATION;
+        goto end;
+    }
+
     switch (InformationClass) {
-        case SectionBasicInformation:
+        case SectionBasicInformation: {
+            SECTION_BASIC_INFORMATION* sbi = (SECTION_BASIC_INFORMATION*)InformationBuffer;
+
+            if (InformationBufferSize < sizeof(SECTION_BASIC_INFORMATION)) {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                goto end;
+            }
+
             printk(KERN_INFO "NtQuerySection: FIXME - SectionBasicInformation\n");
-            Status = STATUS_NOT_IMPLEMENTED;
+
+            sbi->BaseAddress = NULL;
+            sbi->AllocationAttributes = sect->alloc_attributes;
+            sbi->MaximumSize.QuadPart = sect->max_size;
+
+            if (ResultLength)
+                *ResultLength = sizeof(SECTION_BASIC_INFORMATION);
+
+            Status = STATUS_SUCCESS;
             break;
+        }
 
         case SectionImageInformation:
             printk(KERN_INFO "NtQuerySection: FIXME - SectionImageInformation\n");
@@ -925,7 +946,7 @@ NTSTATUS user_NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS Inf
         buf = NULL;
 
     Status = NtQuerySection(SectionHandle, InformationClass, buf, InformationBufferSize,
-                            &reslen);
+                            ResultLength ? &reslen : NULL);
 
     if (buf) {
         if (copy_to_user(InformationBuffer, buf, min(InformationBufferSize, reslen)) != 0)

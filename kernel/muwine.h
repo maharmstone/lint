@@ -30,6 +30,7 @@ struct muwine_func {
 #define STATUS_NO_MORE_ENTRIES              0x8000001a
 #define STATUS_NOT_IMPLEMENTED              0xc0000002
 #define STATUS_INVALID_INFO_CLASS           0xc0000003
+#define STATUS_INFO_LENGTH_MISMATCH         0xc0000004
 #define STATUS_ACCESS_VIOLATION             0xc0000005
 #define STATUS_INVALID_HANDLE               0xc0000008
 #define STATUS_INVALID_PARAMETER            0xc000000d

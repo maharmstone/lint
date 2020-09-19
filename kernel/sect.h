@@ -338,3 +338,9 @@ typedef struct {
     LARGE_INTEGER TimeZoneBiasEffectiveEnd;
     XSTATE_CONFIGURATION XState;
 } KSHARED_USER_DATA;
+
+typedef struct {
+    PVOID BaseAddress;
+    ULONG AllocationAttributes;
+    LARGE_INTEGER MaximumSize;
+} SECTION_BASIC_INFORMATION;
