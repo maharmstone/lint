@@ -3362,13 +3362,41 @@ static NTSTATUS NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE Cl
 
     // FIXME - check SD is valid(?)
 
-    tok = (token_object*)get_object_from_handle(ClientToken, &access);
-    if (!tok)
-        return STATUS_INVALID_HANDLE;
+    if (ClientToken == PSEUDOHANDLE_PROCESS_TOKEN) {
+        process_object* proc;
 
-    if (tok->header.type != token_type) {
-        dec_obj_refcount(&tok->header);
-        return STATUS_INVALID_HANDLE;
+        proc = muwine_current_process_object();
+        if (!proc)
+            return STATUS_INTERNAL_ERROR;
+
+        if (!proc->token) {
+            dec_obj_refcount(&proc->header.h);
+            return STATUS_INVALID_HANDLE;
+        }
+
+        tok = proc->token;
+        inc_obj_refcount(&tok->header);
+
+        dec_obj_refcount(&proc->header.h);
+
+        access = TOKEN_ALL_ACCESS;
+    } else if (ClientToken == PSEUDOHANDLE_THREAD_TOKEN) {
+        // FIXME
+    } else if (ClientToken == PSEUDOHANDLE_EFFECTIVE_TOKEN) {
+        tok = muwine_get_current_token();
+        if (!tok)
+            return STATUS_INVALID_HANDLE;
+
+        access = TOKEN_ALL_ACCESS;
+    } else {
+        tok = (token_object*)get_object_from_handle(ClientToken, &access);
+        if (!tok)
+            return STATUS_INVALID_HANDLE;
+
+        if (tok->header.type != token_type) {
+            dec_obj_refcount(&tok->header);
+            return STATUS_INVALID_HANDLE;
+        }
     }
 
     if (!(access & TOKEN_QUERY)) {
@@ -3635,6 +3663,11 @@ NTSTATUS user_NtAccessCheck(PSECURITY_DESCRIPTOR SecurityDescriptor, HANDLE Clie
 
     if ((uintptr_t)ClientToken & KERNEL_HANDLE_MASK)
         return STATUS_INVALID_HANDLE;
+
+    if ((uintptr_t)ClientToken & KERNEL_HANDLE_MASK && ClientToken != PSEUDOHANDLE_PROCESS_TOKEN &&
+        ClientToken != PSEUDOHANDLE_THREAD_TOKEN && ClientToken != PSEUDOHANDLE_EFFECTIVE_TOKEN) {
+        return STATUS_INVALID_HANDLE;
+    }
 
     if (GenericMapping && copy_from_user(&mapping, GenericMapping, sizeof(GENERIC_MAPPING)) != 0)
         return STATUS_ACCESS_VIOLATION;
