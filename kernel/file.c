@@ -553,6 +553,8 @@ NTSTATUS NtSetInformationFile(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock,
     } else
         Status = obj->dev->set_information(obj, access, IoStatusBlock, FileInformation, Length, FileInformationClass);
 
+    IoStatusBlock->Status = Status;
+
 end:
     dec_obj_refcount(&obj->header);
 

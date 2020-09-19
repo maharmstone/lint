@@ -148,7 +148,7 @@ typedef struct {
     union {
         NTSTATUS Status;
         PVOID Pointer;
-    } DUMMYUNIONNAME;
+    };
 
     uintptr_t Information;
 } IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
