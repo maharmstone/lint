@@ -1228,7 +1228,7 @@ NTSTATUS NtAllocateVirtualMemory(HANDLE ProcessHandle, PVOID* BaseAddress, ULONG
         goto end;
     }
 
-    if (AllocationType & MEM_RESERVE && !(AllocationType & MEM_COMMIT))
+    if ((AllocationType & MEM_RESERVE && !(AllocationType & MEM_COMMIT)) || Protect & NT_PAGE_NOACCESS)
         prot = PROT_NONE;
     else if (Protect & NT_PAGE_EXECUTE_READ || Protect & NT_PAGE_EXECUTE_WRITECOPY)
         prot = PROT_EXEC | PROT_READ;
