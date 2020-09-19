@@ -1664,6 +1664,20 @@ static NTSTATUS unixfs_query_volume_info(file_object* obj, PIO_STATUS_BLOCK IoSt
     }
 }
 
+static NTSTATUS unixfs_fsctl(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                             PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                             PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                             ULONG OutputBufferLength) {
+    printk(KERN_INFO "unixfs_fsctl(%px, %lx, %px, %px, %px, %x, %px, %x, %px, %x): stub\n",
+           obj, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
+           IoControlCode, InputBuffer, InputBufferLength, OutputBuffer,
+           OutputBufferLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
 static struct file* unixfs_get_filp(file_object* obj) {
     unixfs_file_object* ufo = (unixfs_file_object*)obj;
 
@@ -1723,6 +1737,7 @@ NTSTATUS muwine_init_unixroot(void) {
     dev->set_information = unixfs_set_information;
     dev->query_directory = unixfs_query_directory;
     dev->query_volume_information = unixfs_query_volume_info;
+    dev->fsctl = unixfs_fsctl;
     dev->get_filp = unixfs_get_filp;
 
     Status = muwine_add_entry_in_hierarchy(&dev->header.path, &dev->header, true, true, NULL);

@@ -764,14 +764,33 @@ static NTSTATUS NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE
                                 PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
                                 PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
                                 ULONG OutputBufferLength) {
-    printk(KERN_INFO "NtFsControlFile(%lx, %lx, %px, %px, %px, %x, %px, %x, %px, %x): stub\n",
-           (uintptr_t)FileHandle, (uintptr_t)Event, ApcRoutine, ApcContext, IoStatusBlock,
-           IoControlCode, InputBuffer, InputBufferLength, OutputBuffer,
-           OutputBufferLength);
+    NTSTATUS Status;
+    ACCESS_MASK access;
+    file_object* obj = (file_object*)get_object_from_handle(FileHandle, &access);
 
-    // FIXME
+    if (!obj)
+        return STATUS_INVALID_HANDLE;
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (obj->header.type != file_type) {
+        Status = STATUS_INVALID_HANDLE;
+        goto end;
+    }
+
+    if (!obj->dev->fsctl) {
+        Status = STATUS_NOT_IMPLEMENTED;
+        goto end;
+    }
+
+    Status = obj->dev->fsctl(obj, Event, ApcRoutine, ApcContext, IoStatusBlock,
+                             IoControlCode, InputBuffer, InputBufferLength,
+                             OutputBuffer, OutputBufferLength);
+
+end:
+    dec_obj_refcount(&obj->header);
+
+    IoStatusBlock->Status = Status;
+
+    return Status;
 }
 
 NTSTATUS user_NtFsControlFile(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,

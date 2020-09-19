@@ -828,7 +828,6 @@ typedef struct {
 
 NTSTATUS muwine_init_unixroot(void);
 
-// obj.c
 typedef NTSTATUS (*muwine_create)(device* dev, PHANDLE FileHandle, ACCESS_MASK DesiredAccess, const UNICODE_STRING* us,
                                   PIO_STATUS_BLOCK IoStatusBlock, PLARGE_INTEGER AllocationSize, ULONG FileAttributes,
                                   ULONG ShareAccess, ULONG CreateDisposition, ULONG CreateOptions,
@@ -850,6 +849,10 @@ typedef NTSTATUS (*muwine_query_directory)(file_object* obj, HANDLE Event, PIO_A
                                            PUNICODE_STRING FileMask, BOOLEAN RestartScan);
 typedef NTSTATUS (*muwine_query_volume_information)(file_object* obj, PIO_STATUS_BLOCK IoStatusBlock, PVOID FsInformation,
                                                       ULONG Length, FS_INFORMATION_CLASS FsInformationClass);
+typedef NTSTATUS (*muwine_fsctl)(file_object* obj, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+                                 PVOID ApcContext, PIO_STATUS_BLOCK IoStatusBlock, ULONG IoControlCode,
+                                 PVOID InputBuffer, ULONG InputBufferLength, PVOID OutputBuffer,
+                                 ULONG OutputBufferLength);
 typedef struct file* (*muwine_get_filp)(file_object* obj);
 
 extern type_object* dir_type;
@@ -863,12 +866,14 @@ typedef struct _device {
     muwine_set_information set_information;
     muwine_query_directory query_directory;
     muwine_query_volume_information query_volume_information;
+    muwine_fsctl fsctl;
     muwine_get_filp get_filp;
 } device;
 
 typedef void (*muwine_close_object)(struct _object_header* obj);
 typedef void (*muwine_cleanup_object)(struct _object_header* obj);
 
+// obj.c
 typedef struct _GENERIC_MAPPING {
     ACCESS_MASK GenericRead;
     ACCESS_MASK GenericWrite;
