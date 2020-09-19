@@ -5,6 +5,7 @@
 #include "muwine.h"
 #include "sect.h"
 #include "proc.h"
+#include "file.h"
 
 static type_object* section_type = NULL;
 

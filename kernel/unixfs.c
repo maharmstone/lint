@@ -1,4 +1,5 @@
 #include "muwine.h"
+#include "file.h"
 #include <linux/namei.h>
 #include <linux/fs_struct.h>
 #include <linux/mount.h>

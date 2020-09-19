@@ -1,4 +1,5 @@
 #include "muwine.h"
+#include "file.h"
 
 extern type_object* device_type;
 extern type_object* file_type;
