@@ -2169,3 +2169,24 @@ NTSTATUS __stdcall NtResumeProcess(HANDLE ProcessHandle) {
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
+                                  PVOID InformationBuffer, ULONG InformationBufferSize,
+                                  PULONG ResultLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        5,
+        (uintptr_t)SectionHandle,
+        (uintptr_t)InformationClass,
+        (uintptr_t)InformationBuffer,
+        (uintptr_t)InformationBufferSize,
+        (uintptr_t)ResultLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYSECTION, args, ret);
+
+    return (NTSTATUS)ret;
+}

@@ -786,6 +786,13 @@ typedef struct {
 typedef void (__stdcall *PNTAPCFUNC)(ULONG_PTR, ULONG_PTR, ULONG_PTR);
 typedef void (__stdcall *PRTL_THREAD_START_ROUTINE)(void*);
 
+typedef enum {
+    SectionBasicInformation,
+    SectionImageInformation,
+    SectionRelocationInformation,
+    MaxSectionInfoClass
+} SECTION_INFORMATION_CLASS;
+
 #endif
 
 void close_muwine();
@@ -1034,6 +1041,9 @@ NTSTATUS __stdcall NtSetInformationProcess(HANDLE ProcessHandle,
 NTSTATUS __stdcall NtTerminateProcess(HANDLE ProcessHandle, NTSTATUS ExitStatus);
 NTSTATUS __stdcall NtSuspendProcess(HANDLE ProcessHandle);
 NTSTATUS __stdcall NtResumeProcess(HANDLE ProcessHandle);
+NTSTATUS __stdcall NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS InformationClass,
+                                  PVOID InformationBuffer, ULONG InformationBufferSize,
+                                  PULONG ResultLength);
 
 #ifdef __cplusplus
 }
