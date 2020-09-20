@@ -1317,3 +1317,43 @@ NTSTATUS muwine_init_objdir(void) {
 
     return STATUS_SUCCESS;
 }
+
+NTSTATUS NtMakeTemporaryObject(HANDLE Handle) {
+    printk(KERN_INFO "NtMakeTemporaryObject(%lx): stub\n", (uintptr_t)Handle);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
+                                  POBJECT_ATTRIBUTES ObjectAttributes) {
+    printk(KERN_INFO "NtOpenSymbolicLinkObject(%px, %x, %px): stub\n",
+           LinkHandle, DesiredAccess, ObjectAttributes);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
+                                BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
+                                PULONG Context, PULONG ReturnLength) {
+    printk(KERN_INFO "NtQueryDirectoryObject(%lx, %px, %x, %x, %x, %px, %px): stub\n",
+           (uintptr_t)DirectoryHandle, Buffer, Length, ReturnSingleEntry,
+           RestartScan, Context, ReturnLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+NTSTATUS NtQuerySymbolicLinkObject(HANDLE LinkHandle, PUNICODE_STRING LinkTarget,
+                                   PULONG ReturnedLength) {
+    printk(KERN_INFO "NtQuerySymbolcLinkObject(%lx, %px, %px): stub\n",
+           (uintptr_t)LinkHandle, LinkTarget, ReturnedLength);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

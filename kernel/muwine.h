@@ -671,6 +671,14 @@ size_t sd_length(SECURITY_DESCRIPTOR_RELATIVE* sd);
 SECURITY_DESCRIPTOR_RELATIVE* create_dir_root_sd(void);
 NTSTATUS muwine_open_object2(const POBJECT_ATTRIBUTES ObjectAttributes, object_header** obj,
                              UNICODE_STRING* ret_after, bool* ret_after_alloc, bool open_parent);
+NTSTATUS NtMakeTemporaryObject(HANDLE Handle);
+NTSTATUS NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
+                                  POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
+                                BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
+                                PULONG Context, PULONG ReturnLength);
+NTSTATUS NtQuerySymbolicLinkObject(HANDLE LinkHandle, PUNICODE_STRING LinkTarget,
+                                   PULONG ReturnedLength);
 
 static void __inline inc_obj_refcount(object_header* obj) {
     __sync_add_and_fetch(&obj->refcount, 1);
