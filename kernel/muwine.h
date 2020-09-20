@@ -642,6 +642,8 @@ typedef struct _type_object {
     uint32_t valid;
 } type_object;
 
+typedef struct _DIRECTORY_BASIC_INFORMATION *PDIRECTORY_BASIC_INFORMATION;
+
 void free_object(object_header* obj);
 type_object* muwine_add_object_type(const UNICODE_STRING* name, muwine_close_object close,
                                     muwine_cleanup_object cleanup, uint32_t generic_read,
@@ -674,7 +676,8 @@ NTSTATUS muwine_open_object2(const POBJECT_ATTRIBUTES ObjectAttributes, object_h
 NTSTATUS NtMakeTemporaryObject(HANDLE Handle);
 NTSTATUS NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
                                   POBJECT_ATTRIBUTES ObjectAttributes);
-NTSTATUS NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
+NTSTATUS NtQueryDirectoryObject(HANDLE DirectoryHandle,
+                                PDIRECTORY_BASIC_INFORMATION Buffer, ULONG Length,
                                 BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
                                 PULONG Context, PULONG ReturnLength);
 NTSTATUS NtQuerySymbolicLinkObject(HANDLE LinkHandle, PUNICODE_STRING LinkTarget,

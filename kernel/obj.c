@@ -1336,7 +1336,8 @@ NTSTATUS NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
     return STATUS_NOT_IMPLEMENTED;
 }
 
-NTSTATUS NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
+NTSTATUS NtQueryDirectoryObject(HANDLE DirectoryHandle,
+                                PDIRECTORY_BASIC_INFORMATION Buffer, ULONG Length,
                                 BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
                                 PULONG Context, PULONG ReturnLength) {
     printk(KERN_INFO "NtQueryDirectoryObject(%lx, %px, %x, %x, %x, %px, %px): stub\n",
