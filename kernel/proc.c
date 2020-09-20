@@ -408,3 +408,22 @@ NTSTATUS NtResumeProcess(HANDLE ProcessHandle) {
 
     return STATUS_NOT_IMPLEMENTED;
 }
+
+NTSTATUS NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHandle,
+                             ACCESS_MASK ProcessDesiredAccess,
+                             ACCESS_MASK ThreadDesiredAccess,
+                             POBJECT_ATTRIBUTES ProcessObjectAttributes,
+                             POBJECT_ATTRIBUTES ThreadObjectAttributes,
+                             ULONG ProcessFlags, ULONG ThreadFlags,
+                             PVOID ProcessParameters,
+                             PPS_CREATE_INFO CreateInfo,
+                             PPS_ATTRIBUTE_LIST AttributeList) {
+    printk(KERN_INFO "NtCreateUserProcess(%px, %px, %x, %x, %px, %px, %x, %x, %px, %px, %px): stub\n",
+           ProcessHandle, ThreadHandle, ProcessDesiredAccess, ThreadDesiredAccess,
+           ProcessObjectAttributes, ThreadObjectAttributes, ProcessFlags,
+           ThreadFlags, ProcessParameters, CreateInfo, AttributeList);
+
+    // FIXME
+
+    return STATUS_NOT_IMPLEMENTED;
+}

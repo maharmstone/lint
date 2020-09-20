@@ -996,6 +996,8 @@ typedef enum {
     MaxProcessInfoClass
 } PROCESS_INFORMATION_CLASS;
 
+typedef struct _PS_CREATE_INFO *PPS_CREATE_INFO;
+
 NTSTATUS muwine_init_processes(void);
 NTSTATUS muwine_add_current_process(void);
 process_object* muwine_current_process_object(void);
@@ -1013,6 +1015,15 @@ NTSTATUS NtSetInformationProcess(HANDLE ProcessHandle,
 NTSTATUS NtTerminateProcess(HANDLE ProcessHandle, NTSTATUS ExitStatus);
 NTSTATUS NtSuspendProcess(HANDLE ProcessHandle);
 NTSTATUS NtResumeProcess(HANDLE ProcessHandle);
+NTSTATUS NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHandle,
+                             ACCESS_MASK ProcessDesiredAccess,
+                             ACCESS_MASK ThreadDesiredAccess,
+                             POBJECT_ATTRIBUTES ProcessObjectAttributes,
+                             POBJECT_ATTRIBUTES ThreadObjectAttributes,
+                             ULONG ProcessFlags, ULONG ThreadFlags,
+                             PVOID ProcessParameters,
+                             PPS_CREATE_INFO CreateInfo,
+                             PPS_ATTRIBUTE_LIST AttributeList);
 
 // timer.c
 typedef void (*PTIMER_APC_ROUTINE)(PVOID TimerContext, ULONG TimerLowValue,

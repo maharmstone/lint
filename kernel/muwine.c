@@ -123,6 +123,7 @@ static struct muwine_func funcs[] = {
     { NtTerminateProcess, 2 },
     { NtSuspendProcess, 1 },
     { NtResumeProcess, 1 },
+    { NtCreateUserProcess, 11 },
 };
 
 // FIXME - compat_ioctl for 32-bit ioctls on 64-bit system (will need to fix kernel handles, and -1 dummy handles)
