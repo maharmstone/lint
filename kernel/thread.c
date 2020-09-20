@@ -528,12 +528,12 @@ static NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess
     return STATUS_NOT_IMPLEMENTED;
 }
 
-static NTSTATUS copy_from_attribute_list(PPS_ATTRIBUTE_LIST ks, PPS_ATTRIBUTE_LIST* us) {
+static NTSTATUS copy_from_attribute_list(PPS_ATTRIBUTE_LIST* ks, PPS_ATTRIBUTE_LIST us) {
     SIZE_T size;
     PS_ATTRIBUTE_LIST* attlist;
     unsigned int i, count;
 
-    if (get_user(size, (SIZE_T*)ks) < 0)
+    if (get_user(size, (SIZE_T*)us) < 0)
         return STATUS_ACCESS_VIOLATION;
 
     if (size < offsetof(PS_ATTRIBUTE_LIST, Attributes))
@@ -543,7 +543,7 @@ static NTSTATUS copy_from_attribute_list(PPS_ATTRIBUTE_LIST ks, PPS_ATTRIBUTE_LI
     if (!attlist)
         return STATUS_INSUFFICIENT_RESOURCES;
 
-    if (copy_from_user(attlist, ks, size) != 0) {
+    if (copy_from_user(attlist, us, size) != 0) {
         kfree(attlist);
         return STATUS_ACCESS_VIOLATION;
     }
@@ -612,7 +612,7 @@ static NTSTATUS copy_from_attribute_list(PPS_ATTRIBUTE_LIST ks, PPS_ATTRIBUTE_LI
         }
     }
 
-    *us = attlist;
+    *ks = attlist;
 
     return STATUS_SUCCESS;
 }
@@ -632,10 +632,10 @@ static NTSTATUS copy_to_attribute_list(PPS_ATTRIBUTE_LIST ks, PPS_ATTRIBUTE_LIST
                 return STATUS_ACCESS_VIOLATION;
 
             if (ks->Attributes[i].Attribute == PS_ATTRIBUTE_CLIENT_ID) {
-                if (copy_to_user(ks->Attributes[i].ValuePtr, value_ptr, sizeof(CLIENT_ID)) != 0)
+                if (copy_to_user(value_ptr, ks->Attributes[i].ValuePtr, sizeof(CLIENT_ID)) != 0)
                     return STATUS_ACCESS_VIOLATION;
             } else if (ks->Attributes[i].Attribute == PS_ATTRIBUTE_TEB_ADDRESS) {
-                if (copy_to_user(ks->Attributes[i].ValuePtr, value_ptr, sizeof(void*)) != 0)
+                if (copy_to_user(value_ptr, ks->Attributes[i].ValuePtr, sizeof(void*)) != 0)
                     return STATUS_ACCESS_VIOLATION;
             }
         }
@@ -698,7 +698,7 @@ NTSTATUS user_NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     }
 
     if (AttributeList) {
-        Status = copy_from_attribute_list(AttributeList, &attlist);
+        Status = copy_from_attribute_list(&attlist, AttributeList);
         if (!NT_SUCCESS(Status)) {
             if (ObjectAttributes)
                 free_object_attributes(&oa);
@@ -714,7 +714,7 @@ NTSTATUS user_NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     if (AttributeList) {
         NTSTATUS Status2;
 
-        Status2 = copy_to_attribute_list(AttributeList, attlist);
+        Status2 = copy_to_attribute_list(attlist, AttributeList);
         if (!NT_SUCCESS(Status2))
             Status = Status2;
 
