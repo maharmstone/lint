@@ -2197,7 +2197,7 @@ NTSTATUS __stdcall NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHand
                                        POBJECT_ATTRIBUTES ProcessObjectAttributes,
                                        POBJECT_ATTRIBUTES ThreadObjectAttributes,
                                        ULONG ProcessFlags, ULONG ThreadFlags,
-                                       PVOID ProcessParameters,
+                                       PRTL_USER_PROCESS_PARAMETERS ProcessParameters,
                                        PPS_CREATE_INFO CreateInfo,
                                        PPS_ATTRIBUTE_LIST AttributeList) {
     long ret;
