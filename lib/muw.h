@@ -1125,7 +1125,7 @@ NTSTATUS __stdcall NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHand
                                        PPS_ATTRIBUTE_LIST AttributeList);
 NTSTATUS __stdcall NtMakeTemporaryObject(HANDLE Handle);
 NTSTATUS __stdcall NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
-                                            POBJECT_ATTRIBUTES ObjectAttributes);
+                                            const OBJECT_ATTRIBUTES* ObjectAttributes);
 NTSTATUS __stdcall NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
                                           BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
                                           PULONG Context, PULONG ReturnLength);

@@ -2240,7 +2240,7 @@ NTSTATUS __stdcall NtMakeTemporaryObject(HANDLE Handle) {
 }
 
 NTSTATUS __stdcall NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
-                                            POBJECT_ATTRIBUTES ObjectAttributes) {
+                                            const OBJECT_ATTRIBUTES* ObjectAttributes) {
     long ret;
 
     uintptr_t args[] = {
