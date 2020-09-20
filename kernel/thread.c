@@ -551,25 +551,9 @@ static NTSTATUS copy_from_attribute_list(PPS_ATTRIBUTE_LIST* ks, PPS_ATTRIBUTE_L
     count = (size - offsetof(PS_ATTRIBUTE_LIST, Attributes)) / sizeof(PS_ATTRIBUTE);
 
     for (i = 0; i < count; i++) {
-        if (attlist->Attributes[i].Attribute == PS_ATTRIBUTE_CLIENT_ID) {
-            attlist->Attributes[i].ValuePtr = kmalloc(sizeof(CLIENT_ID), GFP_KERNEL);
-            if (!attlist->Attributes[i].ValuePtr) {
-                unsigned int j;
+        if (attlist->Attributes[i].Size > 0) {
+            attlist->Attributes[i].ValuePtr = kmalloc(attlist->Attributes[i].Size, GFP_KERNEL);
 
-                for (j = 0; j < i; j++) {
-                    if (attlist->Attributes[j].ValuePtr)
-                        kfree(attlist->Attributes[j].ValuePtr);
-
-                    if (attlist->Attributes[j].ReturnLength)
-                        kfree(attlist->Attributes[j].ReturnLength);
-                }
-
-                kfree(attlist);
-
-                return STATUS_INSUFFICIENT_RESOURCES;
-            }
-        } else if (attlist->Attributes[i].Attribute == PS_ATTRIBUTE_TEB_ADDRESS) {
-            attlist->Attributes[i].ValuePtr = kmalloc(sizeof(void*), GFP_KERNEL);
             if (!attlist->Attributes[i].ValuePtr) {
                 unsigned int j;
 
@@ -631,13 +615,8 @@ static NTSTATUS copy_to_attribute_list(PPS_ATTRIBUTE_LIST ks, PPS_ATTRIBUTE_LIST
             if (get_user(value_ptr, &us->Attributes[i].ValuePtr) < 0)
                 return STATUS_ACCESS_VIOLATION;
 
-            if (ks->Attributes[i].Attribute == PS_ATTRIBUTE_CLIENT_ID) {
-                if (copy_to_user(value_ptr, ks->Attributes[i].ValuePtr, sizeof(CLIENT_ID)) != 0)
-                    return STATUS_ACCESS_VIOLATION;
-            } else if (ks->Attributes[i].Attribute == PS_ATTRIBUTE_TEB_ADDRESS) {
-                if (copy_to_user(value_ptr, ks->Attributes[i].ValuePtr, sizeof(void*)) != 0)
-                    return STATUS_ACCESS_VIOLATION;
-            }
+            if (copy_to_user(value_ptr, ks->Attributes[i].ValuePtr, ks->Attributes[i].Size) != 0)
+                return STATUS_ACCESS_VIOLATION;
         }
 
         if (get_user(retlen, &us->Attributes[i].ReturnLength) < 0)
