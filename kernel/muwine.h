@@ -925,11 +925,11 @@ NTSTATUS user_NtTerminateThread(HANDLE ThreadHandle, NTSTATUS ExitStatus);
 NTSTATUS NtSetInformationThread(HANDLE ThreadHandle, THREADINFOCLASS ThreadInformationClass,
                                 PVOID ThreadInformation, ULONG ThreadInformationLength);
 int muwine_thread_exit_handler(struct kretprobe_instance* ri, struct pt_regs* regs);
-NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
-                          POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
-                          PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
-                          ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
-                          SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList);
+NTSTATUS user_NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                               POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                               PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
+                               ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
+                               SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList);
 NTSTATUS NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval);
 ULONG NtGetCurrentProcessorNumber(void);
 NTSTATUS NtOpenThread(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,

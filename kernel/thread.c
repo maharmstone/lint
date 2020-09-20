@@ -513,11 +513,11 @@ thread_object* muwine_current_thread_object(void) {
     return obj;
 }
 
-NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
-                          POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
-                          PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
-                          ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
-                          SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList) {
+static NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                 POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                                 PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
+                                 ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
+                                 SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList) {
     printk(KERN_INFO "NtCreateThreadEx(%px, %x, %px, %lx, %px, %px, %x, %lx, %lx, %lx, %px): stub\n",
            ThreadHandle, DesiredAccess, ObjectAttributes, (uintptr_t)ProcessHandle,
            StartRoutine, Argument, CreateFlags, ZeroBits, StackSize, MaximumStackSize,
@@ -526,6 +526,208 @@ NTSTATUS NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
     // FIXME
 
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static NTSTATUS copy_from_attribute_list(PPS_ATTRIBUTE_LIST ks, PPS_ATTRIBUTE_LIST* us) {
+    SIZE_T size;
+    PS_ATTRIBUTE_LIST* attlist;
+    unsigned int i, count;
+
+    if (get_user(size, (SIZE_T*)ks) < 0)
+        return STATUS_ACCESS_VIOLATION;
+
+    if (size < offsetof(PS_ATTRIBUTE_LIST, Attributes))
+        return STATUS_INVALID_PARAMETER;
+
+    attlist = kmalloc(size, GFP_KERNEL);
+    if (!attlist)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    if (copy_from_user(attlist, ks, size) != 0) {
+        kfree(attlist);
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    count = (size - offsetof(PS_ATTRIBUTE_LIST, Attributes)) / sizeof(PS_ATTRIBUTE);
+
+    for (i = 0; i < count; i++) {
+        if (attlist->Attributes[i].Attribute == PS_ATTRIBUTE_CLIENT_ID) {
+            attlist->Attributes[i].ValuePtr = kmalloc(sizeof(CLIENT_ID), GFP_KERNEL);
+            if (!attlist->Attributes[i].ValuePtr) {
+                unsigned int j;
+
+                for (j = 0; j < i; j++) {
+                    if (attlist->Attributes[j].ValuePtr)
+                        kfree(attlist->Attributes[j].ValuePtr);
+
+                    if (attlist->Attributes[j].ReturnLength)
+                        kfree(attlist->Attributes[j].ReturnLength);
+                }
+
+                kfree(attlist);
+
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        } else if (attlist->Attributes[i].Attribute == PS_ATTRIBUTE_TEB_ADDRESS) {
+            attlist->Attributes[i].ValuePtr = kmalloc(sizeof(void*), GFP_KERNEL);
+            if (!attlist->Attributes[i].ValuePtr) {
+                unsigned int j;
+
+                for (j = 0; j < i; j++) {
+                    if (attlist->Attributes[j].ValuePtr)
+                        kfree(attlist->Attributes[j].ValuePtr);
+
+                    if (attlist->Attributes[j].ReturnLength)
+                        kfree(attlist->Attributes[j].ReturnLength);
+                }
+
+                kfree(attlist);
+
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        } else
+            attlist->Attributes[i].ValuePtr = NULL;
+
+        if (attlist->Attributes[i].ReturnLength) {
+            attlist->Attributes[i].ReturnLength = kmalloc(sizeof(SIZE_T), GFP_KERNEL);
+
+            if (!attlist->Attributes[i].ReturnLength) {
+                unsigned int j;
+
+                if (attlist->Attributes[i].ValuePtr)
+                    kfree(attlist->Attributes[i].ValuePtr);
+
+                for (j = 0; j < i; j++) {
+                    if (attlist->Attributes[j].ValuePtr)
+                        kfree(attlist->Attributes[j].ValuePtr);
+
+                    if (attlist->Attributes[j].ReturnLength)
+                        kfree(attlist->Attributes[j].ReturnLength);
+                }
+
+                kfree(attlist);
+
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+    }
+
+    *us = attlist;
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS copy_to_attribute_list(PPS_ATTRIBUTE_LIST ks, PPS_ATTRIBUTE_LIST us) {
+    unsigned int i, count;
+
+    count = (ks->TotalLength - offsetof(PS_ATTRIBUTE_LIST, Attributes)) / sizeof(PS_ATTRIBUTE);
+
+    for (i = 0; i < count; i++) {
+        PSIZE_T retlen;
+
+        if (ks->Attributes[i].ValuePtr) {
+            void* value_ptr;
+
+            if (get_user(value_ptr, &us->Attributes[i].ValuePtr) < 0)
+                return STATUS_ACCESS_VIOLATION;
+
+            if (ks->Attributes[i].Attribute == PS_ATTRIBUTE_CLIENT_ID) {
+                if (copy_to_user(ks->Attributes[i].ValuePtr, value_ptr, sizeof(CLIENT_ID)) != 0)
+                    return STATUS_ACCESS_VIOLATION;
+            } else if (ks->Attributes[i].Attribute == PS_ATTRIBUTE_TEB_ADDRESS) {
+                if (copy_to_user(ks->Attributes[i].ValuePtr, value_ptr, sizeof(void*)) != 0)
+                    return STATUS_ACCESS_VIOLATION;
+            }
+        }
+
+        if (get_user(retlen, &us->Attributes[i].ReturnLength) < 0)
+            return STATUS_ACCESS_VIOLATION;
+
+        if (retlen) {
+            if (ks->Attributes[i].ReturnLength) {
+                if (put_user(*ks->Attributes[i].ReturnLength, retlen) < 0)
+                    return STATUS_ACCESS_VIOLATION;
+            } else {
+                if (put_user(0, retlen) < 0)
+                    return STATUS_ACCESS_VIOLATION;
+            }
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
+static void free_attribute_list(PPS_ATTRIBUTE_LIST attlist) {
+    unsigned int i, count;
+
+    count = (attlist->TotalLength - offsetof(PS_ATTRIBUTE_LIST, Attributes)) / sizeof(PS_ATTRIBUTE);
+
+    for (i = 0; i < count; i++) {
+        if (attlist->Attributes[i].ValuePtr)
+            kfree(attlist->Attributes[i].ValuePtr);
+
+        if (attlist->Attributes[i].ReturnLength)
+            kfree(attlist->Attributes[i].ReturnLength);
+    }
+
+    kfree(attlist);
+}
+
+NTSTATUS user_NtCreateThreadEx(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                               POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                               PRTL_THREAD_START_ROUTINE StartRoutine, PVOID Argument,
+                               ULONG CreateFlags, ULONG_PTR ZeroBits, SIZE_T StackSize,
+                               SIZE_T MaximumStackSize, PPS_ATTRIBUTE_LIST AttributeList) {
+    NTSTATUS Status;
+    HANDLE h;
+    OBJECT_ATTRIBUTES oa;
+    PS_ATTRIBUTE_LIST* attlist;
+
+    if (!ThreadHandle)
+        return STATUS_INVALID_PARAMETER;
+
+    if (ProcessHandle != NtCurrentProcess() && (uintptr_t)ProcessHandle & KERNEL_HANDLE_MASK)
+        return STATUS_INVALID_HANDLE;
+
+    if (ObjectAttributes && !get_user_object_attributes(&oa, ObjectAttributes))
+        return STATUS_ACCESS_VIOLATION;
+
+    if (ObjectAttributes && oa.Attributes & OBJ_KERNEL_HANDLE) {
+        free_object_attributes(&oa);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (AttributeList) {
+        Status = copy_from_attribute_list(AttributeList, &attlist);
+        if (!NT_SUCCESS(Status)) {
+            if (ObjectAttributes)
+                free_object_attributes(&oa);
+
+            return Status;
+        }
+    }
+
+    Status = NtCreateThreadEx(&h, DesiredAccess, ObjectAttributes ? &oa : NULL, ProcessHandle,
+                              StartRoutine, Argument, CreateFlags, ZeroBits, StackSize,
+                              MaximumStackSize, AttributeList ? attlist : NULL);
+
+    if (AttributeList) {
+        NTSTATUS Status2;
+
+        Status2 = copy_to_attribute_list(AttributeList, attlist);
+        if (!NT_SUCCESS(Status2))
+            Status = Status2;
+
+        free_attribute_list(attlist);
+    }
+
+    if (ObjectAttributes)
+        free_object_attributes(&oa);
+
+    if (put_user(h, ThreadHandle) != 0)
+        Status = STATUS_ACCESS_VIOLATION;
+
+    return Status;
 }
 
 NTSTATUS NtDelayExecution(BOOLEAN Alertable, PLARGE_INTEGER DelayInterval) {

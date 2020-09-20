@@ -102,7 +102,7 @@ static struct muwine_func funcs[] = {
     { NtSetInformationToken, 4 },
     { NtOpenProcessTokenEx, 4 },
     { NtOpenThreadTokenEx, 5 },
-    { NtCreateThreadEx, 11 },
+    { user_NtCreateThreadEx, 11 },
     { NtDelayExecution, 2 },
     { NtGetCurrentProcessorNumber, 0 },
     { NtOpenThread, 4 },
