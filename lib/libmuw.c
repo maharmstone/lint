@@ -2190,3 +2190,36 @@ NTSTATUS __stdcall NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLAS
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHandle,
+                                       ACCESS_MASK ProcessDesiredAccess,
+                                       ACCESS_MASK ThreadDesiredAccess,
+                                       POBJECT_ATTRIBUTES ProcessObjectAttributes,
+                                       POBJECT_ATTRIBUTES ThreadObjectAttributes,
+                                       ULONG ProcessFlags, ULONG ThreadFlags,
+                                       PVOID ProcessParameters,
+                                       PPS_CREATE_INFO CreateInfo,
+                                       PPS_ATTRIBUTE_LIST AttributeList) {
+    long ret;
+
+    uintptr_t args[] = {
+        11,
+        (uintptr_t)ProcessHandle,
+        (uintptr_t)ThreadHandle,
+        (uintptr_t)ProcessDesiredAccess,
+        (uintptr_t)ThreadDesiredAccess,
+        (uintptr_t)ProcessObjectAttributes,
+        (uintptr_t)ThreadObjectAttributes,
+        (uintptr_t)ProcessFlags,
+        (uintptr_t)ThreadFlags,
+        (uintptr_t)ProcessParameters,
+        (uintptr_t)CreateInfo,
+        (uintptr_t)AttributeList
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTCREATEUSERPROCESS, args, ret);
+
+    return (NTSTATUS)ret;
+}
