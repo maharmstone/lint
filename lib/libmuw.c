@@ -2223,3 +2223,77 @@ NTSTATUS __stdcall NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHand
 
     return (NTSTATUS)ret;
 }
+
+NTSTATUS __stdcall NtMakeTemporaryObject(HANDLE Handle) {
+    long ret;
+
+    uintptr_t args[] = {
+        1,
+        (uintptr_t)Handle
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTMAKETEMPORARYOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
+                                            POBJECT_ATTRIBUTES ObjectAttributes) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)LinkHandle,
+        (uintptr_t)DesiredAccess,
+        (uintptr_t)ObjectAttributes
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTOPENSYMBOLICLINKOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
+                                          BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
+                                          PULONG Context, PULONG ReturnLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        7,
+        (uintptr_t)DirectoryHandle,
+        (uintptr_t)Buffer,
+        (uintptr_t)Length,
+        (uintptr_t)ReturnSingleEntry,
+        (uintptr_t)RestartScan,
+        (uintptr_t)Context,
+        (uintptr_t)ReturnLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYDIRECTORYOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
+}
+
+NTSTATUS __stdcall NtQuerySymbolicLinkObject(HANDLE LinkHandle, PUNICODE_STRING LinkTarget,
+                                             PULONG ReturnedLength) {
+    long ret;
+
+    uintptr_t args[] = {
+        3,
+        (uintptr_t)LinkHandle,
+        (uintptr_t)LinkTarget,
+        (uintptr_t)ReturnedLength
+    };
+
+    init_muwine();
+
+    do_ioctl(MUWINE_IOCTL_NTQUERYSYMBOLICLINKOBJECT, args, ret);
+
+    return (NTSTATUS)ret;
+}

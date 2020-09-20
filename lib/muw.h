@@ -1123,6 +1123,14 @@ NTSTATUS __stdcall NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHand
                                        PVOID ProcessParameters,
                                        PPS_CREATE_INFO CreateInfo,
                                        PPS_ATTRIBUTE_LIST AttributeList);
+NTSTATUS __stdcall NtMakeTemporaryObject(HANDLE Handle);
+NTSTATUS __stdcall NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
+                                            POBJECT_ATTRIBUTES ObjectAttributes);
+NTSTATUS __stdcall NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
+                                          BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
+                                          PULONG Context, PULONG ReturnLength);
+NTSTATUS __stdcall NtQuerySymbolicLinkObject(HANDLE LinkHandle, PUNICODE_STRING LinkTarget,
+                                             PULONG ReturnedLength);
 
 #ifdef __cplusplus
 }
