@@ -1083,15 +1083,19 @@ NTSTATUS muwine_open_object2(const POBJECT_ATTRIBUTES ObjectAttributes, object_h
 
     Status = muwine_open_object(&us, obj, &after, &after_alloc, open_parent);
 
-    if (ret_after) {
-        ret_after->Length = after.Length;
-        ret_after->MaximumLength = after.MaximumLength;
-        ret_after->Buffer = after.Buffer;
+    if (NT_SUCCESS(Status)) {
+        if (ret_after) {
+            ret_after->Length = after.Length;
+            ret_after->MaximumLength = after.MaximumLength;
+            ret_after->Buffer = after.Buffer;
 
-        *ret_after_alloc = after_alloc;
-    } else if (after.Length != 0) {
-        dec_obj_refcount(*obj);
-        Status = STATUS_OBJECT_NAME_NOT_FOUND;
+            *ret_after_alloc = after_alloc;
+
+            after_alloc = false;
+        } else if (after.Length != 0) {
+            dec_obj_refcount(*obj);
+            Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        }
     }
 
     if (oa_us_alloc)
