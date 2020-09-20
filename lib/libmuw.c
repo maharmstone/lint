@@ -2257,7 +2257,8 @@ NTSTATUS __stdcall NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK Desi
     return (NTSTATUS)ret;
 }
 
-NTSTATUS __stdcall NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
+NTSTATUS __stdcall NtQueryDirectoryObject(HANDLE DirectoryHandle,
+                                          PDIRECTORY_BASIC_INFORMATION Buffer, ULONG Length,
                                           BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
                                           PULONG Context, PULONG ReturnLength) {
     long ret;

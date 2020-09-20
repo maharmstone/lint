@@ -906,6 +906,11 @@ typedef struct {
     RTL_DRIVE_LETTER_CURDIR DLCurrentDirectory[0x20];
 } RTL_USER_PROCESS_PARAMETERS, *PRTL_USER_PROCESS_PARAMETERS;
 
+typedef struct {
+    UNICODE_STRING ObjectName;
+    UNICODE_STRING ObjectTypeName;
+} DIRECTORY_BASIC_INFORMATION, *PDIRECTORY_BASIC_INFORMATION;
+
 #endif
 
 void close_muwine();
@@ -1169,9 +1174,10 @@ NTSTATUS __stdcall NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHand
 NTSTATUS __stdcall NtMakeTemporaryObject(HANDLE Handle);
 NTSTATUS __stdcall NtOpenSymbolicLinkObject(PHANDLE LinkHandle, ACCESS_MASK DesiredAccess,
                                             const OBJECT_ATTRIBUTES* ObjectAttributes);
-NTSTATUS __stdcall NtQueryDirectoryObject(HANDLE DirectoryHandle, PVOID Buffer, ULONG Length,
-                                          BOOLEAN ReturnSingleEntry, BOOLEAN RestartScan,
-                                          PULONG Context, PULONG ReturnLength);
+NTSTATUS __stdcall NtQueryDirectoryObject(HANDLE DirectoryHandle, PDIRECTORY_BASIC_INFORMATION Buffer,
+                                          ULONG Length, BOOLEAN ReturnSingleEntry,
+                                          BOOLEAN RestartScan, PULONG Context,
+                                          PULONG ReturnLength);
 NTSTATUS __stdcall NtQuerySymbolicLinkObject(HANDLE LinkHandle, PUNICODE_STRING LinkTarget,
                                              PULONG ReturnedLength);
 
