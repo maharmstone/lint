@@ -415,7 +415,7 @@ NTSTATUS NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHandle,
                              POBJECT_ATTRIBUTES ProcessObjectAttributes,
                              POBJECT_ATTRIBUTES ThreadObjectAttributes,
                              ULONG ProcessFlags, ULONG ThreadFlags,
-                             PVOID ProcessParameters,
+                             PRTL_USER_PROCESS_PARAMETERS ProcessParameters,
                              PPS_CREATE_INFO CreateInfo,
                              PPS_ATTRIBUTE_LIST AttributeList) {
     printk(KERN_INFO "NtCreateUserProcess(%px, %px, %x, %x, %px, %px, %x, %x, %px, %px, %px): stub\n",

@@ -1005,6 +1005,7 @@ typedef enum {
 } PROCESS_INFORMATION_CLASS;
 
 typedef struct _PS_CREATE_INFO *PPS_CREATE_INFO;
+typedef struct _RTL_USER_PROCESS_PARAMETERS *PRTL_USER_PROCESS_PARAMETERS;
 
 NTSTATUS muwine_init_processes(void);
 NTSTATUS muwine_add_current_process(void);
@@ -1029,7 +1030,7 @@ NTSTATUS NtCreateUserProcess(PHANDLE ProcessHandle, PHANDLE ThreadHandle,
                              POBJECT_ATTRIBUTES ProcessObjectAttributes,
                              POBJECT_ATTRIBUTES ThreadObjectAttributes,
                              ULONG ProcessFlags, ULONG ThreadFlags,
-                             PVOID ProcessParameters,
+                             PRTL_USER_PROCESS_PARAMETERS ProcessParameters,
                              PPS_CREATE_INFO CreateInfo,
                              PPS_ATTRIBUTE_LIST AttributeList);
 
